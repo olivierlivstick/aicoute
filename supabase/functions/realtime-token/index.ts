@@ -111,9 +111,9 @@ Deno.serve(async (req: Request) => {
           model,
           audio: {
             output: { voice: DEFAULT_VOICE },
+            // Tours de parole : la GA applique `server_vad` par défaut.
+            // Pour tuner : audio.input.turn_detection (PAS au niveau racine = Beta).
           },
-          // Gestion des tours de parole déléguée à l'API (configurable ici)
-          turn_detection: { type: 'server_vad' },
           instructions,
         },
       }),
