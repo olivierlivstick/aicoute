@@ -1,53 +1,35 @@
 /**
- * Page de simulation d'appel — rejoindre une room LiveKit depuis le navigateur
- * Accès : /call?token=XXX&room=XXX&url=XXX&persona=XXX
+ * Page de simulation d'appel — conversation vocale WebRTC directe avec OpenAI
+ * Realtime (API GA). Plus de LiveKit : le navigateur se connecte en direct.
+ *
+ * Accès : /call?call_id=XXX&persona=XXX
+ * Flux :
+ *   1. realtime-token (Edge Fn) → ephemeral token + modèle GA
+ *   2. RealtimeSession (packages/shared) → handshake WebRTC + transcript live
+ *   3. À la fin → save-transcript (Edge Fn) → generate-summary
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import {
-  LiveKitRoom,
-  useVoiceAssistant,
-  RoomAudioRenderer,
-  useRoomContext,
-} from '@livekit/components-react'
+import { supabase } from '@/lib/supabase'
+import { RealtimeSession, browserPlatform, type RealtimeStatus } from '@modect/shared'
 
 export function SimulateCallPage() {
   const [params] = useSearchParams()
-  const navigate  = useNavigate()
+  const navigate = useNavigate()
 
-  const token      = params.get('token')    ?? ''
-  const serverUrl  = params.get('url')      ?? ''
-  const personaName = params.get('persona') ?? 'Marie'
+  const callId       = params.get('call_id') ?? ''
+  const personaParam = params.get('persona')  ?? ''
 
-  if (!token || !serverUrl) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
-        <p>Paramètres manquants (token ou url)</p>
-      </div>
-    )
-  }
-
-  return (
-    <LiveKitRoom
-      serverUrl={serverUrl}
-      token={token}
-      connect={true}
-      audio={true}
-      video={false}
-      onDisconnected={() => navigate(-1)}
-      className="min-h-screen bg-slate-900"
-    >
-      <RoomAudioRenderer />
-      <CallUI personaName={personaName} onHangUp={() => navigate(-1)} />
-    </LiveKitRoom>
-  )
-}
-
-function CallUI({ personaName, onHangUp }: { personaName: string; onHangUp: () => void }) {
-  const room = useRoomContext()
-  const { state: agentState } = useVoiceAssistant()
+  const [status,   setStatus]   = useState<RealtimeStatus>('connecting')
+  const [persona,  setPersona]  = useState(personaParam || 'votre compagnon')
+  const [error,    setError]    = useState<string | null>(null)
   const [duration, setDuration] = useState(0)
+
+  const sessionRef   = useRef<RealtimeSession | null>(null)
+  const audioRef     = useRef<HTMLAudioElement | null>(null)
+  const startedAtRef = useRef<number>(Date.now())
+  const endedRef     = useRef(false)
 
   // Chrono
   useEffect(() => {
@@ -55,21 +37,108 @@ function CallUI({ personaName, onHangUp }: { personaName: string; onHangUp: () =
     return () => clearInterval(t)
   }, [])
 
+  // Connexion Realtime
+  useEffect(() => {
+    if (!callId) {
+      setError('Paramètre call_id manquant')
+      return
+    }
+
+    let cancelled = false
+    let localSession: RealtimeSession | null = null
+
+    ;(async () => {
+      try {
+        const { data, error: fnErr } = await supabase.functions.invoke('realtime-token', {
+          body: { call_id: callId },
+        })
+        if (fnErr || !data?.value) {
+          throw new Error(fnErr?.message ?? data?.error ?? 'Token Realtime indisponible')
+        }
+        if (cancelled) return
+        if (data.persona_name) setPersona(data.persona_name)
+
+        const session = new RealtimeSession({
+          ephemeralKey: data.value,
+          model:        data.model,
+          platform:     browserPlatform(),
+          onRemoteStream: (stream) => {
+            if (audioRef.current) {
+              audioRef.current.srcObject = stream as MediaStream
+              void audioRef.current.play().catch(() => { /* autoplay géré par interaction */ })
+            }
+          },
+          onStatusChange: (s) => { if (!cancelled) setStatus(s) },
+          onError:        (e) => { if (!cancelled) setError(e.message) },
+        })
+
+        localSession     = session
+        sessionRef.current = session
+        startedAtRef.current = Date.now()
+        await session.start()
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Erreur de connexion')
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      localSession?.stop()
+    }
+  }, [callId])
+
+  const endCall = async () => {
+    if (endedRef.current) { navigate(-1); return }
+    endedRef.current = true
+
+    const session    = sessionRef.current
+    const transcript = session?.transcript ?? []
+    session?.stop()
+
+    const durationSeconds = Math.floor((Date.now() - startedAtRef.current) / 1000)
+
+    try {
+      await supabase.functions.invoke('save-transcript', {
+        body: {
+          call_id:          callId,
+          transcript,
+          duration_seconds: durationSeconds,
+          status:           'completed',
+        },
+      })
+    } catch { /* la persistance échouée ne doit pas bloquer la sortie */ }
+
+    navigate(-1)
+  }
+
   const formatDuration = (s: number) => {
-    const m = Math.floor(s / 60)
+    const m   = Math.floor(s / 60)
     const sec = s % 60
     return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
   }
 
-  const isSpeaking = agentState === 'speaking'
+  const isSpeaking   = status === 'speaking'
+  const isConnecting = status === 'connecting'
 
-  const handleHangUp = () => {
-    room.disconnect()
-    onHangUp()
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-900 text-white px-4 text-center">
+        <p className="text-lg">Connexion impossible</p>
+        <p className="text-slate-400 text-sm max-w-md">{error}</p>
+        <button
+          onClick={() => navigate(-1)}
+          className="mt-2 px-6 h-11 rounded-full bg-slate-700 hover:bg-slate-600 transition-colors"
+        >
+          Retour
+        </button>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-8 bg-slate-900 text-white px-4">
+      {/* Sortie audio de l'IA */}
+      <audio ref={audioRef} autoPlay className="hidden" />
 
       {/* Avatar animé */}
       <div className="relative flex items-center justify-center">
@@ -86,9 +155,13 @@ function CallUI({ personaName, onHangUp }: { personaName: string; onHangUp: () =
 
       {/* Nom + statut */}
       <div className="text-center">
-        <h1 className="text-3xl font-bold">{personaName}</h1>
+        <h1 className="text-3xl font-bold">{persona}</h1>
         <p className="text-slate-400 mt-1">
-          {isSpeaking ? '🗣 En train de parler…' : '👂 En train d\'écouter…'}
+          {isConnecting
+            ? 'Connexion…'
+            : isSpeaking
+              ? '🗣 En train de parler…'
+              : '👂 En train d\'écouter…'}
         </p>
         <p className="text-slate-500 text-sm mt-2 font-mono">{formatDuration(duration)}</p>
       </div>
@@ -101,7 +174,7 @@ function CallUI({ personaName, onHangUp }: { personaName: string; onHangUp: () =
 
       {/* Bouton raccrocher */}
       <button
-        onClick={handleHangUp}
+        onClick={endCall}
         className="w-20 h-20 rounded-full bg-red-500 hover:bg-red-600 active:bg-red-700 flex items-center justify-center shadow-lg transition-colors"
         title="Raccrocher"
       >

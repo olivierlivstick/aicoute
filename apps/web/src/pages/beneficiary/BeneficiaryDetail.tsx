@@ -34,7 +34,8 @@ export function BeneficiaryDetailPage() {
     setSimulating(true)
     setSimError(null)
     try {
-      // 1. Créer un call dans Supabase
+      // Créer un call à la demande. Le system prompt et le token Realtime sont
+      // construits par realtime-token au moment où la page d'appel se connecte.
       const { data: call, error: callErr } = await supabase
         .from('calls')
         .insert({ beneficiary_id: beneficiary.id, scheduled_at: new Date().toISOString(), status: 'scheduled' })
@@ -42,16 +43,8 @@ export function BeneficiaryDetailPage() {
         .single()
       if (callErr || !call) throw new Error('Impossible de créer l\'appel')
 
-      // 2. Appeler initiate-call via le client Supabase (auth automatique)
-      const { data: json, error: fnErr } = await supabase.functions.invoke('initiate-call', {
-        body: { call_id: call.id },
-      })
-      if (fnErr || !json?.user_token) throw new Error(fnErr?.message ?? json?.error ?? 'Erreur initiate-call')
-
-      // 3. Naviguer vers la page d'appel
       const params = new URLSearchParams({
-        token:   json.user_token,
-        url:     json.livekit_url,
+        call_id: call.id,
         persona: beneficiary.ai_persona_name ?? 'Marie',
       })
       navigate(`/call?${params.toString()}`)

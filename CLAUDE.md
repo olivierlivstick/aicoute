@@ -12,24 +12,22 @@ SaaS de compagnon conversationnel IA pour personnes âgées/isolées.
 | App mobile | Expo (React Native) |
 | Base de données | Supabase (PostgreSQL + RLS + Auth) |
 | Edge Functions | Supabase (Deno) |
-| Voix temps réel | LiveKit Cloud + OpenAI Realtime API (gpt-4o-realtime-preview) |
-| Agent Node.js | `apps/agent/` — Express + `@livekit/rtc-node` + `openai` |
+| Voix temps réel | OpenAI Realtime API GA (`gpt-realtime-2`) en **WebRTC direct** client ↔ OpenAI |
 | Emails | Resend |
 | Déploiement web | Netlify |
-| Déploiement agent | Railway (Docker) |
 
 ## Structure monorepo
 ```
 modect/
 ├── apps/
 │   ├── web/          # Dashboard aidant (React + Vite)
-│   ├── mobile/       # App bénéficiaire (Expo)
-│   └── agent/        # Service Node.js LiveKit ↔ OpenAI
+│   └── mobile/       # App bénéficiaire (Expo) — couche vocale à migrer (phase 2)
 ├── supabase/
-│   ├── migrations/   # 7 migrations SQL
-│   └── functions/    # 5 Edge Functions Deno
-└── packages/
-    └── shared/       # Types TypeScript partagés
+│   ├── migrations/   # migrations SQL
+│   └── functions/    # Edge Functions Deno
+├── packages/
+│   └── shared/       # Types + cœur Realtime (realtime.ts) partagés
+└── test/             # Référence : test fonctionnel WebRTC GA (à supprimer après validation)
 ```
 
 ## Base de données (tables principales)
@@ -39,8 +37,16 @@ modect/
 - `calls` — historique des appels + transcript + rapport
 - `conversation_memory` — mémoire long-terme par bénéficiaire
 
-## Architecture critique : pourquoi apps/agent existe
-`@livekit/rtc-node` est un addon natif Rust/Node.js — **impossible à faire tourner dans Deno Edge Functions**. L'Edge Function `realtime-agent` délègue donc en fire-and-forget au service Node.js Railway via `AGENT_SERVICE_URL`.
+## Architecture vocale : WebRTC direct → OpenAI Realtime (GA)
+Le client (navigateur, bientôt mobile) parle **en direct** à OpenAI Realtime via WebRTC — plus de LiveKit ni de service Node.js intermédiaire.
+
+Flux d'un appel :
+1. `initiate-call` (Edge Fn) — marque le call `notified` + envoie la push Expo (`{ call_id, persona_name }`). Côté simulation web, on saute directement à l'étape 2.
+2. `realtime-token` (Edge Fn) — construit le system prompt (`_shared/systemPrompt.ts` + `agent_extra_prompt`), génère un **ephemeral token** GA via `POST /v1/realtime/client_secrets` (token dans `response.value`), passe le call `in_progress`. Le prompt n'est jamais exposé au client.
+3. Client — `packages/shared/src/realtime.ts` (`RealtimeSession`) : `getUserMedia` → `RTCPeerConnection` → SDP offer vers `POST /v1/realtime/calls?model=gpt-realtime-2` (`Content-Type: application/sdp`) → data channel `oai-events` (events GA + transcription `whisper-1`).
+4. `save-transcript` (Edge Fn) — à la fin, persiste `calls.transcript` (écriture de confiance, service role) puis déclenche `generate-summary`.
+
+Modèle GA imposé : `realtime-token` ramène tout modèle Beta/legacy (`*-realtime-preview`) à `gpt-realtime-2`. Voix par défaut `cedar` (constante dans `realtime-token`).
 
 ## Variables d'environnement
 
@@ -53,28 +59,13 @@ VITE_APP_URL=
 
 ### Supabase Edge Functions Secrets
 ```
-LIVEKIT_API_KEY=
-LIVEKIT_API_SECRET=
-LIVEKIT_URL=
 OPENAI_API_KEY=
 RESEND_API_KEY=
 FROM_EMAIL=
-AGENT_SERVICE_URL=           # URL Railway
-```
-
-### apps/agent (Railway Variables)
-```
-LIVEKIT_URL=
-LIVEKIT_API_KEY=
-LIVEKIT_API_SECRET=
-OPENAI_API_KEY=
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
 ```
 
 ## Déploiement
-- **Netlify** : lit `netlify.toml` à la racine (base = `apps/web`)
-- **Railway** : lit `railway.toml` à la racine, Dockerfile = `apps/agent/Dockerfile`
+- **Netlify** : lit `netlify.toml` à la racine (base = `apps/web`). `Permissions-Policy: microphone=(self)` requis pour WebRTC.
 - **Supabase** : `supabase link --project-ref XXX` puis `supabase functions deploy`
 - **pg_cron** : cron toutes les minutes → appelle `schedule-calls` via `pg_net`
 
@@ -83,7 +74,8 @@ SUPABASE_SERVICE_ROLE_KEY=
 - `formatDate()` dans utils.ts : `dateStyle` incompatible avec options individuelles (`weekday`, `hour`...) — utiliser `options ?? { dateStyle: 'long' }`
 - `@modect/shared` dans le web : résolu via alias Vite + paths TypeScript dans tsconfig
 - Build Netlify : utiliser `vite build` sans `tsc` (types Supabase incomplets génèrent des `never`)
-- `@livekit/rtc-node` dans agent.ts : utiliser `TrackKind.KIND_AUDIO`, `AudioStream`, pas `Track.Kind` ni `track.getAudioStream()`
+- Realtime GA : token dans `response.value` (PAS `response.client_secret.value` = Beta) ; endpoint `/v1/realtime/calls` (PAS `/realtime`) ; events `response.output_audio_transcript.*` (fallback Beta `response.audio_transcript.*`)
+- `calls.livekit_room_name` / `livekit_room_sid` : colonnes héritées désormais inutilisées (schéma conservé, non écrites)
 
 ## Identité visuelle
 - **Couleurs** : `#2D6A9F` (bleu confiance) + `#F4A261` (orange chaleur)
@@ -96,15 +88,13 @@ SUPABASE_SERVICE_ROLE_KEY=
 # Dev web
 cd apps/web && npm run dev
 
-# Dev agent
-cd apps/agent && npm run dev
-
 # Déployer les fonctions Supabase
 supabase functions deploy schedule-calls
 supabase functions deploy initiate-call
-supabase functions deploy realtime-agent
+supabase functions deploy realtime-token
+supabase functions deploy save-transcript
 supabase functions deploy generate-summary
-supabase functions deploy livekit-webhook
+supabase functions deploy list-openai-models
 
 # Push migrations
 supabase db push

@@ -38,14 +38,14 @@ enable_signup = false
 [functions.initiate-call]
 verify_jwt = false   # auth gérée en interne via admin client
 
-[functions.realtime-agent]
-verify_jwt = true
+[functions.realtime-token]
+verify_jwt = false   # auth gérée en interne via admin client
+
+[functions.save-transcript]
+verify_jwt = false   # auth gérée en interne via admin client
 
 [functions.generate-summary]
 verify_jwt = true
 
 [functions.schedule-calls]
 verify_jwt = false   # appelé par le cron Supabase
-
-[functions.livekit-webhook]
-verify_jwt = false   # webhook externe (signature vérifiée manuellement)

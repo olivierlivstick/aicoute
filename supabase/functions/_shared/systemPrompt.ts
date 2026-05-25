@@ -1,6 +1,6 @@
 /**
  * Constructeur du system prompt pour l'agent IA MODECT
- * Injecté dans OpenAI Realtime API via realtime-agent
+ * Injecté comme `instructions` dans OpenAI Realtime API via realtime-token
  */
 
 interface BeneficiaryContext {
