@@ -1,7 +1,9 @@
+# Netlify — SITE VITRINE PUBLIC (modect.com)
+# Créer un site Netlify dédié pointant sur ce sous-dossier (base = apps/web).
 [build]
   base    = "apps/web"
   command = "npm run build"
-  publish = "dist"
+  publish = "dist"          # relatif à `base` → apps/web/dist
 
 [build.environment]
   NODE_VERSION = "20"
@@ -12,7 +14,7 @@
   to     = "/index.html"
   status = 200
 
-# Headers de sécurité
+# Headers de sécurité (la vitrine n'a pas besoin du micro)
 [[headers]]
   for = "/*"
   [headers.values]
@@ -20,7 +22,7 @@
     X-Content-Type-Options  = "nosniff"
     X-XSS-Protection        = "1; mode=block"
     Referrer-Policy         = "strict-origin-when-cross-origin"
-    Permissions-Policy      = "camera=(), microphone=(self), geolocation=()"
+    Permissions-Policy      = "camera=(), microphone=(), geolocation=()"
 
 # Cache agressif pour les assets Vite (hash dans le nom de fichier)
 [[headers]]

@@ -1,0 +1,31 @@
+# Netlify — DASHBOARD AIDANT (app.modect.com)
+# Créer un site Netlify dédié pointant sur ce sous-dossier (base = apps/dashboard).
+[build]
+  base    = "apps/dashboard"
+  command = "npm run build"
+  publish = "dist"          # relatif à `base` → apps/dashboard/dist
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA : toutes les routes inconnues → index.html
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# Headers de sécurité — microphone=(self) requis pour WebRTC (appel temps réel)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options         = "DENY"
+    X-Content-Type-Options  = "nosniff"
+    X-XSS-Protection        = "1; mode=block"
+    Referrer-Policy         = "strict-origin-when-cross-origin"
+    Permissions-Policy      = "camera=(), microphone=(self), geolocation=()"
+
+# Cache agressif pour les assets Vite (hash dans le nom de fichier)
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

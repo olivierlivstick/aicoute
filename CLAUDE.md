@@ -71,7 +71,7 @@ FROM_EMAIL=
 ```
 
 ## Déploiement
-- **Netlify** : lit `netlify.toml` à la racine (base = `apps/web`). `Permissions-Policy: microphone=(self)` requis pour WebRTC.
+- **Netlify** : 2 sites distincts, un `netlify.toml` par app. `modect.com` → `apps/web` (vitrine), `app.modect.com` → `apps/dashboard` (back-office). `Permissions-Policy: microphone=(self)` requis pour WebRTC côté dashboard uniquement.
 - **Supabase** : `supabase link --project-ref XXX` puis `supabase functions deploy`
 - **pg_cron** : cron toutes les minutes → appelle `schedule-calls` via `pg_net`
 
