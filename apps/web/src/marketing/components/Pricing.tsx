@@ -1,5 +1,5 @@
 // SECTION 7 — Tarifs (3 cartes, centrale mise en avant)
-import { Icon } from '@/components/icons'
+import { Icon } from '@/marketing/components/icons'
 import { SIGNUP_URL } from '@/config/links'
 
 type Plan = {

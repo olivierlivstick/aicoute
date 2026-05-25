@@ -1,6 +1,6 @@
 // Header sticky avec changement subtil de bordure au scroll
 import { useState, useEffect } from 'react'
-import { Logo } from '@/components/Logo'
+import { Logo } from '@/marketing/components/Logo'
 import { LOGIN_URL, SIGNUP_URL } from '@/config/links'
 
 export function Header() {

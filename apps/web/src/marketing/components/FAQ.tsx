@@ -1,5 +1,5 @@
 // SECTION 9 — FAQ (accordéon natif <details>)
-import { Icon } from '@/components/icons'
+import { Icon } from '@/marketing/components/icons'
 
 export function FAQ() {
   const items = [

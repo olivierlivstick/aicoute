@@ -20,8 +20,8 @@ SaaS de compagnon conversationnel IA pour personnes âgées/isolées.
 ```
 modect/
 ├── apps/
-│   ├── web/          # Site vitrine public (React + Vite) — modect.com
-│   ├── dashboard/    # Dashboard aidant (React + Vite) — app.modect.com
+│   ├── web/          # App web UNIQUE (React + Vite) : vitrine (src/marketing) + back-office (src/pages)
+│   │                 #   → www.modect.com (vitrine) + app.modect.com (back-office), routage par sous-domaine
 │   └── mobile/       # App bénéficiaire (Expo) — couche vocale à migrer (phase 2)
 ├── supabase/
 │   ├── migrations/   # migrations SQL
@@ -51,16 +51,12 @@ Modèle GA imposé : `realtime-token` ramène tout modèle Beta/legacy (`*-realt
 
 ## Variables d'environnement
 
-### apps/dashboard (.env)
+### apps/web (.env) — app unique (vitrine + back-office)
 ```
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=      # clé publique anon
-VITE_APP_URL=
-```
-
-### apps/web (.env) — site vitrine
-```
-VITE_DASHBOARD_URL=          # https://app.modect.com (prod) / http://localhost:5174 (dev)
+VITE_APP_URL=https://app.modect.com
+VITE_DASHBOARD_URL=          # https://app.modect.com (prod) / vide en local (liens relatifs)
 ```
 
 ### Supabase Edge Functions Secrets
@@ -71,7 +67,7 @@ FROM_EMAIL=
 ```
 
 ## Déploiement
-- **Netlify** : 2 sites distincts, un `netlify.toml` par app. `modect.com` → `apps/web` (vitrine), `app.modect.com` → `apps/dashboard` (back-office). `Permissions-Policy: microphone=(self)` requis pour WebRTC côté dashboard uniquement.
+- **Netlify** : **un seul site** (Base directory `apps/web`, `apps/web/netlify.toml`). Faire pointer **les deux domaines** `www.modect.com` + `app.modect.com` vers ce site. L'app route selon le sous-domaine (`src/App.tsx` : `app.*` → back-office, sinon vitrine). `Permissions-Policy: microphone=(self)` pour WebRTC. Penser à whitelister `app.modect.com` dans Supabase → Auth → URL Configuration.
 - **Supabase** : `supabase link --project-ref XXX` puis `supabase functions deploy`
 - **pg_cron** : cron toutes les minutes → appelle `schedule-calls` via `pg_net`
 
@@ -83,20 +79,17 @@ FROM_EMAIL=
 - Realtime GA : token dans `response.value` (PAS `response.client_secret.value` = Beta) ; endpoint `/v1/realtime/calls` (PAS `/realtime`) ; events `response.output_audio_transcript.*` (fallback Beta `response.audio_transcript.*`)
 - `calls.livekit_room_name` / `livekit_room_sid` : colonnes héritées désormais inutilisées (schéma conservé, non écrites)
 
-## Identité visuelle — charte « cocon familial » (apps/web + apps/dashboard)
+## Identité visuelle — charte « cocon familial » (apps/web : vitrine + back-office)
 - **Couleurs** : terracotta `#C75D3A` (primaire) + ocre `#D9943E` (accent) ; texte brun `#3D2817`/`#6B4423` ; fonds crème `#FBF5EE` / crème sable `#F5EBDC` ; succès sauge `#7BA05B`, erreur brique `#B23A48`
 - **Polices** : Fraunces (titres) + Inter (corps)
 - **Baseline** : "Une présence pour ceux que vous aimez" (vitrine) / "La présence qui réchauffe" (app)
-- **Dashboard** : tokens Tailwind `primary`=terracotta, `accent`=ocre (échelles 50–900), palette `slate` réchauffée (neutres taupe/brun) — re-skin au niveau config, cf `apps/dashboard/tailwind.config.js`
+- **Back-office** : tokens Tailwind `primary`=terracotta, `accent`=ocre (échelles 50–900), palette `slate` réchauffée (neutres taupe/brun) — cf `apps/web/tailwind.config.js`. La vitrine utilise en plus `font-serif`/`font-sans`, `max-w-container`, `tracking-widest`.
 - **Accessibilité mobile** : police ≥ 18px, boutons ≥ 72px, pas de gestes complexes
 
 ## Commandes utiles
 ```bash
-# Dev site vitrine (port 5173)
-cd apps/web && npm run dev
-
-# Dev dashboard aidant (port 5174)
-cd apps/dashboard && npm run dev
+# Dev app web unique (vitrine + back-office) — port 5173
+npm run dev          # ou : cd apps/web && npm run dev
 
 # Déployer les fonctions Supabase
 supabase functions deploy schedule-calls

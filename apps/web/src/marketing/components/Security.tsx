@@ -1,5 +1,5 @@
 // SECTION 6 — Sécurité & éthique
-import { Icon } from '@/components/icons'
+import { Icon } from '@/marketing/components/icons'
 
 export function Security() {
   const cols = [

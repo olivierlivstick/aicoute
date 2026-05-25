@@ -1,8 +1,8 @@
 // HERO — 2 colonnes, inversé en mobile
 // Côté image : placeholder chaleureux (mains + téléphone + tasse) — à remplacer
 // par la photo finale dans l'asset pipeline. Aucun visage stock cliché.
-import { Icon } from '@/components/icons'
-import { Logo } from '@/components/Logo'
+import { Icon } from '@/marketing/components/icons'
+import { Logo } from '@/marketing/components/Logo'
 import { SIGNUP_URL } from '@/config/links'
 
 export function Hero() {

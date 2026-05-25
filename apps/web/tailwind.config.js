@@ -64,14 +64,23 @@ export default {
         },
       },
       fontFamily: {
+        // title/body : dashboard ; serif/sans : vitrine — toutes pointent sur la charte
         title: ['Fraunces', 'Georgia', 'serif'],
         body:  ['Inter', 'system-ui', 'sans-serif'],
+        serif: ['Fraunces', 'Georgia', 'serif'],
+        sans:  ['Inter', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         md: '8px',
         lg: '0.75rem',  // 12px
         xl: '1rem',     // 16px
         '2xl': '1.5rem',
+      },
+      maxWidth: {
+        container: '1200px', // conteneur de la vitrine
+      },
+      letterSpacing: {
+        widest: '0.18em',
       },
     },
   },

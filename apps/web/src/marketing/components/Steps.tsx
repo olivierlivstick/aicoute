@@ -1,5 +1,5 @@
 // SECTION 3 — Comment ça marche (3 étapes)
-import { Icon } from '@/components/icons'
+import { Icon } from '@/marketing/components/icons'
 
 export function Steps() {
   const steps = [

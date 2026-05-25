@@ -1,6 +1,6 @@
 // SECTION 5 — Exemple concret : mockup d'email + extrait transcription
-import { Icon } from '@/components/icons'
-import { Logo } from '@/components/Logo'
+import { Icon } from '@/marketing/components/icons'
+import { Logo } from '@/marketing/components/Logo'
 
 export function EmailExample() {
   const transcript = [

@@ -1,5 +1,5 @@
 // SECTION 4 — Bénéfices (grille 2x2)
-import { Icon } from '@/components/icons'
+import { Icon } from '@/marketing/components/icons'
 
 export function Benefits() {
   const items = [

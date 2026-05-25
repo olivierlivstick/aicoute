@@ -1,5 +1,5 @@
 // SECTION 10 — CTA final, fond terracotta plein
-import { Icon } from '@/components/icons'
+import { Icon } from '@/marketing/components/icons'
 import { SIGNUP_URL } from '@/config/links'
 
 export function FinalCTA() {
