@@ -1,6 +1,6 @@
 // FOOTER — fond brun-900, 4 colonnes
 import { Icon } from '@/marketing/components/icons'
-import { Logo } from '@/marketing/components/Logo'
+import { Logo } from '@/components/Logo'
 
 export function Footer() {
   const groups = [

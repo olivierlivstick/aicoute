@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
+import { Logo } from '@/components/Logo'
 
 const navItems = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Tableau de bord' },
@@ -36,16 +37,9 @@ export function AppLayout() {
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-slate-100 flex flex-col shadow-sm">
         {/* Logo */}
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-100">
-          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center flex-shrink-0">
-            <svg width="20" height="20" viewBox="0 0 36 36" fill="none">
-              <path d="M4 18 Q7 10, 10 18 Q13 26, 16 18 Q19 10, 22 18 Q25 26, 28 18 Q31 10, 34 18" stroke="white" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
-            </svg>
-          </div>
-          <div>
-            <span className="font-title font-bold text-primary text-lg leading-none">MODECT</span>
-            <p className="text-xs text-slate-400 leading-none mt-0.5">Espace aidant</p>
-          </div>
+        <div className="px-6 py-5 border-b border-slate-100">
+          <Logo variant="full" size={22} />
+          <p className="text-[11px] uppercase tracking-widest text-slate-400 mt-2">Espace aidant</p>
         </div>
 
         {/* Navigation */}
