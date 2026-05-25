@@ -33,6 +33,9 @@ apps/mobile/ios/
 *.log
 npm-debug.log*
 
+# Design handoff (référence locale Claude Design — non versionnée)
+site cible/
+
 # OS
 .DS_Store
 Thumbs.db
