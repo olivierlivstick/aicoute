@@ -1,9 +1,9 @@
 # Netlify — DASHBOARD AIDANT (app.modect.com)
-# Créer un site Netlify dédié pointant sur ce sous-dossier (base = apps/dashboard).
+# Site Netlify dédié : définir "Base directory" = apps/dashboard dans l'UI Netlify.
+# Netlify lit alors ce fichier ; publish est relatif au Base directory.
 [build]
-  base    = "apps/dashboard"
   command = "npm run build"
-  publish = "dist"          # relatif à `base` → apps/dashboard/dist
+  publish = "dist"          # relatif au Base directory (apps/dashboard) → apps/dashboard/dist
 
 [build.environment]
   NODE_VERSION = "20"
