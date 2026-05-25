@@ -1,0 +1,17 @@
+{
+  "name": "modect",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Monorepo MODECT — site vitrine (apps/web) + dashboard aidant (apps/dashboard)",
+  "scripts": {
+    "dev:web": "npm --prefix apps/web run dev",
+    "dev:dashboard": "npm --prefix apps/dashboard run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "build:dashboard": "npm --prefix apps/dashboard run build",
+    "preview:web": "npm --prefix apps/web run preview",
+    "preview:dashboard": "npm --prefix apps/dashboard run preview",
+    "install:web": "npm --prefix apps/web install",
+    "install:dashboard": "npm --prefix apps/dashboard install",
+    "install:all": "npm run install:web && npm run install:dashboard"
+  }
+}

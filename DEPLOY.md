@@ -4,7 +4,7 @@
 
 | Composant | Plateforme | URL cible |
 |-----------|-----------|-----------|
-| Dashboard web (`apps/web`) | Netlify | `https://app.modect.app` |
+| Dashboard web (`apps/dashboard`) | Netlify | `https://app.modect.com` |
 | Agent service (`apps/agent`) | Railway | `https://agent.modect.app` |
 | Base de données & Edge Functions | Supabase Cloud | `https://xxx.supabase.co` |
 
@@ -100,9 +100,9 @@ Puis mettre à jour `AGENT_SERVICE_URL` dans les secrets Supabase.
 1. Aller sur [netlify.com](https://netlify.com) → Add new site → Import from Git
 2. Sélectionner le repo `modect`
 3. Les paramètres sont lus automatiquement depuis `netlify.toml` :
-   - **Base directory** : `apps/web`
+   - **Base directory** : `apps/dashboard`
    - **Build command** : `npm run build`
-   - **Publish directory** : `apps/web/dist`
+   - **Publish directory** : `apps/dashboard/dist`
 
 ### Variables d'environnement Netlify
 Dans le dashboard Netlify → Site configuration → Environment variables :

@@ -20,7 +20,8 @@ SaaS de compagnon conversationnel IA pour personnes âgées/isolées.
 ```
 modect/
 ├── apps/
-│   ├── web/          # Dashboard aidant (React + Vite)
+│   ├── web/          # Site vitrine public (React + Vite) — modect.com
+│   ├── dashboard/    # Dashboard aidant (React + Vite) — app.modect.com
 │   └── mobile/       # App bénéficiaire (Expo) — couche vocale à migrer (phase 2)
 ├── supabase/
 │   ├── migrations/   # migrations SQL
@@ -50,11 +51,16 @@ Modèle GA imposé : `realtime-token` ramène tout modèle Beta/legacy (`*-realt
 
 ## Variables d'environnement
 
-### apps/web (.env)
+### apps/dashboard (.env)
 ```
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=      # clé publique anon
 VITE_APP_URL=
+```
+
+### apps/web (.env) — site vitrine
+```
+VITE_DASHBOARD_URL=          # https://app.modect.com (prod) / http://localhost:5174 (dev)
 ```
 
 ### Supabase Edge Functions Secrets
@@ -85,8 +91,11 @@ FROM_EMAIL=
 
 ## Commandes utiles
 ```bash
-# Dev web
+# Dev site vitrine (port 5173)
 cd apps/web && npm run dev
+
+# Dev dashboard aidant (port 5174)
+cd apps/dashboard && npm run dev
 
 # Déployer les fonctions Supabase
 supabase functions deploy schedule-calls
