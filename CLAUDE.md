@@ -83,10 +83,11 @@ FROM_EMAIL=
 - Realtime GA : token dans `response.value` (PAS `response.client_secret.value` = Beta) ; endpoint `/v1/realtime/calls` (PAS `/realtime`) ; events `response.output_audio_transcript.*` (fallback Beta `response.audio_transcript.*`)
 - `calls.livekit_room_name` / `livekit_room_sid` : colonnes héritées désormais inutilisées (schéma conservé, non écrites)
 
-## Identité visuelle
-- **Couleurs** : `#2D6A9F` (bleu confiance) + `#F4A261` (orange chaleur)
-- **Polices** : Playfair Display (titres) + Source Sans 3 (corps)
-- **Baseline** : "La présence qui réchauffe"
+## Identité visuelle — charte « cocon familial » (apps/web + apps/dashboard)
+- **Couleurs** : terracotta `#C75D3A` (primaire) + ocre `#D9943E` (accent) ; texte brun `#3D2817`/`#6B4423` ; fonds crème `#FBF5EE` / crème sable `#F5EBDC` ; succès sauge `#7BA05B`, erreur brique `#B23A48`
+- **Polices** : Fraunces (titres) + Inter (corps)
+- **Baseline** : "Une présence pour ceux que vous aimez" (vitrine) / "La présence qui réchauffe" (app)
+- **Dashboard** : tokens Tailwind `primary`=terracotta, `accent`=ocre (échelles 50–900), palette `slate` réchauffée (neutres taupe/brun) — re-skin au niveau config, cf `apps/dashboard/tailwind.config.js`
 - **Accessibilité mobile** : police ≥ 18px, boutons ≥ 72px, pas de gestes complexes
 
 ## Commandes utiles
