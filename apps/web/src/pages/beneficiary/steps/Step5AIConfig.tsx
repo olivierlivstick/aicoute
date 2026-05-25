@@ -10,7 +10,7 @@ import type { AIVoice, ConversationStyle } from '@modect/shared'
 
 const schema = z.object({
   ai_persona_name:    z.string().min(1, 'Prénom requis'),
-  ai_voice:           z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']),
+  ai_voice:           z.enum(['cedar', 'marin']),
   conversation_style: z.enum(['warm', 'playful', 'calm', 'formal']),
   language_preference: z.string().min(2),
 })
@@ -23,13 +23,10 @@ interface Props {
   onPrev: () => void
 }
 
+// Genre de la voix → voix Realtime GA (cedar = masculine, marin = féminine)
 const VOICES: { value: AIVoice; label: string; description: string }[] = [
-  { value: 'nova',    label: 'Nova',    description: 'Chaleureuse et douce — recommandée' },
-  { value: 'alloy',   label: 'Alloy',   description: 'Neutre et claire' },
-  { value: 'shimmer', label: 'Shimmer', description: 'Légère et dynamique' },
-  { value: 'echo',    label: 'Echo',    description: 'Grave et posée' },
-  { value: 'fable',   label: 'Fable',   description: 'Expressive et narrative' },
-  { value: 'onyx',    label: 'Onyx',    description: 'Profonde et assurée' },
+  { value: 'marin', label: 'Féminin',  description: 'Voix féminine, douce et chaleureuse' },
+  { value: 'cedar', label: 'Masculin', description: 'Voix masculine, posée et rassurante' },
 ]
 
 const STYLES: { value: ConversationStyle; label: string; description: string; emoji: string }[] = [
@@ -52,7 +49,7 @@ export function Step5AIConfig({ data, onNext, onPrev }: Props) {
     resolver: zodResolver(schema),
     defaultValues: {
       ai_persona_name:    data.ai_persona_name ?? 'Marie',
-      ai_voice:           data.ai_voice ?? 'nova',
+      ai_voice:           data.ai_voice ?? 'marin',
       conversation_style: data.conversation_style ?? 'warm',
       language_preference: data.language_preference ?? 'fr',
     },
@@ -84,9 +81,12 @@ export function Step5AIConfig({ data, onNext, onPrev }: Props) {
         />
       </div>
 
-      {/* Voix */}
+      {/* Genre de la voix */}
       <div>
-        <Label>Voix</Label>
+        <Label>Genre de la voix</Label>
+        <p className="text-xs text-slate-400 mb-1">
+          Voix masculine ou féminine pour les appels de votre proche.
+        </p>
         <div className="grid grid-cols-2 gap-2 mt-1">
           {VOICES.map(({ value, label, description }) => (
             <button

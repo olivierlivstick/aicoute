@@ -12,13 +12,24 @@ export function useProfile() {
   ) => {
     setLoading(true)
     setError(null)
-    const { error: err } = await supabase
+    // .select().maybeSingle() : on récupère la ligne modifiée pour détecter un
+    // échec silencieux (RLS qui n'autorise aucune ligne → pas d'erreur mais data null).
+    const { data, error: err } = await supabase
       .from('profiles')
       .update(updates)
       .eq('id', userId)
-    if (err) setError(err.message)
+      .select()
+      .maybeSingle()
     setLoading(false)
-    return !err
+    if (err) {
+      setError(err.message)
+      return false
+    }
+    if (!data) {
+      setError("Mise à jour refusée : aucune ligne modifiée (droits insuffisants ?).")
+      return false
+    }
+    return true
   }, [])
 
   return { updateProfile, loading, error }

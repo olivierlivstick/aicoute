@@ -8,7 +8,17 @@ import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
 import { useForm } from 'react-hook-form'
 import { supabase } from '@/lib/supabase'
-import type { Beneficiary } from '@modect/shared'
+import type { AIVoice, Beneficiary } from '@modect/shared'
+
+// Genre de la voix ↔ voix Realtime GA (cedar = masculine, marin = féminine).
+// Tolère les anciennes valeurs (nova, shimmer…) en les ramenant au bon genre.
+const FEMININE_VOICES = ['marin', 'nova', 'shimmer', 'coral', 'sage']
+const voiceToGenderValue = (v?: string | null): AIVoice =>
+  v === 'cedar' ? 'cedar'
+    : v === 'marin' ? 'marin'
+    : FEMININE_VOICES.includes(v ?? '') ? 'marin' : 'cedar'
+const voiceGenderLabel = (v?: string | null) =>
+  voiceToGenderValue(v) === 'marin' ? 'Féminin' : 'Masculin'
 
 type EditableFields = Pick<
   Beneficiary,
@@ -56,7 +66,9 @@ export function BeneficiaryDetailPage() {
   }
 
   const { register, handleSubmit, reset } = useForm<EditableFields>({
-    values: beneficiary ?? undefined,
+    values: beneficiary
+      ? { ...beneficiary, ai_voice: voiceToGenderValue(beneficiary.ai_voice) }
+      : undefined,
   })
 
   if (loading) {
@@ -104,7 +116,7 @@ export function BeneficiaryDetailPage() {
             {b.first_name} {b.last_name}
           </h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            Compagnon : <strong>{b.ai_persona_name}</strong> · Voix : {b.ai_voice}
+            Compagnon : <strong>{b.ai_persona_name}</strong> · Voix : {voiceGenderLabel(b.ai_voice)}
           </p>
         </div>
         <div className="flex gap-2">
@@ -218,14 +230,13 @@ export function BeneficiaryDetailPage() {
                 ? <Input {...register('ai_persona_name')} />
                 : <Value>{b.ai_persona_name}</Value>}
             </Field>
-            <Field label="Voix" editing={editing}>
+            <Field label="Genre de la voix" editing={editing}>
               {editing ? (
                 <select className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-4 font-body text-base" {...register('ai_voice')}>
-                  {['alloy','echo','fable','onyx','nova','shimmer'].map((v) => (
-                    <option key={v} value={v}>{v}</option>
-                  ))}
+                  <option value="marin">Féminin</option>
+                  <option value="cedar">Masculin</option>
                 </select>
-              ) : <Value>{b.ai_voice}</Value>}
+              ) : <Value>{voiceGenderLabel(b.ai_voice)}</Value>}
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-4">

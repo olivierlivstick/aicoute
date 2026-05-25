@@ -26,12 +26,14 @@ const TIMEZONES = [
 
 export function SettingsPage() {
   const { profile, user } = useAuth()
-  const { updateProfile, loading } = useProfile()
+  const { updateProfile, loading, error } = useProfile()
   const [success, setSuccess] = useState(false)
 
+  // `values` (et non `defaultValues`) : le formulaire se synchronise quand le
+  // profil charge en asynchrone, et reflète la donnée après sauvegarde/refetch.
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: {
+    values: {
       full_name: profile?.full_name ?? '',
       phone: profile?.phone ?? '',
       timezone: profile?.timezone ?? 'Europe/Paris',
@@ -97,8 +99,14 @@ export function SettingsPage() {
           </div>
 
           {success && (
-            <p className="text-sm text-green-600 bg-green-50 rounded-lg px-3 py-2">
+            <p className="text-sm text-sauge bg-sauge/10 rounded-lg px-3 py-2">
               ✓ Modifications enregistrées
+            </p>
+          )}
+
+          {error && (
+            <p className="text-sm text-brique bg-brique/10 rounded-lg px-3 py-2">
+              {error}
             </p>
           )}
 

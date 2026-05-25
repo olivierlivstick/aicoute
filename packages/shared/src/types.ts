@@ -17,7 +17,8 @@ export interface Profile {
 }
 
 export type Gender = 'male' | 'female' | 'other'
-export type AIVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
+// Voix de l'agent (Realtime GA) : cedar = masculine, marin = féminine
+export type AIVoice = 'cedar' | 'marin'
 export type ConversationStyle = 'warm' | 'playful' | 'calm' | 'formal'
 
 export interface Beneficiary {

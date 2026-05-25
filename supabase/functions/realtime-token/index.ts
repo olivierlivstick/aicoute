@@ -20,7 +20,16 @@ import { buildSystemPrompt } from '../_shared/systemPrompt.ts'
 
 // --- Paramètres Realtime (point unique de configuration) ---------------------
 const DEFAULT_GA_MODEL = 'gpt-realtime-2'   // modèle GA par défaut
-const DEFAULT_VOICE    = 'cedar'            // voix par défaut (configurable)
+const DEFAULT_VOICE    = 'cedar'            // voix par défaut (masculine)
+
+// Voix Realtime GA pilotées par le « genre » choisi côté dashboard :
+//   cedar = masculine, marin = féminine.
+// Tolérance aux anciennes valeurs (nova, shimmer…) ramenées au bon genre.
+const FEMININE_VOICES = ['marin', 'nova', 'shimmer', 'coral', 'sage']
+function resolveVoice(aiVoice: string | null | undefined): string {
+  if (aiVoice === 'cedar' || aiVoice === 'marin') return aiVoice
+  return FEMININE_VOICES.includes(aiVoice ?? '') ? 'marin' : DEFAULT_VOICE
+}
 
 /**
  * Le endpoint GA n'accepte que les modèles GA. Les anciens modèles Beta
@@ -110,7 +119,7 @@ Deno.serve(async (req: Request) => {
           type:  'realtime',
           model,
           audio: {
-            output: { voice: DEFAULT_VOICE },
+            output: { voice: resolveVoice(beneficiary.ai_voice) },
             // Tours de parole : la GA applique `server_vad` par défaut.
             // Pour tuner : audio.input.turn_detection (PAS au niveau racine = Beta).
           },
