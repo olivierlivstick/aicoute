@@ -14,21 +14,28 @@ import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 
 interface Row {
-  id:               string
-  mode:             'web' | 'phone'
-  started_at:       string
-  ended_at:         string | null
-  duration_seconds: number | null
-  phone_prefix:     string | null
-  twilio_cost_eur:  number | null
-  openai_cost_eur:  number | null
+  id:                        string
+  mode:                      'web' | 'phone'
+  started_at:                string
+  ended_at:                  string | null
+  duration_seconds:          number | null
+  phone_prefix:              string | null
+  twilio_cost_eur:           number | null
+  openai_cost_eur:           number | null
+  openai_cost_eur_real:      number | null
+  tokens_input_audio:        number | null
+  tokens_input_audio_cached: number | null
+  tokens_output_audio:       number | null
+  tokens_input_text:         number | null
+  tokens_output_text:        number | null
 }
 
 interface Totals {
-  calls:      number
-  twilio_eur: number
-  openai_eur: number
-  total_eur:  number
+  calls:           number
+  twilio_eur:      number
+  openai_eur:      number  // estimation par durée (toutes les rows)
+  openai_eur_real: number  // somme des rows avec vrais tokens
+  total_eur:       number  // Twilio + (réel si dispo, sinon estimation)
 }
 
 type State =
@@ -105,35 +112,49 @@ function Status({ children }: { children: React.ReactNode }) {
 
 function Summary({ totals }: { totals: Totals }) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-      <Card label="Nombre de démos"     value={String(totals.calls)} />
-      <Card label="Coût Twilio cumulé"  value={formatEur(totals.twilio_eur)} />
-      <Card label="Coût OpenAI cumulé"  value={formatEur(totals.openai_eur)} />
-      <Card label="Coût total"          value={formatEur(totals.total_eur)} highlight />
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+      <Card label="Nombre de démos"          value={String(totals.calls)} />
+      <Card label="Twilio cumulé"            value={formatEur(totals.twilio_eur)} />
+      <Card label="OpenAI estimé (durée)"    value={formatEur(totals.openai_eur)}      sub="approximation" />
+      <Card label="OpenAI réel (tokens)"     value={formatEur(totals.openai_eur_real)} sub="appels téléphone uniquement" />
+      <Card label="Coût total"               value={formatEur(totals.total_eur)}        sub="réel quand dispo, sinon estimé" highlight />
     </div>
   )
 }
 
-function Card({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
+function Card({ label, value, sub, highlight = false }: { label: string; value: string; sub?: string; highlight?: boolean }) {
   return (
     <div className={`bg-white border rounded-xl p-4 ${highlight ? 'border-terracotta' : 'border-creme-sable'}`}>
       <p className="text-xs uppercase tracking-widest text-brun-700">{label}</p>
       <p className={`mt-2 font-serif text-2xl ${highlight ? 'text-terracotta-dark' : 'text-brun-900'}`}>{value}</p>
+      {sub && <p className="mt-1 text-[11px] text-brun-700/60">{sub}</p>}
     </div>
   )
 }
 
 function Table({ rows }: { rows: Row[] }) {
-  const lines = useMemo(() => rows.map((r) => ({
-    ...r,
-    date:     formatDate(r.started_at),
-    heureDeb: formatTimeShort(r.started_at),
-    heureFin: r.ended_at ? formatTimeShort(r.ended_at) : '—',
-    duree:    r.duration_seconds ? formatDuration(r.duration_seconds) : '—',
-    twilio:   r.twilio_cost_eur != null ? formatEur(r.twilio_cost_eur) : '—',
-    openai:   r.openai_cost_eur != null ? formatEur(r.openai_cost_eur) : '—',
-    total:    formatEur((Number(r.twilio_cost_eur) || 0) + (Number(r.openai_cost_eur) || 0)),
-  })), [rows])
+  const lines = useMemo(() => rows.map((r) => {
+    const totalAudioIn = (r.tokens_input_audio ?? 0) + (r.tokens_input_audio_cached ?? 0)
+    const cacheRatio   = totalAudioIn > 0 && r.tokens_input_audio_cached != null
+      ? Math.round((r.tokens_input_audio_cached / totalAudioIn) * 100)
+      : null
+    // Coût "effectif" pour le total : réel si dispo, sinon estimation
+    const effectiveOpenai = r.openai_cost_eur_real != null
+      ? Number(r.openai_cost_eur_real)
+      : Number(r.openai_cost_eur) || 0
+    return {
+      ...r,
+      date:       formatDate(r.started_at),
+      heureDeb:   formatTimeShort(r.started_at),
+      heureFin:   r.ended_at ? formatTimeShort(r.ended_at) : '—',
+      duree:      r.duration_seconds ? formatDuration(r.duration_seconds) : '—',
+      twilio:     r.twilio_cost_eur != null ? formatEur(r.twilio_cost_eur) : '—',
+      openaiEst:  r.openai_cost_eur != null ? formatEur(r.openai_cost_eur) : '—',
+      openaiReal: r.openai_cost_eur_real != null ? formatEur(r.openai_cost_eur_real) : '—',
+      cacheRatio,
+      total:      formatEur((Number(r.twilio_cost_eur) || 0) + effectiveOpenai),
+    }
+  }), [rows])
 
   if (lines.length === 0) {
     return <Status>Aucune démo enregistrée pour le moment.</Status>
@@ -151,7 +172,8 @@ function Table({ rows }: { rows: Row[] }) {
             <Th>Mode</Th>
             <Th>Numéro</Th>
             <Th align="right">Twilio</Th>
-            <Th align="right">OpenAI</Th>
+            <Th align="right">OpenAI est.</Th>
+            <Th align="right">OpenAI réel</Th>
             <Th align="right">Total</Th>
           </tr>
         </thead>
@@ -173,7 +195,15 @@ function Table({ rows }: { rows: Row[] }) {
               </Td>
               <Td mono>{l.phone_prefix ?? '—'}</Td>
               <Td align="right" mono>{l.twilio}</Td>
-              <Td align="right" mono>{l.openai}</Td>
+              <Td align="right" mono className="text-brun-700/70">{l.openaiEst}</Td>
+              <Td align="right" mono className="font-medium">
+                {l.openaiReal}
+                {l.cacheRatio != null && (
+                  <div className="text-[10px] text-brun-700/60 font-normal">
+                    cache {l.cacheRatio}%
+                  </div>
+                )}
+              </Td>
               <Td align="right" mono className="font-medium">{l.total}</Td>
             </tr>
           ))}

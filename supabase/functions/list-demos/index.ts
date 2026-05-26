@@ -40,7 +40,12 @@ Deno.serve(async (req: Request) => {
     const supabase = getSupabaseAdmin()
     const { data: rows, error } = await supabase
       .from('demo_calls')
-      .select('id, mode, started_at, ended_at, duration_seconds, phone_prefix, twilio_cost_eur, openai_cost_eur')
+      .select(`
+        id, mode, started_at, ended_at, duration_seconds, phone_prefix,
+        twilio_cost_eur, openai_cost_eur, openai_cost_eur_real,
+        tokens_input_audio, tokens_input_audio_cached, tokens_output_audio,
+        tokens_input_text, tokens_output_text
+      `)
       .order('started_at', { ascending: false })
       .limit(limit)
 
@@ -58,16 +63,28 @@ Deno.serve(async (req: Request) => {
       phone_prefix: string | null
       twilio_cost_eur: number | null
       openai_cost_eur: number | null
+      openai_cost_eur_real: number | null
+      tokens_input_audio: number | null
+      tokens_input_audio_cached: number | null
+      tokens_output_audio: number | null
+      tokens_input_text: number | null
+      tokens_output_text: number | null
     }
     const list = (rows ?? []) as Row[]
 
+    // Pour le coût OpenAI cumulé : on prend le RÉEL quand dispo, sinon
+    // l'estimation par durée. Ça donne le total le plus juste possible.
+    const openaiEffective = (r: Row) =>
+      r.openai_cost_eur_real != null ? Number(r.openai_cost_eur_real) : Number(r.openai_cost_eur) || 0
+
     const totals = {
-      calls:      list.length,
-      twilio_eur: round4(list.reduce((s, r) => s + (Number(r.twilio_cost_eur) || 0), 0)),
-      openai_eur: round4(list.reduce((s, r) => s + (Number(r.openai_cost_eur) || 0), 0)),
-      total_eur:  0,
+      calls:           list.length,
+      twilio_eur:      round4(list.reduce((s, r) => s + (Number(r.twilio_cost_eur) || 0), 0)),
+      openai_eur:      round4(list.reduce((s, r) => s + (Number(r.openai_cost_eur) || 0), 0)),
+      openai_eur_real: round4(list.reduce((s, r) => s + (Number(r.openai_cost_eur_real) || 0), 0)),
+      total_eur:       0,
     }
-    totals.total_eur = round4(totals.twilio_eur + totals.openai_eur)
+    totals.total_eur = round4(totals.twilio_eur + list.reduce((s, r) => s + openaiEffective(r), 0))
 
     return jsonResponse({ rows: list, totals })
   } catch (err) {

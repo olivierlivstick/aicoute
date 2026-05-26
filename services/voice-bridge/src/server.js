@@ -21,7 +21,7 @@ import 'dotenv/config'
 
 import { buildSystemPrompt, buildFirstMessage } from './prompt.js'
 import { rateLimit, LIMITS } from './rateLimit.js'
-import { recordDemoStart, recordDemoEnd } from './tracking.js'
+import { recordDemoStart, recordDemoEnd, computeOpenAICostEur } from './tracking.js'
 
 // --- Config ----------------------------------------------------------------
 
@@ -202,6 +202,15 @@ wss.on('connection', (twilioWs) => {
   let openaiReady            = false
   let twilioStarted          = false
   let setupDone              = false
+  // Accumulateur de tokens OpenAI (incrémenté sur chaque event response.done).
+  // À la fin de l'appel → recordDemoEnd(id, dur, tokens) → coût réel en base.
+  const tokens = {
+    input_audio:        0, // audio in non cachés
+    input_audio_cached: 0, // audio in cachés (×80 moins cher)
+    output_audio:       0,
+    input_text:         0,
+    output_text:        0,
+  }
 
   // Coupure serveur de sécurité (raccroche dur après MAX_CALL_SECONDS)
   safetyTimer = setTimeout(() => {
@@ -298,6 +307,21 @@ wss.on('connection', (twilioWs) => {
       markQueue.push('ai-chunk')
     }
 
+    // Comptage des tokens consommés (event envoyé à la fin de chaque réponse IA)
+    // → utilisé pour calculer le coût RÉEL en fin d'appel.
+    if (event.type === 'response.done') {
+      const u = event.response?.usage
+      if (u) {
+        const totalAudioIn  = u.input_token_details?.audio_tokens                       ?? 0
+        const cachedAudioIn = u.input_token_details?.cached_tokens_details?.audio_tokens ?? 0
+        tokens.input_audio        += Math.max(0, totalAudioIn - cachedAudioIn)
+        tokens.input_audio_cached += cachedAudioIn
+        tokens.input_text         += u.input_token_details?.text_tokens   ?? 0
+        tokens.output_audio       += u.output_token_details?.audio_tokens ?? 0
+        tokens.output_text        += u.output_token_details?.text_tokens  ?? 0
+      }
+    }
+
     // Interruption : l'utilisateur prend la parole pendant que l'IA parle
     if (event.type === 'input_audio_buffer.speech_started') {
       if (markQueue.length > 0 && responseStartTimestamp != null && lastAssistantItem) {
@@ -368,10 +392,25 @@ wss.on('connection', (twilioWs) => {
     console.log('🔌 Stream Twilio fermé')
     if (safetyTimer) clearTimeout(safetyTimer)
     if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close()
-    // Tracking : UPDATE row demo_calls avec durée + coûts (best-effort)
+    // Log récapitulatif tokens + coût réel (audit / debug)
+    const totalAudioIn = tokens.input_audio + tokens.input_audio_cached
+    const cacheRatio   = totalAudioIn > 0
+      ? Math.round((tokens.input_audio_cached / totalAudioIn) * 100)
+      : 0
+    const realCostEur  = computeOpenAICostEur(tokens)
+    console.log(
+      `💰 Tokens : audio_in=${totalAudioIn} (cached=${tokens.input_audio_cached}, ${cacheRatio}%)` +
+      ` audio_out=${tokens.output_audio} text_in=${tokens.input_text} text_out=${tokens.output_text}` +
+      ` → coût réel ≈ €${realCostEur.toFixed(4)}`,
+    )
+    // Tracking : UPDATE row demo_calls avec durée + coûts (best-effort).
+    // Si aucun response.done n'a été reçu (appel coupé trop tôt), tokens sont
+    // tous à 0 → on passe undefined pour ne PAS écrire un coût réel à 0€ qui
+    // serait trompeur (NULL est meilleur que 0 pour "inconnu").
     if (demoCallId && streamStartedAt) {
       const durationSeconds = (Date.now() - streamStartedAt) / 1000
-      void recordDemoEnd(demoCallId, durationSeconds)
+      const tokensToSave    = totalAudioIn > 0 || tokens.output_audio > 0 ? tokens : undefined
+      void recordDemoEnd(demoCallId, durationSeconds, tokensToSave)
     }
   })
 })
