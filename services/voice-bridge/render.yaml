@@ -1,0 +1,31 @@
+# Render Blueprint — voice-bridge MODECT
+# Utilisable via "New → Blueprint" sur Render, ou en référence pour
+# la configuration manuelle d'un Web Service.
+services:
+  - type: web
+    name: modect-voice-bridge
+    runtime: node
+    region: frankfurt          # le plus proche de la France pour la latence Twilio
+    plan: starter              # Free Tier dort après 15 min → indispo pour la démo
+    rootDir: services/voice-bridge
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # Les secrets ci-dessous DOIVENT être renseignés manuellement dans l'UI Render
+      # (sync: false → pas de propagation automatique entre environnements)
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_NUMBER
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: https://www.modect.com,https://modect.com
+      - key: MAX_CALL_SECONDS
+        value: "120"

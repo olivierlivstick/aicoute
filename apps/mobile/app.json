@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "MODECT",
+    "slug": "modect",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "modect",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2D6A9F"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.modect.mobile",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "MODECT a besoin du microphone pour les appels avec votre compagnon.",
+        "NSCameraUsageDescription": "MODECT peut utiliser la caméra pour les appels vidéo.",
+        "UIBackgroundModes": ["audio", "voip", "fetch", "remote-notification"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2D6A9F"
+      },
+      "package": "app.modect.mobile",
+      "permissions": [
+        "RECORD_AUDIO",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#2D6A9F",
+          "sounds": ["./assets/call-ringtone.wav"]
+        }
+      ],
+      [
+        "@livekit/react-native",
+        {
+          "microphonePermission": "MODECT a besoin du microphone pour les appels avec votre compagnon."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

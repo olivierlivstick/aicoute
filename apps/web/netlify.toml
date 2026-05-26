@@ -1,0 +1,32 @@
+# Netlify — APP UNIQUE MODECT (vitrine www.modect.com + back-office app.modect.com)
+# Un seul site Netlify : "Base directory" = apps/web dans l'UI. Faire pointer les
+# DEUX domaines (www.modect.com et app.modect.com) vers ce même site ; l'app route
+# selon le sous-domaine. Netlify lit ce fichier ; publish est relatif au Base directory.
+[build]
+  command = "npm run build"
+  publish = "dist"          # relatif au Base directory (apps/web) → apps/web/dist
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA : toutes les routes inconnues → index.html
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# Headers de sécurité — microphone=(self) requis pour WebRTC (appel temps réel)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options         = "DENY"
+    X-Content-Type-Options  = "nosniff"
+    X-XSS-Protection        = "1; mode=block"
+    Referrer-Policy         = "strict-origin-when-cross-origin"
+    Permissions-Policy      = "camera=(), microphone=(self), geolocation=()"
+
+# Cache agressif pour les assets Vite (hash dans le nom de fichier)
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
