@@ -19,7 +19,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import twilio from 'twilio'
 import 'dotenv/config'
 
-import { DEMO_PROMPT, FIRST_MESSAGE } from './prompt.js'
+import { DEMO_PROMPT, buildFirstMessage } from './prompt.js'
 import { rateLimit, LIMITS } from './rateLimit.js'
 import { recordDemoStart, recordDemoEnd } from './tracking.js'
 
@@ -81,14 +81,20 @@ app.get('/health', (_req, res) => {
 
 // --- Déclenchement d'appel sortant -----------------------------------------
 
+// Limite serveur de la phrase d'ouverture (cohérent avec le front, double check
+// au cas où quelqu'un POST direct sans passer par le formulaire).
+const OPENER_MAX_LENGTH = 500
+
 app.post('/call', async (req, res) => {
   try {
-    const { phoneNumber } = req.body ?? {}
+    const { phoneNumber, opener } = req.body ?? {}
 
     const cleaned = String(phoneNumber || '').replace(/\s/g, '')
     if (!cleaned.match(/^\+\d{8,15}$/)) {
       return res.status(400).json({ error: 'Numéro invalide. Format attendu : +33XXXXXXXXX.' })
     }
+
+    const openerClean = String(opener ?? '').trim().slice(0, OPENER_MAX_LENGTH)
 
     const ip =
       (req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim()) ||
@@ -117,10 +123,13 @@ app.post('/call', async (req, res) => {
     // Tracking : INSERT row demo_calls avant l'appel Twilio (best-effort)
     const demoCallId = await recordDemoStart(cleaned)
 
-    // L'id démo est passé en query, /outgoing le retransmet via TwiML <Parameter>
-    // → la WS le récupère dans l'event 'start' (customParameters)
-    const outgoingUrl = demoCallId
-      ? `${publicBase}/outgoing?demoCallId=${encodeURIComponent(demoCallId)}`
+    // demoCallId + opener passés en query, /outgoing les retransmet via TwiML
+    // <Parameter> → la WS les récupère dans l'event 'start' (customParameters)
+    const queryParts = []
+    if (demoCallId)   queryParts.push(`demoCallId=${encodeURIComponent(demoCallId)}`)
+    if (openerClean)  queryParts.push(`opener=${encodeURIComponent(openerClean)}`)
+    const outgoingUrl = queryParts.length
+      ? `${publicBase}/outgoing?${queryParts.join('&')}`
       : `${publicBase}/outgoing`
 
     const call = await twilioClient.calls.create({
@@ -142,16 +151,17 @@ app.post('/call', async (req, res) => {
 app.all('/outgoing', (req, res) => {
   const host       = req.headers['x-forwarded-host'] || req.headers.host
   const demoCallId = (req.query.demoCallId ?? req.body?.demoCallId ?? '').toString()
+  const opener     = (req.query.opener     ?? req.body?.opener     ?? '').toString()
   // <Parameter> est retransmis à la WS dans event start (data.start.customParameters)
-  // UUID = safe XML, mais on échappe quand même au cas où
-  const paramTag = demoCallId
-    ? `      <Parameter name="demoCallId" value="${escapeXml(demoCallId)}" />\n`
-    : ''
+  const params = []
+  if (demoCallId) params.push(`      <Parameter name="demoCallId" value="${escapeXml(demoCallId)}" />`)
+  if (opener)     params.push(`      <Parameter name="opener" value="${escapeXml(opener)}" />`)
+  const paramTags = params.length ? params.join('\n') + '\n' : ''
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
     <Stream url="wss://${host}/media-stream">
-${paramTag}    </Stream>
+${paramTags}    </Stream>
   </Connect>
 </Response>`
   res.type('text/xml').send(twiml)
@@ -187,6 +197,7 @@ wss.on('connection', (twilioWs) => {
   let safetyTimer            = null
   let demoCallId             = null
   let streamStartedAt        = null
+  let opener                 = null
 
   // Coupure serveur de sécurité (raccroche dur après MAX_CALL_SECONDS)
   safetyTimer = setTimeout(() => {
@@ -229,11 +240,13 @@ wss.on('connection', (twilioWs) => {
         },
       }))
 
-      // L'IA prend la parole en premier après le décroché
+      // L'IA prend la parole en premier après le décroché. Si un opener custom
+      // a été fourni (testeur a saisi une phrase dans DemoPhoneModal), l'IA est
+      // instruite de la prononcer verbatim ; sinon, accueil MODECT standard.
       setTimeout(() => {
         openaiWs.send(JSON.stringify({
           type:     'response.create',
-          response: { instructions: FIRST_MESSAGE },
+          response: { instructions: buildFirstMessage(opener) },
         }))
       }, 250)
     }, 250)
@@ -301,7 +314,8 @@ wss.on('connection', (twilioWs) => {
         latestMediaTimestamp   = 0
         streamStartedAt        = Date.now()
         demoCallId             = data.start.customParameters?.demoCallId ?? null
-        console.log(`✅ Stream démarré (${streamSid.substring(0, 12)}…${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
+        opener                 = data.start.customParameters?.opener ?? null
+        console.log(`✅ Stream démarré (${streamSid.substring(0, 12)}…${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''}${opener ? ', opener custom' : ''})`)
         break
 
       case 'media':

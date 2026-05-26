@@ -20,6 +20,13 @@ interface Props {
 
 const VOICE_BRIDGE_URL = import.meta.env.VITE_VOICE_BRIDGE_URL as string | undefined
 
+// Phrase d'ouverture par défaut. L'utilisateur peut la remplacer pour tester
+// d'autres scénarios (cousin qui appelle, mère qui appelle son fils, etc.).
+const DEFAULT_OPENER =
+  "Bonjour, c'est Olivier, je vous appelle pour prendre de vos nouvelles, comment allez-vous ?"
+
+const OPENER_MAX_LENGTH = 500
+
 type State =
   | { kind: 'idle' }
   | { kind: 'calling' }
@@ -28,6 +35,7 @@ type State =
 
 export function DemoPhoneModal({ onClose }: Props) {
   const [phone,  setPhone]  = useState('')
+  const [opener, setOpener] = useState(DEFAULT_OPENER)
   const [accept, setAccept] = useState(false)
   const [state,  setState]  = useState<State>({ kind: 'idle' })
 
@@ -52,10 +60,14 @@ export function DemoPhoneModal({ onClose }: Props) {
 
     setState({ kind: 'calling' })
     try {
+      const openerTrimmed = opener.trim().slice(0, OPENER_MAX_LENGTH)
       const res = await fetch(`${VOICE_BRIDGE_URL.replace(/\/$/, '')}/call`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ phoneNumber: cleaned }),
+        body:    JSON.stringify({
+          phoneNumber: cleaned,
+          opener:      openerTrimmed || undefined,
+        }),
       })
 
       const data = await res.json().catch(() => ({}))
@@ -81,7 +93,7 @@ export function DemoPhoneModal({ onClose }: Props) {
       aria-labelledby="demo-phone-title"
     >
       <div
-        className="bg-creme rounded-2xl shadow-xl w-full max-w-md border border-creme-sable overflow-hidden"
+        className="bg-creme rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto border border-creme-sable"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -130,6 +142,24 @@ export function DemoPhoneModal({ onClose }: Props) {
                 />
                 <p className="mt-1.5 text-xs text-brun-700/70">
                   Format international, commençant par +. Exemple France : +33 6 12 34 56 78
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="opener" className="block text-sm font-medium text-brun-900 mb-1.5">
+                  Phrase d'ouverture
+                </label>
+                <textarea
+                  id="opener"
+                  rows={3}
+                  value={opener}
+                  onChange={(e) => setOpener(e.target.value.slice(0, OPENER_MAX_LENGTH))}
+                  disabled={state.kind === 'calling'}
+                  className="w-full px-4 py-3 rounded-md border border-creme-sable bg-white text-brun-900 placeholder:text-brun-700/40 focus:outline-none focus:border-terracotta focus:ring-2 focus:ring-terracotta/20 disabled:opacity-60 resize-none"
+                />
+                <p className="mt-1.5 text-xs text-brun-700/70 flex justify-between gap-2">
+                  <span>L'IA dira exactement cette phrase au décroché, puis continuera naturellement la conversation.</span>
+                  <span className="font-mono tabular-nums whitespace-nowrap">{opener.length}/{OPENER_MAX_LENGTH}</span>
                 </p>
               </div>
 

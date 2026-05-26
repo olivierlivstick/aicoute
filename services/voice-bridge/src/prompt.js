@@ -20,5 +20,27 @@ CONTRAINTE TEMPS CRITIQUE : la démo dure 2 minutes max, l'appel sera coupé sec
 
 // Message initial : on demande à l'IA de parler en premier (le visiteur vient de
 // décrocher, c'est plus naturel que MODECT prenne la parole en premier).
-export const FIRST_MESSAGE =
+const DEFAULT_FIRST_MESSAGE =
   'Salue chaleureusement la personne, présente-toi très brièvement comme l\'assistant vocal de MODECT, mentionne que tu as 2 minutes à partager avec elle, et enchaîne directement par une question courte et ouverte.'
+
+/**
+ * Construit l'instruction d'ouverture envoyée à OpenAI via response.create.
+ *
+ * - Si `opener` est fourni (saisi par le testeur dans DemoPhoneModal) : l'IA est
+ *   instruite de prononcer EXACTEMENT cette phrase en ouverture, puis de
+ *   continuer naturellement la conversation.
+ * - Sinon : on retombe sur la phrase d'accueil MODECT standard.
+ *
+ * Le system prompt (DEMO_PROMPT) reste inchangé dans tous les cas — l'opener
+ * n'influence que la 1re prise de parole, pas l'identité ni le ton de l'IA.
+ */
+export function buildFirstMessage(opener) {
+  const clean = (opener ?? '').trim()
+  if (!clean) return DEFAULT_FIRST_MESSAGE
+  // Délimiteurs explicites pour que l'IA respecte la phrase à la lettre.
+  return `Pour ouvrir cet appel, prononce EXACTEMENT la phrase délimitée ci-dessous, puis continue naturellement la conversation en restant fidèle à ton rôle d'assistant MODECT :
+
+<<<OUVERTURE>>>
+${clean}
+<<<FIN>>>`
+}
