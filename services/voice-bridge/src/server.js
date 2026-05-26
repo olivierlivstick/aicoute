@@ -152,6 +152,7 @@ app.all('/outgoing', (req, res) => {
   const host       = req.headers['x-forwarded-host'] || req.headers.host
   const demoCallId = (req.query.demoCallId ?? req.body?.demoCallId ?? '').toString()
   const opener     = (req.query.opener     ?? req.body?.opener     ?? '').toString()
+  console.log(`📩 /outgoing reçu (demoCallId=${demoCallId ? 'yes' : 'no'}, opener=${opener ? `"${opener.substring(0, 50)}…"` : 'no'})`)
   // <Parameter> est retransmis à la WS dans event start (data.start.customParameters)
   const params = []
   if (demoCallId) params.push(`      <Parameter name="demoCallId" value="${escapeXml(demoCallId)}" />`)
@@ -198,6 +199,9 @@ wss.on('connection', (twilioWs) => {
   let demoCallId             = null
   let streamStartedAt        = null
   let opener                 = null
+  let sessionUpdated         = false
+  let twilioStarted          = false
+  let firstMessageSent       = false
 
   // Coupure serveur de sécurité (raccroche dur après MAX_CALL_SECONDS)
   safetyTimer = setTimeout(() => {
@@ -210,6 +214,23 @@ wss.on('connection', (twilioWs) => {
     `wss://api.openai.com/v1/realtime?model=${MODEL}`,
     { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } },
   )
+
+  // Le response.create (qui déclenche la 1re prise de parole de l'IA) ne doit
+  // se faire QU'APRÈS que les 2 conditions soient réunies :
+  //   1. session.update envoyé à OpenAI (sessionUpdated=true)
+  //   2. event 'start' Twilio reçu (twilioStarted=true) → opener disponible
+  // Sinon on risque de fire response.create avec opener=null (race condition)
+  // et l'IA tombe sur le défaut au lieu de prononcer la phrase custom.
+  const maybeSendFirstMessage = () => {
+    if (!sessionUpdated || !twilioStarted || firstMessageSent) return
+    firstMessageSent = true
+    const instructions = buildFirstMessage(opener)
+    console.log(`📤 response.create envoyé (opener=${opener ? `"${opener.substring(0, 50)}…"` : 'défaut'})`)
+    openaiWs.send(JSON.stringify({
+      type:     'response.create',
+      response: { instructions },
+    }))
+  }
 
   openaiWs.on('open', () => {
     console.log('✅ Connecté à OpenAI Realtime')
@@ -239,16 +260,10 @@ wss.on('connection', (twilioWs) => {
           instructions: DEMO_PROMPT,
         },
       }))
-
-      // L'IA prend la parole en premier après le décroché. Si un opener custom
-      // a été fourni (testeur a saisi une phrase dans DemoPhoneModal), l'IA est
-      // instruite de la prononcer verbatim ; sinon, accueil MODECT standard.
-      setTimeout(() => {
-        openaiWs.send(JSON.stringify({
-          type:     'response.create',
-          response: { instructions: buildFirstMessage(opener) },
-        }))
-      }, 250)
+      sessionUpdated = true
+      // Petit délai puis tentative ; si Twilio start pas encore reçu,
+      // maybeSendFirstMessage attendra qu'il arrive.
+      setTimeout(maybeSendFirstMessage, 250)
     }, 250)
   })
 
@@ -315,7 +330,12 @@ wss.on('connection', (twilioWs) => {
         streamStartedAt        = Date.now()
         demoCallId             = data.start.customParameters?.demoCallId ?? null
         opener                 = data.start.customParameters?.opener ?? null
-        console.log(`✅ Stream démarré (${streamSid.substring(0, 12)}…${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''}${opener ? ', opener custom' : ''})`)
+        twilioStarted          = true
+        console.log(`✅ Stream démarré (${streamSid.substring(0, 12)}…${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
+        console.log(`   customParameters reçus :`, JSON.stringify(data.start.customParameters ?? {}))
+        // Si OpenAI a déjà reçu session.update, on peut envoyer response.create
+        // immédiatement maintenant qu'on a l'opener.
+        maybeSendFirstMessage()
         break
 
       case 'media':
