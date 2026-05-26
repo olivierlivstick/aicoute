@@ -3,6 +3,10 @@
 // le service voice-bridge continue à fonctionner normalement.
 
 import { createClient } from '@supabase/supabase-js'
+// supabase-js initialise un RealtimeClient en interne (souscriptions DB) qui
+// exige WebSocket. Node 20 ne l'a pas en natif → on injecte 'ws' (déjà dep).
+// Inutile pour nos INSERT/UPDATE mais évite un crash au démarrage.
+import WebSocket from 'ws'
 
 // Tarifs estimés (alignés sur supabase/functions/log-demo/index.ts)
 //  - OpenAI Realtime gpt-realtime-2 audio mix : ~0,0077 EUR/s
@@ -13,7 +17,10 @@ const TWILIO_EUR_PER_SECOND = 0.0007
 const url = process.env.SUPABASE_URL
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 const supabase = url && key
-  ? createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+  ? createClient(url, key, {
+      auth:     { autoRefreshToken: false, persistSession: false },
+      realtime: { transport: WebSocket },
+    })
   : null
 
 if (!supabase) {
