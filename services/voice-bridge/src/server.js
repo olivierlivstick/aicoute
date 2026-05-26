@@ -19,7 +19,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import twilio from 'twilio'
 import 'dotenv/config'
 
-import { DEMO_PROMPT, buildFirstMessage } from './prompt.js'
+import { buildSystemPrompt, buildFirstMessage } from './prompt.js'
 import { rateLimit, LIMITS } from './rateLimit.js'
 import { recordDemoStart, recordDemoEnd } from './tracking.js'
 
@@ -199,9 +199,9 @@ wss.on('connection', (twilioWs) => {
   let demoCallId             = null
   let streamStartedAt        = null
   let opener                 = null
-  let sessionUpdated         = false
+  let openaiReady            = false
   let twilioStarted          = false
-  let firstMessageSent       = false
+  let setupDone              = false
 
   // Coupure serveur de sécurité (raccroche dur après MAX_CALL_SECONDS)
   safetyTimer = setTimeout(() => {
@@ -215,56 +215,58 @@ wss.on('connection', (twilioWs) => {
     { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } },
   )
 
-  // Le response.create (qui déclenche la 1re prise de parole de l'IA) ne doit
-  // se faire QU'APRÈS que les 2 conditions soient réunies :
-  //   1. session.update envoyé à OpenAI (sessionUpdated=true)
-  //   2. event 'start' Twilio reçu (twilioStarted=true) → opener disponible
-  // Sinon on risque de fire response.create avec opener=null (race condition)
-  // et l'IA tombe sur le défaut au lieu de prononcer la phrase custom.
-  const maybeSendFirstMessage = () => {
-    if (!sessionUpdated || !twilioStarted || firstMessageSent) return
-    firstMessageSent = true
-    const instructions = buildFirstMessage(opener)
-    console.log(`📤 response.create envoyé (opener=${opener ? `"${opener.substring(0, 50)}…"` : 'défaut'})`)
+  // L'initialisation OpenAI (session.update + response.create) ne doit se faire
+  // QU'APRÈS que les 2 conditions soient réunies :
+  //   1. openaiWs en état OPEN (openaiReady)
+  //   2. event 'start' Twilio reçu (twilioStarted) → opener + demoCallId connus
+  // Le system prompt dépend de l'opener (mode MODECT vs mode caméléon), il faut
+  // donc connaître l'opener AVANT de l'envoyer.
+  const trySetup = () => {
+    if (!openaiReady || !twilioStarted || setupDone) return
+    setupDone = true
+
+    const systemPrompt   = buildSystemPrompt(opener)
+    const firstMessage   = buildFirstMessage(opener)
+    console.log(`📤 session.update + response.create (mode ${opener ? 'opener custom' : 'MODECT'})`)
+
     openaiWs.send(JSON.stringify({
-      type:     'response.create',
-      response: { instructions },
+      type: 'session.update',
+      session: {
+        type:              'realtime',
+        model:             MODEL,
+        output_modalities: ['audio'],
+        audio: {
+          input: {
+            format:         { type: 'audio/pcmu' },
+            turn_detection: {
+              type:                'server_vad',
+              threshold:           0.5,
+              prefix_padding_ms:   300,
+              silence_duration_ms: 500,
+            },
+          },
+          output: {
+            format: { type: 'audio/pcmu' },
+            voice:  VOICE,
+          },
+        },
+        instructions: systemPrompt,
+      },
     }))
+
+    // Petit délai pour laisser OpenAI digérer session.update avant la 1re réponse
+    setTimeout(() => {
+      openaiWs.send(JSON.stringify({
+        type:     'response.create',
+        response: { instructions: firstMessage },
+      }))
+    }, 250)
   }
 
   openaiWs.on('open', () => {
     console.log('✅ Connecté à OpenAI Realtime')
-    // Petit délai pour laisser la session s'établir avant le session.update
-    setTimeout(() => {
-      openaiWs.send(JSON.stringify({
-        type: 'session.update',
-        session: {
-          type:              'realtime',
-          model:             MODEL,
-          output_modalities: ['audio'],
-          audio: {
-            input: {
-              format:         { type: 'audio/pcmu' },
-              turn_detection: {
-                type:                'server_vad',
-                threshold:           0.5,
-                prefix_padding_ms:   300,
-                silence_duration_ms: 500,
-              },
-            },
-            output: {
-              format: { type: 'audio/pcmu' },
-              voice:  VOICE,
-            },
-          },
-          instructions: DEMO_PROMPT,
-        },
-      }))
-      sessionUpdated = true
-      // Petit délai puis tentative ; si Twilio start pas encore reçu,
-      // maybeSendFirstMessage attendra qu'il arrive.
-      setTimeout(maybeSendFirstMessage, 250)
-    }, 250)
+    openaiReady = true
+    trySetup()
   })
 
   openaiWs.on('message', (data) => {
@@ -333,14 +335,17 @@ wss.on('connection', (twilioWs) => {
         twilioStarted          = true
         console.log(`✅ Stream démarré (${streamSid.substring(0, 12)}…${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
         console.log(`   customParameters reçus :`, JSON.stringify(data.start.customParameters ?? {}))
-        // Si OpenAI a déjà reçu session.update, on peut envoyer response.create
-        // immédiatement maintenant qu'on a l'opener.
-        maybeSendFirstMessage()
+        // Maintenant qu'on a l'opener, on peut envoyer session.update + response.create
+        // (si OpenAI WS est déjà ouvert ; sinon trySetup attendra openaiReady).
+        trySetup()
         break
 
       case 'media':
         latestMediaTimestamp = data.media.timestamp
-        if (openaiWs.readyState === WebSocket.OPEN) {
+        // Ne forwarder l'audio QU'APRÈS que setupDone soit true. Avant ça,
+        // OpenAI n'a pas reçu sa session.update et interpréterait l'audio
+        // sans connaître son format (µ-law) ni son contexte (system prompt).
+        if (setupDone && openaiWs.readyState === WebSocket.OPEN) {
           openaiWs.send(JSON.stringify({
             type:  'input_audio_buffer.append',
             audio: data.media.payload,
