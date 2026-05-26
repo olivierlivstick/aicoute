@@ -37,8 +37,9 @@ modect/
 - `profiles` — extension de auth.users (trigger `handle_new_user`)
 - `beneficiaries` — profil bénéficiaire + config IA
 - `session_schedules` — planification récurrente (jours + heure)
-- `calls` — historique des appels + transcript + rapport
+- `calls` — historique des appels bénéficiaires + transcript + rapport
 - `conversation_memory` — mémoire long-terme par bénéficiaire
+- `demo_calls` — tracking des démos vitrine (séparé de `calls`), consultable via `/track_calls` (cf. ci-dessous)
 
 ## Architecture vocale : WebRTC direct → OpenAI Realtime (GA)
 Le client (navigateur, bientôt mobile) parle **en direct** à OpenAI Realtime via WebRTC — plus de LiveKit ni de service Node.js intermédiaire.
@@ -60,6 +61,8 @@ Deux modes accessibles depuis la home (section `#essai`, `apps/web/src/marketing
 
 Numéro Twilio prod : `+33 9 39 03 52 69` (compte upgradé).
 
+**Tracking des démos** : chaque démo (web ou téléphone) crée une row dans la table `demo_calls` (mode, started_at, ended_at, duration_seconds, phone_prefix=6 premiers chars du numéro pour les appels téléphone, twilio_cost_eur, openai_cost_eur). Côté web : `DemoWebModal` appelle l'Edge Function `log-demo` (actions `start`/`end`). Côté téléphone : `services/voice-bridge` écrit directement dans Supabase via service role key (module `src/tracking.js`), `demoCallId` propagé via TwiML `<Parameter>`. Tarifs estimés en EUR/seconde (constantes dans le code, à ajuster si besoin). Consultable via `https://www.modect.com/track_calls?key=<DEMO_TRACK_KEY>` (page `apps/web/src/marketing/TrackCalls.tsx`, Edge Function `list-demos` avec vérif du key en constant-time).
+
 ## Variables d'environnement
 
 ### apps/web (.env) — app unique (vitrine + back-office)
@@ -76,6 +79,7 @@ VITE_VOICE_BRIDGE_URL=       # https://voice.modect.com (prod) / vide en local (
 OPENAI_API_KEY=
 RESEND_API_KEY=
 FROM_EMAIL=
+DEMO_TRACK_KEY=              # secret pour accéder à /track_calls (générer une chaîne longue aléatoire)
 ```
 
 ### services/voice-bridge (.env) — service Render
@@ -86,6 +90,8 @@ TWILIO_AUTH_TOKEN=
 TWILIO_NUMBER=+33939035269
 ALLOWED_ORIGINS=https://www.modect.com,https://modect.com
 MAX_CALL_SECONDS=120
+SUPABASE_URL=                # pour écrire dans demo_calls (tracking /track_calls)
+SUPABASE_SERVICE_ROLE_KEY=   # idem ; si absents → tracking désactivé silencieusement
 ```
 
 ## Déploiement
@@ -119,6 +125,8 @@ supabase functions deploy schedule-calls
 supabase functions deploy initiate-call
 supabase functions deploy realtime-token
 supabase functions deploy public-realtime-token
+supabase functions deploy log-demo
+supabase functions deploy list-demos
 supabase functions deploy save-transcript
 supabase functions deploy generate-summary
 supabase functions deploy list-openai-models

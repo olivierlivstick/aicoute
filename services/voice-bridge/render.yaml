@@ -29,3 +29,7 @@ services:
         value: https://www.modect.com,https://modect.com
       - key: MAX_CALL_SECONDS
         value: "120"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

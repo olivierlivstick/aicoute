@@ -52,3 +52,9 @@ verify_jwt = false   # appelé par le cron Supabase
 
 [functions.public-realtime-token]
 verify_jwt = false   # démo publique vitrine (www.modect.com), pas d'auth
+
+[functions.log-demo]
+verify_jwt = false   # appelée depuis la vitrine publique (DemoWebModal)
+
+[functions.list-demos]
+verify_jwt = false   # auth interne via ?key=<DEMO_TRACK_KEY>

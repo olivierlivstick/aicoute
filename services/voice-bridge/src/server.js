@@ -21,6 +21,7 @@ import 'dotenv/config'
 
 import { DEMO_PROMPT, FIRST_MESSAGE } from './prompt.js'
 import { rateLimit, LIMITS } from './rateLimit.js'
+import { recordDemoStart, recordDemoEnd } from './tracking.js'
 
 // --- Config ----------------------------------------------------------------
 
@@ -113,13 +114,22 @@ app.post('/call', async (req, res) => {
     const proto = req.headers['x-forwarded-proto'] || 'https'
     const publicBase = `${proto}://${host}`
 
+    // Tracking : INSERT row demo_calls avant l'appel Twilio (best-effort)
+    const demoCallId = await recordDemoStart(cleaned)
+
+    // L'id démo est passé en query, /outgoing le retransmet via TwiML <Parameter>
+    // → la WS le récupère dans l'event 'start' (customParameters)
+    const outgoingUrl = demoCallId
+      ? `${publicBase}/outgoing?demoCallId=${encodeURIComponent(demoCallId)}`
+      : `${publicBase}/outgoing`
+
     const call = await twilioClient.calls.create({
       to:   cleaned,
       from: TWILIO_NUMBER,
-      url:  `${publicBase}/outgoing`,
+      url:  outgoingUrl,
     })
 
-    console.log(`📞 Appel sortant initié vers ${maskNumber(cleaned)} (sid: ${call.sid})`)
+    console.log(`📞 Appel sortant initié vers ${maskNumber(cleaned)} (sid: ${call.sid}${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
     res.json({ ok: true, callSid: call.sid })
   } catch (err) {
     console.error('❌ /call :', err)
@@ -130,15 +140,26 @@ app.post('/call', async (req, res) => {
 // --- TwiML servi à Twilio quand le destinataire décroche -------------------
 
 app.all('/outgoing', (req, res) => {
-  const host  = req.headers['x-forwarded-host'] || req.headers.host
+  const host       = req.headers['x-forwarded-host'] || req.headers.host
+  const demoCallId = (req.query.demoCallId ?? req.body?.demoCallId ?? '').toString()
+  // <Parameter> est retransmis à la WS dans event start (data.start.customParameters)
+  // UUID = safe XML, mais on échappe quand même au cas où
+  const paramTag = demoCallId
+    ? `      <Parameter name="demoCallId" value="${escapeXml(demoCallId)}" />\n`
+    : ''
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="wss://${host}/media-stream" />
+    <Stream url="wss://${host}/media-stream">
+${paramTag}    </Stream>
   </Connect>
 </Response>`
   res.type('text/xml').send(twiml)
 })
+
+function escapeXml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
 
 // --- Démarrage HTTP + WebSocket --------------------------------------------
 
@@ -164,6 +185,8 @@ wss.on('connection', (twilioWs) => {
   let markQueue              = []
   let responseStartTimestamp = null
   let safetyTimer            = null
+  let demoCallId             = null
+  let streamStartedAt        = null
 
   // Coupure serveur de sécurité (raccroche dur après MAX_CALL_SECONDS)
   safetyTimer = setTimeout(() => {
@@ -276,7 +299,9 @@ wss.on('connection', (twilioWs) => {
         streamSid              = data.start.streamSid
         responseStartTimestamp = null
         latestMediaTimestamp   = 0
-        console.log(`✅ Stream démarré (${streamSid.substring(0, 12)}…)`)
+        streamStartedAt        = Date.now()
+        demoCallId             = data.start.customParameters?.demoCallId ?? null
+        console.log(`✅ Stream démarré (${streamSid.substring(0, 12)}…${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
         break
 
       case 'media':
@@ -304,6 +329,11 @@ wss.on('connection', (twilioWs) => {
     console.log('🔌 Stream Twilio fermé')
     if (safetyTimer) clearTimeout(safetyTimer)
     if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close()
+    // Tracking : UPDATE row demo_calls avec durée + coûts (best-effort)
+    if (demoCallId && streamStartedAt) {
+      const durationSeconds = (Date.now() - streamStartedAt) / 1000
+      void recordDemoEnd(demoCallId, durationSeconds)
+    }
   })
 })
 

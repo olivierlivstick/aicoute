@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AppLayout } from '@/components/AppLayout'
 import { Home } from '@/marketing/Home'
+import { TrackCallsPage } from '@/marketing/TrackCalls'
 
 // Mono-site : la vitrine et le back-office sont la même app, servie sur deux
 // sous-domaines. Sur app.modect.com on entre dans le back-office ; ailleurs
@@ -44,6 +45,9 @@ export function App() {
         <Route path="/auth/register" element={<RegisterPage />} />
         <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
+
+        {/* Tracking admin des démos vitrine — protégé par ?key=<DEMO_TRACK_KEY> */}
+        <Route path="/track_calls" element={<TrackCallsPage />} />
 
         {/* App (protégée) */}
         <Route

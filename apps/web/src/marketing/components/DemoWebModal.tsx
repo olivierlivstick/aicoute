@@ -33,6 +33,9 @@ export function DemoWebModal({ onClose }: Props) {
   const sessionRef     = useRef<RealtimeSession | null>(null)
   const audioRef       = useRef<HTMLAudioElement | null>(null)
   const transcriptRef  = useRef<HTMLDivElement | null>(null)
+  const demoCallIdRef  = useRef<string | null>(null)
+  const startedAtRef   = useRef<number>(0)
+  const loggedEndRef   = useRef<boolean>(false)
 
   // Chrono + coupure automatique à 3 min
   useEffect(() => {
@@ -70,15 +73,25 @@ export function DemoWebModal({ onClose }: Props) {
     setError(null)
     setStatus('connecting')
     setStarted(true)
+    startedAtRef.current = Date.now()
+    loggedEndRef.current = false
+
     try {
-      const { data, error: fnErr } = await supabase.functions.invoke('public-realtime-token')
-      if (fnErr || !data?.value) {
-        throw new Error(fnErr?.message ?? data?.error ?? 'Token Realtime indisponible')
+      // Token Realtime + log de démarrage en parallèle (non bloquant pour le token)
+      const [tokenResp, logResp] = await Promise.all([
+        supabase.functions.invoke('public-realtime-token'),
+        supabase.functions.invoke('log-demo', { body: { action: 'start', mode: 'web' } }),
+      ])
+
+      if (tokenResp.error || !tokenResp.data?.value) {
+        throw new Error(tokenResp.error?.message ?? tokenResp.data?.error ?? 'Token Realtime indisponible')
       }
+      // L'échec du log ne doit PAS empêcher la démo
+      demoCallIdRef.current = logResp?.data?.id ?? null
 
       const session = new RealtimeSession({
-        ephemeralKey: data.value,
-        model:        data.model,
+        ephemeralKey: tokenResp.data.value,
+        model:        tokenResp.data.model,
         platform:     browserPlatform(),
         onRemoteStream: (stream) => {
           if (audioRef.current) {
@@ -100,9 +113,22 @@ export function DemoWebModal({ onClose }: Props) {
     }
   }
 
+  const logEnd = () => {
+    if (loggedEndRef.current) return
+    const id = demoCallIdRef.current
+    if (!id || !startedAtRef.current) return
+    loggedEndRef.current = true
+    const durationSeconds = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000))
+    // Best-effort, on n'attend pas la réponse pour ne pas bloquer la fermeture
+    void supabase.functions.invoke('log-demo', {
+      body: { action: 'end', id, duration_seconds: durationSeconds },
+    }).catch(() => { /* tracking n'est pas critique */ })
+  }
+
   const stop = () => {
     sessionRef.current?.stop()
     sessionRef.current = null
+    logEnd()
   }
 
   const handleClose = () => {
