@@ -212,7 +212,66 @@ const server = app.listen(PORT, () => {
   }
 })
 
-const wss = new WebSocketServer({ server, path: '/media-stream' })
+// Deux endpoints WebSocket sur le même HTTP server :
+//   /media-stream    → audio Twilio (appels téléphone)
+//   /ws/gemini-web   → audio navigateur (démo web Gemini)
+//
+// IMPORTANT : on ne peut PAS créer deux WebSocketServer avec { server, path }
+// car le module `ws` v8 fait abortHandshake(400) quand le path ne matche pas,
+// ce qui empêche le 2e WSS de voir la requête. On crée donc les WSS en mode
+// noServer et on dispatche nous-mêmes l'event 'upgrade' selon le pathname.
+
+const wss    = new WebSocketServer({ noServer: true })  // Twilio /media-stream
+const wssWeb = new WebSocketServer({ noServer: true })  // browser /ws/gemini-web
+
+function abortHandshake(socket, code, message = '') {
+  socket.write(
+    `HTTP/1.1 ${code} ${message}\r\n` +
+    `Connection: close\r\n` +
+    `Content-Length: 0\r\n` +
+    `\r\n`,
+  )
+  socket.destroy()
+}
+
+server.on('upgrade', (req, socket, head) => {
+  // URL relative → on extrait juste le pathname (sans query, sans host)
+  const pathname = (req.url || '').split('?')[0]
+
+  if (pathname === '/media-stream') {
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+    return
+  }
+
+  if (pathname === '/ws/gemini-web') {
+    // verifyClient inline (équivalent à l'option verifyClient des WSS classiques)
+    if (!GOOGLE_API_KEY) {
+      abortHandshake(socket, 503, 'Gemini engine not configured')
+      return
+    }
+    const origin = req.headers.origin
+    if (ALLOWED_ORIGINS.length > 0 && !ALLOWED_ORIGINS.includes(origin)) {
+      console.warn(`⛔ /ws/gemini-web origine refusée : ${origin}`)
+      abortHandshake(socket, 403, 'Forbidden origin')
+      return
+    }
+    const ip =
+      (req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim()) ||
+      req.socket.remoteAddress ||
+      'unknown'
+    const check = rateLimit({ key: `web-ws:${ip}`, ...LIMITS.perIpWeb })
+    if (!check.ok) {
+      console.warn(`⛔ /ws/gemini-web rate-limit IP=${ip}`)
+      abortHandshake(socket, 429, 'Too many requests')
+      return
+    }
+    wssWeb.handleUpgrade(req, socket, head, (ws) => wssWeb.emit('connection', ws, req))
+    return
+  }
+
+  // Aucun WSS pour ce path → ferme le socket proprement
+  abortHandshake(socket, 404, 'Not Found')
+})
 
 wss.on('connection', (twilioWs) => {
   console.log('🔌 Stream Twilio connecté')
@@ -310,35 +369,9 @@ wss.on('connection', (twilioWs) => {
 // boucle — Twilio n'intervient pas pour ce mode.
 //
 // Auth : pas de token, juste vérification d'origine (anti-curl) + rate-limit
-// IP (anti-spam). Cohérent avec le mode web OpenAI qui passe par une Edge
-// Function publique sans token utilisateur non plus.
-
-const wssWeb = new WebSocketServer({
-  server,
-  path: '/ws/gemini-web',
-  verifyClient: ({ origin, req }, cb) => {
-    if (!GOOGLE_API_KEY) {
-      cb(false, 503, 'Gemini engine not configured')
-      return
-    }
-    if (ALLOWED_ORIGINS.length > 0 && !ALLOWED_ORIGINS.includes(origin)) {
-      console.warn(`⛔ /ws/gemini-web origine refusée : ${origin}`)
-      cb(false, 403, 'Forbidden origin')
-      return
-    }
-    const ip =
-      (req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim()) ||
-      req.socket.remoteAddress ||
-      'unknown'
-    const check = rateLimit({ key: `web-ws:${ip}`, ...LIMITS.perIpWeb })
-    if (!check.ok) {
-      console.warn(`⛔ /ws/gemini-web rate-limit IP=${ip}`)
-      cb(false, 429, 'Too many requests')
-      return
-    }
-    cb(true)
-  },
-})
+// IP (anti-spam) effectués dans le dispatch upgrade plus haut. Cohérent avec
+// le mode web OpenAI qui passe par une Edge Function publique sans token non
+// plus.
 
 wssWeb.on('connection', (clientWs) => {
   console.log('🔌 [web] Connexion gemini-web')
