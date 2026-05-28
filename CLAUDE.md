@@ -12,7 +12,7 @@ SaaS de compagnon conversationnel IA pour personnes âgées/isolées.
 | App mobile | Expo (React Native) |
 | Base de données | Supabase (PostgreSQL + RLS + Auth) |
 | Edge Functions | Supabase (Deno) |
-| Voix temps réel | OpenAI Realtime API GA (`gpt-realtime-2`) en **WebRTC direct** client ↔ OpenAI |
+| Voix temps réel | **Démo vitrine multi-moteur** : OpenAI Realtime GA (`gpt-realtime-2`) ou Google Gemini Live (`gemini-3.1-flash-live-preview`, voix `Aoede`), au choix via toggle UI. Voix bénéficiaire (app mobile) : OpenAI uniquement pour l'instant |
 | Emails | Resend |
 | Déploiement web | Netlify |
 
@@ -24,14 +24,20 @@ modect/
 │   │                 #   → www.modect.com (vitrine) + app.modect.com (back-office), routage par sous-domaine
 │   └── mobile/       # App bénéficiaire (Expo) — couche vocale à migrer (phase 2)
 ├── services/
-│   └── voice-bridge/ # Service Node (Render) — pont audio Twilio ↔ OpenAI pour la démo téléphonique vitrine
+│   └── voice-bridge/ # Service Node (Render) — pont multi-moteur pour la démo vitrine.
+│       └── src/engines/  # openai-bridge.js, gemini-bridge.js (téléphone),
+│                         # gemini-bridge-web.js (navigateur), audio.js (µ-law ↔ PCM)
 ├── supabase/
 │   ├── migrations/   # migrations SQL
 │   └── functions/    # Edge Functions Deno
 ├── packages/
-│   └── shared/       # Types + cœur Realtime (realtime.ts) partagés
+│   └── shared/       # Types + cœur Realtime partagés :
+│                     #   realtime.ts (RealtimeSession, OpenAI WebRTC)
+│                     #   geminiLive.ts (GeminiLiveSession, WS proxy via voice-bridge)
 └── test/             # Référence : test fonctionnel WebRTC GA (à supprimer après validation)
 ```
+
+Note : `apps/web/public/gemini-audio-worklet.js` (servi statique) — AudioWorkletProcessor qui downsample le micro 48 kHz → PCM16 16 kHz pour le mode web Gemini.
 
 ## Base de données (tables principales)
 - `profiles` — extension de auth.users (trigger `handle_new_user`)
@@ -39,7 +45,7 @@ modect/
 - `session_schedules` — planification récurrente (jours + heure)
 - `calls` — historique des appels bénéficiaires + transcript + rapport
 - `conversation_memory` — mémoire long-terme par bénéficiaire
-- `demo_calls` — tracking des démos vitrine (séparé de `calls`), consultable via `/track_calls` (cf. ci-dessous)
+- `demo_calls` — tracking des démos vitrine (séparé de `calls`), consultable via `/track_calls` (cf. ci-dessous). Colonne `engine` discrimine OpenAI vs Gemini ; les colonnes tokens et `openai_cost_eur_real` sont réutilisées pour les deux moteurs (sémantique "coût IA réel", quelle que soit l'origine).
 
 ## Architecture vocale : WebRTC direct → OpenAI Realtime (GA)
 Le client (navigateur, bientôt mobile) parle **en direct** à OpenAI Realtime via WebRTC — plus de LiveKit ni de service Node.js intermédiaire.
@@ -53,15 +59,21 @@ Flux d'un appel :
 Modèle GA imposé : `realtime-token` ramène tout modèle Beta/legacy (`*-realtime-preview`) à `gpt-realtime-2`. Voix par défaut `cedar` (constante dans `realtime-token`).
 
 ## Démo vitrine (www.modect.com)
-Deux modes accessibles depuis la home (section `#essai`, `apps/web/src/marketing/components/Demo.tsx`) :
+Deux modes (navigateur / téléphone) × deux moteurs (OpenAI / Gemini), accessibles depuis la home (section `#essai`, `apps/web/src/marketing/components/Demo.tsx`). Un toggle `EngineToggle` au-dessus des cartes choisit le moteur, propagé comme prop `engine` aux deux modals et persisté dans `demo_calls.engine`.
 
-**Mode 1 — Navigateur (WebRTC direct)** : composant `DemoWebModal.tsx`. Récupère un ephemeral token via la Edge Function publique `public-realtime-token` (sans auth, prompt démo hardcodé, rate-limit IP 5/h). Réutilise `RealtimeSession` de `@modect/shared`. Durée max 2 min (coupure client). Le prompt instruit l'IA de conclure dès 1 min 30 pour ne pas être coupée en plein milieu.
+L'architecture est **asymétrique** côté web entre les deux moteurs :
+- OpenAI web → WebRTC direct navigateur ↔ OpenAI (token éphémère via Edge Fn)
+- Gemini web → WebSocket navigateur ↔ voice-bridge ↔ Gemini (proxy serveur, car Gemini n'a pas d'ephemeral token public et la clé Google doit rester serveur)
 
-**Mode 2 — Téléphone (Twilio)** : composant `DemoPhoneModal.tsx`. POST le numéro vers `${VITE_VOICE_BRIDGE_URL}/call` (service Node `services/voice-bridge/` hébergé sur Render). Le service crée un appel sortant Twilio, sert un TwiML qui ouvre un WebSocket `/media-stream`, et fait le pont audio µ-law avec OpenAI Realtime GA. Rate-limit IP 3/h + numéro 3/24h. Coupure serveur 2 min (`MAX_CALL_SECONDS=120`). Prompt aligné sur 2 min (conclusion à 1 min 30).
+**Mode 1 — Navigateur (OpenAI)** : `DemoWebModal.tsx` avec `engine='openai'`. Ephemeral token via Edge Fn `public-realtime-token` (rate-limit IP 5/h). Utilise `RealtimeSession` de `@modect/shared`. WebRTC direct vers OpenAI.
 
-Numéro Twilio prod : `+33 9 39 03 52 69` (compte upgradé).
+**Mode 1bis — Navigateur (Gemini)** : `DemoWebModal.tsx` avec `engine='gemini'`. Ouvre une WS vers `${VITE_VOICE_BRIDGE_URL}/ws/gemini-web` (proxy voice-bridge). Utilise `GeminiLiveSession` de `@modect/shared` qui charge l'AudioWorklet `/gemini-audio-worklet.js` (capture mic → PCM16 16 kHz) et joue les chunks PCM16 24 kHz reçus via un `AudioContext`. Côté serveur : `services/voice-bridge/src/engines/gemini-bridge-web.js` proxy vers Gemini avec vérif d'origine (`ALLOWED_ORIGINS`) + rate-limit IP 5/h (`LIMITS.perIpWeb`).
 
-**Tracking des démos** : chaque démo (web ou téléphone) crée une row dans la table `demo_calls`. Champs : mode, started_at, ended_at, duration_seconds, phone_prefix (6 chars max pour les appels téléphone), twilio_cost_eur (estimation par durée), openai_cost_eur (estimation par durée), openai_cost_eur_real (coût réel calculé depuis les tokens, mode téléphone uniquement pour l'instant), tokens_input_audio + tokens_input_audio_cached + tokens_output_audio + tokens_input_text + tokens_output_text. Côté web : `DemoWebModal` appelle l'Edge Function `log-demo` (actions `start`/`end`, estimation par durée uniquement). Côté téléphone : `services/voice-bridge` écrit directement dans Supabase via service role key (module `src/tracking.js`), `demoCallId` propagé via TwiML `<Parameter>`. Coût réel calculé en accumulant les events `response.done` d'OpenAI (tarifs `gpt-realtime-2` hardcodés dans tracking.js, conversion USD→EUR à 0.92). Log par appel inclut ratio de cache (`audio_in=X (cached=Y, Z%)`). Consultable via `https://www.modect.com/track_calls?key=<DEMO_TRACK_KEY>` (page `apps/web/src/marketing/TrackCalls.tsx`, Edge Function `list-demos` avec vérif du key en constant-time).
+**Mode 2 — Téléphone (OpenAI ou Gemini)** : `DemoPhoneModal.tsx`. POST le numéro + `engine` vers `${VITE_VOICE_BRIDGE_URL}/call`. Le service crée un appel Twilio, sert un TwiML qui ouvre une WS `/media-stream` ; le `<Parameter name="engine">` propage le choix. Au start de la WS, server.js dispatche vers `engines/openai-bridge.js` (µ-law direct) ou `engines/gemini-bridge.js` (conversion µ-law 8 kHz ↔ PCM16 16/24 kHz via `engines/audio.js`). Rate-limit IP 3/h + numéro 3/24h. Coupure serveur 2 min (`MAX_CALL_SECONDS=120`).
+
+Numéro Twilio prod : `+33 9 39 03 52 69`. Modèle Gemini par défaut surchargeable via env `GEMINI_MODEL` / `GEMINI_VOICE`.
+
+**Tracking des démos** : chaque démo (web ou téléphone, OpenAI ou Gemini) crée une row dans `demo_calls`. Champs : mode, engine, started_at, ended_at, duration_seconds, phone_prefix (6 chars, mode téléphone uniquement), twilio_cost_eur (estim. durée), openai_cost_eur (estim. durée — nom historique, applicable aux deux moteurs), openai_cost_eur_real (coût IA réel par tokens — applicable aux deux moteurs, dispatch tarifs via `computeAiCostEur(engine, tokens)`), tokens_input_audio + tokens_input_audio_cached + tokens_output_audio + tokens_input_text + tokens_output_text (mutualisés ; `input_audio_cached` reste à 0 pour Gemini qui ne facture pas le cache audio). Côté web : `DemoWebModal` appelle l'Edge Function `log-demo` (actions `start`/`end`). Côté téléphone : `services/voice-bridge/src/tracking.js` écrit directement dans Supabase via service role, `demoCallId` propagé via TwiML `<Parameter>`. Tarifs : OpenAI ($32/$64 in/out par M tokens) et Gemini ($3/$12) hardcodés dans tracking.js, conversion USD→EUR à 0,92. Consultable via `https://www.modect.com/track_calls?key=<DEMO_TRACK_KEY>` (page `TrackCalls.tsx` + Edge Function `list-demos`, colonne "Moteur" badge OpenAI/Gemini).
 
 ## Variables d'environnement
 
@@ -88,10 +100,15 @@ OPENAI_API_KEY=
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_NUMBER=+33939035269
-ALLOWED_ORIGINS=https://www.modect.com,https://modect.com
+ALLOWED_ORIGINS=https://www.modect.com,https://modect.com  # CRITIQUE : doit inclure les origines qui ouvriront /ws/gemini-web
 MAX_CALL_SECONDS=120
 SUPABASE_URL=                # pour écrire dans demo_calls (tracking /track_calls)
 SUPABASE_SERVICE_ROLE_KEY=   # idem ; si absents → tracking désactivé silencieusement
+
+# --- Gemini Live (optionnel — sans ces vars, l'engine 'gemini' est refusé en 503) ---
+GOOGLE_API_KEY=              # clé Google AI Studio (https://aistudio.google.com/apikey)
+GEMINI_MODEL=                # défaut : models/gemini-3.1-flash-live-preview ; override si Google publie un nouveau preview label
+GEMINI_VOICE=                # défaut : Aoede (validée meilleure que cedar OpenAI en français)
 ```
 
 ## Déploiement
@@ -107,6 +124,8 @@ SUPABASE_SERVICE_ROLE_KEY=   # idem ; si absents → tracking désactivé silenc
 - Build Netlify : utiliser `vite build` sans `tsc` (types Supabase incomplets génèrent des `never`)
 - Realtime GA : token dans `response.value` (PAS `response.client_secret.value` = Beta) ; endpoint `/v1/realtime/calls` (PAS `/realtime`) ; events `response.output_audio_transcript.*` (fallback Beta `response.audio_transcript.*`)
 - `calls.livekit_room_name` / `livekit_room_sid` : colonnes héritées désormais inutilisées (schéma conservé, non écrites)
+- **ws v8 multi-WSS** : créer deux `WebSocketServer({ server, path })` sur le même HTTP server NE marche PAS — le 1er WSS appelle `abortHandshake(400)` sur tout path qui ne lui correspond pas, empêchant le 2e WSS de répondre (proxy renvoie 404). Voice-bridge utilise donc `noServer: true` + dispatch manuel `server.on('upgrade')` selon `req.url`.
+- Gemini Live model ID : `models/gemini-2.5-flash-native-audio` n'existe pas via v1beta ; le bon ID est `models/gemini-3.1-flash-live-preview` (2026-05). Google bouge les preview labels — surcharger via env `GEMINI_MODEL` plutôt que modifier le code.
 
 ## Identité visuelle — charte « cocon familial » (apps/web : vitrine + back-office)
 - **Couleurs** : terracotta `#C75D3A` (primaire) + ocre `#D9943E` (accent) ; texte brun `#3D2817`/`#6B4423` ; fonds crème `#FBF5EE` / crème sable `#F5EBDC` ; succès sauge `#7BA05B`, erreur brique `#B23A48`
