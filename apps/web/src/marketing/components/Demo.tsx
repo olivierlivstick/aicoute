@@ -59,11 +59,9 @@ export function Demo() {
             <div className="mt-auto pt-7">
               <button
                 onClick={() => setMode('web')}
-                disabled={engine === 'gemini'}
-                className="inline-flex items-center justify-center bg-terracotta hover:bg-terracotta-dark text-creme px-6 py-3.5 rounded-md font-medium transition-colors w-full sm:w-auto disabled:bg-terracotta/40 disabled:cursor-not-allowed"
-                title={engine === 'gemini' ? 'Mode navigateur disponible uniquement avec OpenAI pour l\'instant' : undefined}
+                className="inline-flex items-center justify-center bg-terracotta hover:bg-terracotta-dark text-creme px-6 py-3.5 rounded-md font-medium transition-colors w-full sm:w-auto"
               >
-                {engine === 'gemini' ? 'Bientôt en navigateur' : 'Démarrer la conversation'}
+                Démarrer la conversation
               </button>
             </div>
           </article>

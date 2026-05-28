@@ -30,6 +30,7 @@ import { rateLimit, LIMITS } from './rateLimit.js'
 import { recordDemoStart, recordDemoEnd, computeAiCostEur } from './tracking.js'
 import { createOpenaiBridge } from './engines/openai-bridge.js'
 import { createGeminiBridge } from './engines/gemini-bridge.js'
+import { createGeminiBridgeWeb } from './engines/gemini-bridge-web.js'
 
 // --- Config ----------------------------------------------------------------
 
@@ -300,6 +301,80 @@ wss.on('connection', (twilioWs) => {
         void recordDemoEnd(demoCallId, durationSeconds, tokensToSave, engine)
       }
     }
+  })
+})
+
+// --- WSS /ws/gemini-web : démo navigateur Gemini ----------------------------
+// Le navigateur parle un protocole JSON simple (cf. gemini-bridge-web.js) et
+// envoie son audio en PCM16 16kHz LE base64. Aucune conversion audio dans la
+// boucle — Twilio n'intervient pas pour ce mode.
+//
+// Auth : pas de token, juste vérification d'origine (anti-curl) + rate-limit
+// IP (anti-spam). Cohérent avec le mode web OpenAI qui passe par une Edge
+// Function publique sans token utilisateur non plus.
+
+const wssWeb = new WebSocketServer({
+  server,
+  path: '/ws/gemini-web',
+  verifyClient: ({ origin, req }, cb) => {
+    if (!GOOGLE_API_KEY) {
+      cb(false, 503, 'Gemini engine not configured')
+      return
+    }
+    if (ALLOWED_ORIGINS.length > 0 && !ALLOWED_ORIGINS.includes(origin)) {
+      console.warn(`⛔ /ws/gemini-web origine refusée : ${origin}`)
+      cb(false, 403, 'Forbidden origin')
+      return
+    }
+    const ip =
+      (req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim()) ||
+      req.socket.remoteAddress ||
+      'unknown'
+    const check = rateLimit({ key: `web-ws:${ip}`, ...LIMITS.perIpWeb })
+    if (!check.ok) {
+      console.warn(`⛔ /ws/gemini-web rate-limit IP=${ip}`)
+      cb(false, 429, 'Too many requests')
+      return
+    }
+    cb(true)
+  },
+})
+
+wssWeb.on('connection', (clientWs) => {
+  console.log('🔌 [web] Connexion gemini-web')
+
+  // Tracking demo_calls : géré côté CLIENT via log-demo (Edge Function),
+  // comme pour le mode web OpenAI. Ici on ne fait que loguer pour le debug
+  // Render — l'UPDATE final avec la durée vient du navigateur au stop.
+  const streamStartedAt = Date.now()
+
+  // Coupure serveur de sécurité (identique téléphone : ferme dur si on
+  // dépasse MAX_CALL_SECONDS, pour borner le coût même si le client oublie
+  // de raccrocher).
+  const safetyTimer = setTimeout(() => {
+    console.log(`⏱  [web] Limite ${MAX_CALL_SECONDS}s atteinte — fermeture`)
+    try { clientWs.close() } catch { /* */ }
+  }, MAX_CALL_SECONDS * 1000)
+
+  const bridge = createGeminiBridgeWeb({
+    clientWs,
+    geminiApiKey: GOOGLE_API_KEY,
+    onEnd: ({ tokens }) => {
+      const totalAudioIn = (tokens.input_audio ?? 0) + (tokens.input_audio_cached ?? 0)
+      const realCostEur  = computeAiCostEur('gemini', tokens)
+      const dur          = (Date.now() - streamStartedAt) / 1000
+      console.log(
+        `💰 [web/gemini] Tokens : audio_in=${totalAudioIn} audio_out=${tokens.output_audio ?? 0}` +
+        ` text_in=${tokens.input_text ?? 0} text_out=${tokens.output_text ?? 0}` +
+        ` durée=${dur.toFixed(1)}s → coût réel ≈ €${realCostEur.toFixed(4)}`,
+      )
+    },
+  })
+
+  clientWs.on('close', () => {
+    console.log('🔌 [web] gemini-web fermé')
+    clearTimeout(safetyTimer)
+    bridge.close()
   })
 })
 

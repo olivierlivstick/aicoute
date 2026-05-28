@@ -16,8 +16,10 @@ import { WebSocket } from 'ws'
 import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
 import { mulawB64ToPcm16B64At16k, pcm24B64ToMulawB64At8k } from './audio.js'
 
-// Modèle et voix surchargeables par env pour itérer sans redéploiement de code
-const MODEL = process.env.GEMINI_MODEL || 'models/gemini-2.5-flash-native-audio'
+// Modèle et voix surchargeables par env pour itérer sans redéploiement de code.
+// Valeur par défaut validée en test réel le 2026-05-28 (Aoede sonne mieux en
+// français que cedar côté OpenAI, conversation fluide).
+const MODEL = process.env.GEMINI_MODEL || 'models/gemini-3.1-flash-live-preview'
 const VOICE = process.env.GEMINI_VOICE || 'Aoede'
 
 const ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'

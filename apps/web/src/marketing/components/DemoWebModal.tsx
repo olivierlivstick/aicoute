@@ -12,12 +12,17 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
   RealtimeSession,
+  GeminiLiveSession,
   browserPlatform,
   type RealtimeMessage,
   type RealtimeStatus,
 } from '@modect/shared'
 
 const MAX_DURATION_SECONDS = 120 // 2 minutes (contrôle du coût de démo)
+
+// Utilisé uniquement en mode Gemini (le voice-bridge proxy la WS Gemini).
+// En mode OpenAI le navigateur parle directement à OpenAI en WebRTC.
+const VOICE_BRIDGE_URL = import.meta.env.VITE_VOICE_BRIDGE_URL as string | undefined
 
 interface Props {
   onClose: () => void
@@ -31,7 +36,9 @@ export function DemoWebModal({ onClose, engine }: Props) {
   const [started,  setStarted]  = useState(false)
   const [elapsed,  setElapsed]  = useState(0)
 
-  const sessionRef     = useRef<RealtimeSession | null>(null)
+  // sessionRef supporte les deux types : RealtimeSession (OpenAI WebRTC) et
+  // GeminiLiveSession (Gemini WS via voice-bridge). Les deux exposent stop().
+  const sessionRef     = useRef<RealtimeSession | GeminiLiveSession | null>(null)
   const audioRef       = useRef<HTMLAudioElement | null>(null)
   const transcriptRef  = useRef<HTMLDivElement | null>(null)
   const demoCallIdRef  = useRef<string | null>(null)
@@ -78,35 +85,51 @@ export function DemoWebModal({ onClose, engine }: Props) {
     loggedEndRef.current = false
 
     try {
-      // Token Realtime + log de démarrage en parallèle (non bloquant pour le token)
-      const [tokenResp, logResp] = await Promise.all([
-        supabase.functions.invoke('public-realtime-token'),
-        supabase.functions.invoke('log-demo', { body: { action: 'start', mode: 'web', engine } }),
-      ])
-
-      if (tokenResp.error || !tokenResp.data?.value) {
-        throw new Error(tokenResp.error?.message ?? tokenResp.data?.error ?? 'Token Realtime indisponible')
-      }
-      // L'échec du log ne doit PAS empêcher la démo
+      // Log de démarrage (tracking demo_calls). Best-effort : un échec ici ne
+      // doit pas empêcher la démo de fonctionner.
+      const logResp = await supabase.functions.invoke('log-demo', {
+        body: { action: 'start', mode: 'web', engine },
+      })
       demoCallIdRef.current = logResp?.data?.id ?? null
 
-      const session = new RealtimeSession({
-        ephemeralKey: tokenResp.data.value,
-        model:        tokenResp.data.model,
-        platform:     browserPlatform(),
-        onRemoteStream: (stream) => {
-          if (audioRef.current) {
-            audioRef.current.srcObject = stream as MediaStream
-            void audioRef.current.play().catch(() => { /* autoplay géré par interaction utilisateur */ })
-          }
-        },
-        onStatusChange:   (s)  => setStatus(s),
-        onMessagesChange: (m)  => setMessages(m),
-        onError:          (e)  => setError(e.message),
-      })
-
-      sessionRef.current = session
-      await session.start()
+      if (engine === 'gemini') {
+        if (!VOICE_BRIDGE_URL) {
+          throw new Error('Le service voix Gemini n\'est pas configuré (VITE_VOICE_BRIDGE_URL manquant).')
+        }
+        // Construit l'URL WebSocket : https → wss, http → ws, sans trailing /
+        const wsUrl = VOICE_BRIDGE_URL.replace(/^http/, 'ws').replace(/\/$/, '') + '/ws/gemini-web'
+        const session = new GeminiLiveSession({
+          bridgeUrl:        wsUrl,
+          opener:           null,
+          onStatusChange:   (s) => setStatus(s),
+          onMessagesChange: (m) => setMessages(m),
+          onError:          (e) => setError(e.message),
+        })
+        sessionRef.current = session
+        await session.start()
+      } else {
+        // OpenAI : WebRTC direct via ephemeral token (architecture historique)
+        const tokenResp = await supabase.functions.invoke('public-realtime-token')
+        if (tokenResp.error || !tokenResp.data?.value) {
+          throw new Error(tokenResp.error?.message ?? tokenResp.data?.error ?? 'Token Realtime indisponible')
+        }
+        const session = new RealtimeSession({
+          ephemeralKey: tokenResp.data.value,
+          model:        tokenResp.data.model,
+          platform:     browserPlatform(),
+          onRemoteStream: (stream) => {
+            if (audioRef.current) {
+              audioRef.current.srcObject = stream as MediaStream
+              void audioRef.current.play().catch(() => { /* autoplay géré par interaction utilisateur */ })
+            }
+          },
+          onStatusChange:   (s) => setStatus(s),
+          onMessagesChange: (m) => setMessages(m),
+          onError:          (e) => setError(e.message),
+        })
+        sessionRef.current = session
+        await session.start()
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur de connexion')
       setStatus('error')

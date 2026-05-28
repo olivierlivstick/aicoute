@@ -17,9 +17,12 @@ export function rateLimit({ key, max, windowMs }) {
 }
 
 // Limites par défaut (lisibles ici, modifiables par appelant) :
-//  - 3 appels par IP par heure  → empêche un visiteur de spammer
-//  - 3 appels vers un même numéro par 24h → empêche le harcèlement
+//  - 3 appels téléphone par IP par heure (perIp) — empêche un visiteur de spammer
+//  - 3 appels vers un même numéro par 24h (perNumber) — empêche le harcèlement
+//  - 5 sessions web Gemini par IP par heure (perIpWeb) — démo navigateur, plus
+//    de tolérance car aucun appel sortant ni numéro destinataire en jeu
 export const LIMITS = {
   perIp:      { max: 3,  windowMs: 60 * 60 * 1000 },
   perNumber:  { max: 3,  windowMs: 24 * 60 * 60 * 1000 },
+  perIpWeb:   { max: 5,  windowMs: 60 * 60 * 1000 },
 }
