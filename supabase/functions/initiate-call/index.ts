@@ -53,10 +53,10 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Bénéficiaire introuvable: ${call.beneficiary_id}`)
     }
 
-    // 3. Marquer le call comme notifié
+    // 3. Marquer le call comme notifié — notified_at sert d'origine au timer no-answer
     const { error: updateError } = await supabase
       .from('calls')
-      .update({ status: 'notified' })
+      .update({ status: 'notified', notified_at: new Date().toISOString() })
       .eq('id', call_id)
 
     if (updateError) throw new Error(`Update call failed: ${updateError.message}`)

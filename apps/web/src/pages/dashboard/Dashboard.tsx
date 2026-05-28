@@ -151,11 +151,14 @@ export function DashboardPage() {
                         <p className="text-sm text-slate-400 mt-0.5">Aucun appel pour l'instant</p>
                       )}
 
-                      {/* Alertes */}
+                      {/* Alertes (signaux faibles structurés) */}
                       {b.last_call?.alerts && b.last_call.alerts.length > 0 && (
                         <div className="flex items-center gap-1 mt-1 text-orange-600 text-xs font-medium">
                           <AlertTriangle size={12} />
-                          {b.last_call.alerts[0]}
+                          <span className="truncate">
+                            {b.last_call.alerts.length} signal{b.last_call.alerts.length > 1 ? 'aux' : ''} faible{b.last_call.alerts.length > 1 ? 's' : ''}
+                            {b.last_call.alerts[0]?.evidence ? ` — ${b.last_call.alerts[0].evidence}` : ''}
+                          </span>
                         </div>
                       )}
 

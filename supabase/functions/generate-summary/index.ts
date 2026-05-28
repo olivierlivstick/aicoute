@@ -80,13 +80,25 @@ Génère un JSON structuré avec EXACTEMENT ces champs (aucun autre) :
   "mood_detected": "positive" | "neutral" | "concerned",
   "key_topics": ["thème1", "thème2", ...] (max 6 thèmes courts),
   "memorable_moments": ["moment1", "moment2", ...] (max 3 moments touchants ou importants),
-  "alerts": ["alerte1", ...] (signaux inquiétants UNIQUEMENT : solitude profonde, problème de santé, détresse, confusion — laisser vide [] si rien),
+  "alerts": [
+    {
+      "category": "health" | "mood" | "cognition" | "social" | "autonomy" | "other",
+      "severity": "low" | "medium" | "high",
+      "evidence": "Citation ou paraphrase courte du transcript justifiant le signal"
+    }
+  ] (signaux faibles UNIQUEMENT — laisser [] si rien d'inquiétant, max 5),
   "new_memories": [
     { "type": "fact"|"preference"|"event"|"mood"|"topic", "content": "phrase courte à mémoriser", "importance": 1-10 }
   ] (max 8 mémoires utiles pour les prochains appels)
 }
 
-RÈGLES :
+RÈGLES POUR LES ALERTES (signaux faibles) :
+- N'inclure une alerte QUE si un signal réel est présent. Ne pas surinterpréter.
+- category : health (douleur, sommeil, médication, fatigue physique) · mood (tristesse, anxiété, lassitude) · cognition (oublis, confusion, désorientation, mots qui manquent) · social (solitude, isolement, conflit familial) · autonomy (difficulté du quotidien, chute, alimentation) · other (sinon).
+- severity : low (mention passagère, signal isolé) · medium (récurrent ou explicite) · high (détresse, danger, demande d'aide).
+- evidence : 1 à 2 phrases courtes citant ou paraphrasant le passage du transcript.
+
+RÈGLES GÉNÉRALES :
 - mood_detected = "concerned" uniquement si des signaux réels d'inquiétude sont présents
 - Les mémoires doivent être des faits concrets et réutilisables lors d'appels futurs
 - Si la conversation est très courte ou vide, adapter le résumé en conséquence
@@ -115,13 +127,16 @@ RÈGLES :
     const openAIData = await openAIRes.json()
     const rawContent = openAIData.choices?.[0]?.message?.content ?? '{}'
 
-    // 5. Parser la réponse JSON
+    type AlertCategory = 'health' | 'mood' | 'cognition' | 'social' | 'autonomy' | 'other'
+    type AlertSeverity = 'low' | 'medium' | 'high'
+    interface RawAlert { category?: string; severity?: string; evidence?: string }
+
     let result: {
       summary:           string
       mood_detected:     'positive' | 'neutral' | 'concerned'
       key_topics:        string[]
       memorable_moments: string[]
-      alerts:            string[]
+      alerts:            RawAlert[]
       new_memories:      Array<{ type: string; content: string; importance: number }>
     }
 
@@ -131,14 +146,25 @@ RÈGLES :
       throw new Error(`GPT-4o JSON parse failed: ${rawContent}`)
     }
 
+    const ALLOWED_CATEGORIES: AlertCategory[] = ['health', 'mood', 'cognition', 'social', 'autonomy', 'other']
+    const ALLOWED_SEVERITIES: AlertSeverity[] = ['low', 'medium', 'high']
+
     // Valider et sanitiser
     const summary           = result.summary           ?? 'Résumé non disponible.'
     const mood_detected     = ['positive','neutral','concerned'].includes(result.mood_detected)
                               ? result.mood_detected : 'neutral'
     const key_topics        = Array.isArray(result.key_topics)        ? result.key_topics.slice(0, 6)  : []
     const memorable_moments = Array.isArray(result.memorable_moments) ? result.memorable_moments.slice(0, 3) : []
-    const alerts            = Array.isArray(result.alerts)            ? result.alerts.slice(0, 5)  : []
     const new_memories      = Array.isArray(result.new_memories)      ? result.new_memories.slice(0, 8) : []
+
+    const alerts = (Array.isArray(result.alerts) ? result.alerts : [])
+      .map((a): { category: AlertCategory; severity: AlertSeverity; evidence: string } => ({
+        category: ALLOWED_CATEGORIES.includes(a.category as AlertCategory) ? a.category as AlertCategory : 'other',
+        severity: ALLOWED_SEVERITIES.includes(a.severity as AlertSeverity) ? a.severity as AlertSeverity : 'low',
+        evidence: typeof a.evidence === 'string' ? a.evidence.slice(0, 500) : '',
+      }))
+      .filter((a) => a.evidence.length > 0)
+      .slice(0, 5)
 
     // 6. Sauvegarder dans calls
     const { error: updateErr } = await supabase

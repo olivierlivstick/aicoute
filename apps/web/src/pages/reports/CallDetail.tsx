@@ -3,12 +3,28 @@ import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Clock, Calendar, AlertTriangle,
   ChevronDown, ChevronUp, Sparkles, Heart,
+  Stethoscope, Smile, Brain, Users, HandHeart, Info,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { markReportRead } from '@/hooks/useCalls'
 import { formatDate, formatDuration, MOOD_LABELS } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import type { Call, TranscriptEntry } from '@modect/shared'
+import type { Call, TranscriptEntry, CallAlert, AlertCategory, AlertSeverity } from '@modect/shared'
+
+const CATEGORY_META: Record<AlertCategory, { label: string; icon: React.ReactNode }> = {
+  health:    { label: 'Santé',       icon: <Stethoscope size={14} /> },
+  mood:      { label: 'Humeur',      icon: <Smile       size={14} /> },
+  cognition: { label: 'Cognition',   icon: <Brain       size={14} /> },
+  social:    { label: 'Lien social', icon: <Users       size={14} /> },
+  autonomy:  { label: 'Autonomie',   icon: <HandHeart   size={14} /> },
+  other:     { label: 'Autre',       icon: <Info        size={14} /> },
+}
+
+const SEVERITY_META: Record<AlertSeverity, { label: string; cls: string; barCls: string }> = {
+  low:    { label: 'Faible',  cls: 'bg-amber-50  text-amber-700  border-amber-100',  barCls: 'bg-amber-300' },
+  medium: { label: 'Modérée', cls: 'bg-orange-50 text-orange-700 border-orange-100', barCls: 'bg-orange-400' },
+  high:   { label: 'Élevée',  cls: 'bg-red-50    text-red-700    border-red-100',    barCls: 'bg-red-500' },
+}
 
 interface CallWithBeneficiary extends Call {
   beneficiaries: {
@@ -103,21 +119,47 @@ export function CallDetailPage() {
           </div>
         )}
 
-        {/* Alertes */}
+        {/* Signaux faibles structurés */}
         {call.alerts && call.alerts.length > 0 && (
-          <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5">
-            <h2 className="flex items-center gap-2 font-semibold text-orange-800 mb-3">
+          <div className="bg-white border border-orange-100 rounded-2xl p-5 shadow-sm">
+            <h2 className="flex items-center gap-2 font-semibold text-orange-800 mb-4">
               <AlertTriangle size={18} />
-              Points d'attention
+              Signaux faibles détectés
+              <span className="text-xs text-slate-400 font-normal ml-1">
+                ({call.alerts.length})
+              </span>
             </h2>
-            <ul className="space-y-2">
-              {call.alerts.map((alert, i) => (
-                <li key={i} className="flex items-start gap-2 text-orange-700 text-sm">
-                  <span className="mt-0.5">•</span>
-                  {alert}
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-3">
+              {call.alerts.map((alert: CallAlert, i) => {
+                const cat = CATEGORY_META[alert.category] ?? CATEGORY_META.other
+                const sev = SEVERITY_META[alert.severity] ?? SEVERITY_META.low
+                return (
+                  <div
+                    key={i}
+                    className="flex gap-3 p-3 bg-slate-50/60 rounded-xl border border-slate-100"
+                  >
+                    <div className={cn('w-1 rounded-full shrink-0', sev.barCls)} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                        <span className="flex items-center gap-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded-full">
+                          {cat.icon}
+                          {cat.label}
+                        </span>
+                        <span className={cn(
+                          'text-xs font-semibold px-2 py-0.5 rounded-full border',
+                          sev.cls,
+                        )}>
+                          {sev.label}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-600 leading-relaxed italic">
+                        « {alert.evidence} »
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
 

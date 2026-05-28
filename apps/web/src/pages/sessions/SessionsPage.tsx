@@ -223,12 +223,29 @@ function ScheduleList({ schedules, loading, onEdit, onToggle, onDelete, onAdd }:
                 </div>
               )}
 
-              {/* Prochain appel */}
-              {s.next_scheduled_at && (
-                <p className="text-xs text-slate-400 mt-2">
-                  Prochain : {new Date(s.next_scheduled_at).toLocaleString('fr-FR', {
-                    weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-                  })}
+              {/* Dernier / prochain appel */}
+              <div className="mt-2 space-y-0.5">
+                {s.last_call_at && (
+                  <p className="text-xs text-slate-400">
+                    Dernier : {new Date(s.last_call_at).toLocaleString('fr-FR', {
+                      weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                    })}
+                  </p>
+                )}
+                {s.next_scheduled_at && (
+                  <p className="text-xs text-slate-400">
+                    Prochain : {new Date(s.next_scheduled_at).toLocaleString('fr-FR', {
+                      weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                    })}
+                  </p>
+                )}
+              </div>
+
+              {/* Politique no-answer */}
+              {s.retry_count > 0 && (
+                <p className="text-[11px] text-slate-400 mt-1">
+                  En cas de non-réponse : {s.retry_count} relance{s.retry_count > 1 ? 's' : ''} toutes les {s.retry_interval_minutes} min
+                  {s.notify_on_no_answer ? ' · email aidant si échec' : ''}
                 </p>
               )}
             </div>

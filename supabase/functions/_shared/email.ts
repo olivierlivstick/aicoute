@@ -43,6 +43,31 @@ export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
 
 // --- Templates ---
 
+export type EmailAlertCategory =
+  | 'health' | 'mood' | 'cognition' | 'social' | 'autonomy' | 'other'
+export type EmailAlertSeverity = 'low' | 'medium' | 'high'
+
+export interface EmailAlert {
+  category: EmailAlertCategory
+  severity: EmailAlertSeverity
+  evidence: string
+}
+
+const CATEGORY_LABELS: Record<EmailAlertCategory, string> = {
+  health:    'Santé',
+  mood:      'Humeur',
+  cognition: 'Cognition',
+  social:    'Lien social',
+  autonomy:  'Autonomie',
+  other:     'Autre',
+}
+
+const SEVERITY_STYLE: Record<EmailAlertSeverity, { bg: string; fg: string; label: string }> = {
+  low:    { bg: '#FEF3C7', fg: '#92400E', label: 'Faible' },
+  medium: { bg: '#FED7AA', fg: '#9A3412', label: 'Modérée' },
+  high:   { bg: '#FECACA', fg: '#991B1B', label: 'Élevée' },
+}
+
 export function reportEmailHtml(params: {
   caregiver_name:  string
   beneficiary_name: string
@@ -52,7 +77,7 @@ export function reportEmailHtml(params: {
   mood_label:      string
   summary:         string
   key_topics:      string[]
-  alerts:          string[]
+  alerts:          EmailAlert[]
   app_url:         string
 }): string {
   const {
@@ -61,11 +86,19 @@ export function reportEmailHtml(params: {
   } = params
 
   const alertsHtml = alerts.length > 0
-    ? `<div style="background:#FFF7ED;border-left:4px solid #F97316;padding:12px 16px;border-radius:8px;margin:16px 0">
-        <strong style="color:#9A3412">⚠️ Points d'attention :</strong><br/>
-        <ul style="margin:8px 0;padding-left:20px;color:#92400E">
-          ${alerts.map((a) => `<li>${a}</li>`).join('')}
-        </ul>
+    ? `<div style="background:#FFF7ED;border-left:4px solid #F97316;padding:16px;border-radius:8px;margin:16px 0">
+        <strong style="color:#9A3412;display:block;margin-bottom:10px">⚠️ Signaux faibles détectés</strong>
+        ${alerts.map((a) => {
+          const sty = SEVERITY_STYLE[a.severity] ?? SEVERITY_STYLE.low
+          const cat = CATEGORY_LABELS[a.category] ?? CATEGORY_LABELS.other
+          return `<div style="background:white;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+              <span style="background:#F3F4F6;color:#374151;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600">${cat}</span>
+              <span style="background:${sty.bg};color:${sty.fg};font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600">${sty.label}</span>
+            </div>
+            <p style="color:#475569;font-size:13px;margin:0;line-height:1.5">${escapeHtml(a.evidence)}</p>
+          </div>`
+        }).join('')}
        </div>`
     : ''
 
@@ -136,4 +169,57 @@ export function reportEmailHtml(params: {
   </div>
 </body>
 </html>`
+}
+
+export function noAnswerEmailHtml(params: {
+  caregiver_name:   string
+  beneficiary_name: string
+  attempts:         number
+  call_time:        string
+  app_url:          string
+}): string {
+  const { caregiver_name, beneficiary_name, attempts, call_time, app_url } = params
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F8FAFC;font-family:'Source Sans Pro',Arial,sans-serif">
+  <div style="max-width:600px;margin:32px auto;background:white;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08)">
+    <div style="background:#C75D3A;padding:28px 32px;text-align:center">
+      <h1 style="color:white;margin:0;font-size:24px;font-weight:700">MODECT</h1>
+      <p style="color:rgba(255,255,255,0.9);margin:6px 0 0;font-size:14px">⚠️ Appel sans réponse</p>
+    </div>
+    <div style="padding:32px">
+      <p style="color:#475569;font-size:16px;margin:0 0 16px">
+        Bonjour <strong>${caregiver_name}</strong>,
+      </p>
+      <p style="color:#475569;font-size:16px;line-height:1.6;margin:0 0 16px">
+        Nous n'avons pas réussi à joindre <strong>${beneficiary_name}</strong> lors de l'appel planifié à <strong>${call_time}</strong>${attempts > 1 ? `, malgré ${attempts} tentatives` : ''}.
+      </p>
+      <p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 24px">
+        Cela peut être normal (sortie, sieste, téléphone hors de portée). Si cette situation se répète, n'hésitez pas à prendre contact directement avec votre proche.
+      </p>
+      <div style="text-align:center;margin-top:24px">
+        <a href="${app_url}/sessions"
+           style="display:inline-block;background:#C75D3A;color:white;padding:14px 28px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none">
+          Vérifier les plannings →
+        </a>
+      </div>
+    </div>
+    <div style="background:#F8FAFC;padding:20px 32px;text-align:center;border-top:1px solid #E2E8F0">
+      <p style="color:#94A3B8;font-size:13px;margin:0">
+        © 2026 MODECT · <a href="${app_url}/settings" style="color:#94A3B8">Gérer les notifications</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }

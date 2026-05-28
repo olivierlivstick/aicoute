@@ -10,7 +10,8 @@ export function useSessionSchedules(beneficiaryId?: string) {
   const fetch = useCallback(async () => {
     setLoading(true)
     try {
-      let query = supabase.from('session_schedules').select('*')
+      // Lecture via la vue v_schedules_with_history qui ajoute last_call_at + total_calls_completed
+      let query = supabase.from('v_schedules_with_history').select('*')
       if (beneficiaryId) query = query.eq('beneficiary_id', beneficiaryId)
       const { data, error: err } = await query.order('time_of_day', { ascending: true })
       if (err) setError(err.message)

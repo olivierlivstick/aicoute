@@ -54,11 +54,17 @@ export interface SessionSchedule {
   days_of_week: number[]
   time_of_day: string
   timezone: string
+  calls_per_week: number
   max_duration_minutes: number
+  retry_count: number
+  retry_interval_minutes: number
+  notify_on_no_answer: boolean
+  no_answer_timeout_seconds: number
   suggested_topics: string[] | null
   special_instructions: string | null
   is_active: boolean
   next_scheduled_at: string | null
+  last_call_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -79,6 +85,23 @@ export interface TranscriptEntry {
   timestamp: string
 }
 
+// Signaux faibles structurés extraits du transcript
+export type AlertCategory =
+  | 'health'     // douleur, sommeil, médication, fatigue physique
+  | 'mood'       // tristesse, anxiété, lassitude
+  | 'cognition'  // oublis, confusion, désorientation
+  | 'social'     // solitude, isolement, conflit familial
+  | 'autonomy'   // difficulté du quotidien, chute, alimentation
+  | 'other'
+
+export type AlertSeverity = 'low' | 'medium' | 'high'
+
+export interface CallAlert {
+  category: AlertCategory
+  severity: AlertSeverity
+  evidence: string  // citation ou paraphrase courte tirée du transcript
+}
+
 export interface Call {
   id: string
   beneficiary_id: string
@@ -87,16 +110,18 @@ export interface Call {
   livekit_room_sid: string | null
   status: CallStatus
   scheduled_at: string
+  notified_at: string | null
   started_at: string | null
   ended_at: string | null
   duration_seconds: number | null
+  attempt_number: number
   transcript: TranscriptEntry[] | null
   raw_audio_url: string | null
   summary: string | null
   mood_detected: MoodDetected | null
   key_topics: string[] | null
   memorable_moments: string[] | null
-  alerts: string[] | null
+  alerts: CallAlert[]
   report_available: boolean
   report_read_at: string | null
   created_at: string
@@ -129,7 +154,7 @@ export interface SummaryResult {
   mood_detected: MoodDetected
   key_topics: string[]
   memorable_moments: string[]
-  alerts: string[]
+  alerts: CallAlert[]
   new_memories: Array<{
     type: MemoryType
     content: string

@@ -13,10 +13,15 @@ import { cn } from '@/lib/utils'
 import type { Beneficiary, SessionSchedule } from '@modect/shared'
 
 const schema = z.object({
-  time_of_day:          z.string().regex(/^\d{2}:\d{2}$/, 'Format HH:MM requis'),
-  max_duration_minutes: z.coerce.number().int().min(5).max(60),
-  timezone:             z.string().min(1),
-  special_instructions: z.string().optional(),
+  time_of_day:               z.string().regex(/^\d{2}:\d{2}$/, 'Format HH:MM requis'),
+  max_duration_minutes:      z.coerce.number().int().min(5).max(60),
+  timezone:                  z.string().min(1),
+  calls_per_week:            z.coerce.number().int().min(1).max(7),
+  retry_count:               z.coerce.number().int().min(0).max(3),
+  retry_interval_minutes:    z.coerce.number().int().min(1).max(60),
+  notify_on_no_answer:       z.boolean(),
+  no_answer_timeout_seconds: z.coerce.number().int().min(30).max(600),
+  special_instructions:      z.string().optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -35,6 +40,7 @@ const TIMEZONES = [
 ]
 
 const DURATIONS = [5, 10, 15, 20, 30, 45, 60]
+const RETRY_INTERVALS = [2, 5, 10, 15]
 
 const TOPIC_SUGGESTIONS = [
   'Météo du jour', 'Nouvelles de la famille', 'Jardinage', 'Cuisine',
@@ -53,19 +59,35 @@ export function ScheduleForm({ beneficiary, schedule, onClose }: Props) {
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      time_of_day:          schedule?.time_of_day?.slice(0, 5) ?? '10:00',
-      max_duration_minutes: schedule?.max_duration_minutes ?? 15,
-      timezone:             schedule?.timezone ?? 'Europe/Paris',
-      special_instructions: schedule?.special_instructions ?? '',
+      time_of_day:               schedule?.time_of_day?.slice(0, 5) ?? '10:00',
+      max_duration_minutes:      schedule?.max_duration_minutes ?? 15,
+      timezone:                  schedule?.timezone ?? 'Europe/Paris',
+      calls_per_week:            schedule?.calls_per_week ?? (schedule?.days_of_week?.length ?? 3),
+      retry_count:               schedule?.retry_count ?? 1,
+      retry_interval_minutes:    schedule?.retry_interval_minutes ?? 5,
+      notify_on_no_answer:       schedule?.notify_on_no_answer ?? true,
+      no_answer_timeout_seconds: schedule?.no_answer_timeout_seconds ?? 120,
+      special_instructions:      schedule?.special_instructions ?? '',
     },
   })
 
-  const duration = watch('max_duration_minutes')
+  const duration             = watch('max_duration_minutes')
+  const callsPerWeek         = Number(watch('calls_per_week'))
+  const retryCount           = Number(watch('retry_count'))
+  const retryIntervalMinutes = Number(watch('retry_interval_minutes'))
+  const notifyOnNoAnswer     = watch('notify_on_no_answer')
 
   const toggleDay = (day: number) => {
-    setSelectedDays((prev) =>
-      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort()
-    )
+    setSelectedDays((prev) => {
+      if (prev.includes(day)) return prev.filter((d) => d !== day)
+      if (prev.length >= callsPerWeek) return prev // quota atteint
+      return [...prev, day].sort()
+    })
+  }
+
+  const setCallsPerWeek = (n: number) => {
+    setValue('calls_per_week', n)
+    setSelectedDays((prev) => prev.slice(0, n)) // tronquer si on baisse
   }
 
   const addTopic = (topic: string) => {
@@ -77,8 +99,8 @@ export function ScheduleForm({ beneficiary, schedule, onClose }: Props) {
   const removeTopic = (topic: string) => setTopics((prev) => prev.filter((t) => t !== topic))
 
   const onSubmit = async (values: FormData) => {
-    if (selectedDays.length === 0) {
-      setError('Sélectionnez au moins un jour.')
+    if (selectedDays.length !== values.calls_per_week) {
+      setError(`Sélectionnez exactement ${values.calls_per_week} jour${values.calls_per_week > 1 ? 's' : ''} (${selectedDays.length} sélectionné${selectedDays.length > 1 ? 's' : ''}).`)
       return
     }
     if (!user) return
@@ -87,16 +109,21 @@ export function ScheduleForm({ beneficiary, schedule, onClose }: Props) {
     setError(null)
 
     const payload = {
-      beneficiary_id:       beneficiary.id,
-      caregiver_id:         user.id,
-      days_of_week:         selectedDays,
-      time_of_day:          values.time_of_day + ':00',
-      timezone:             values.timezone,
-      max_duration_minutes: values.max_duration_minutes,
-      suggested_topics:     topics.length > 0 ? topics : null,
-      special_instructions: values.special_instructions || null,
-      is_active:            schedule?.is_active ?? true,
-      next_scheduled_at:    null,
+      beneficiary_id:            beneficiary.id,
+      caregiver_id:              user.id,
+      days_of_week:              selectedDays,
+      time_of_day:               values.time_of_day + ':00',
+      timezone:                  values.timezone,
+      calls_per_week:            values.calls_per_week,
+      max_duration_minutes:      values.max_duration_minutes,
+      retry_count:               values.retry_count,
+      retry_interval_minutes:    values.retry_interval_minutes,
+      notify_on_no_answer:       values.notify_on_no_answer,
+      no_answer_timeout_seconds: values.no_answer_timeout_seconds,
+      suggested_topics:          topics.length > 0 ? topics : null,
+      special_instructions:      values.special_instructions || null,
+      is_active:                 schedule?.is_active ?? true,
+      next_scheduled_at:         null,
     }
 
     let ok: boolean
@@ -137,25 +164,66 @@ export function ScheduleForm({ beneficiary, schedule, onClose }: Props) {
             <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
           )}
 
-          {/* Jours */}
+          {/* Étape 1 : nombre d'appels par semaine */}
           <div>
-            <Label>Jours de la semaine *</Label>
-            <div className="flex gap-2 mt-1">
-              {DAY_LABELS.map((label, i) => (
+            <Label>Nombre d'appels par semaine *</Label>
+            <div className="flex gap-2 mt-1 flex-wrap">
+              {[1, 2, 3, 4, 5, 6, 7].map((n) => (
                 <button
-                  key={i}
+                  key={n}
                   type="button"
-                  onClick={() => toggleDay(i)}
+                  onClick={() => setCallsPerWeek(n)}
                   className={cn(
-                    'flex-1 py-2 rounded-xl text-sm font-semibold transition-all',
-                    selectedDays.includes(i)
+                    'w-10 h-10 rounded-xl text-sm font-semibold transition-all',
+                    callsPerWeek === n
                       ? 'bg-primary text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   )}
                 >
-                  {label}
+                  {n}
                 </button>
               ))}
+            </div>
+            <p className="text-xs text-slate-400 mt-2">
+              Choisissez ensuite les {callsPerWeek} jour{callsPerWeek > 1 ? 's' : ''} de la semaine ci-dessous.
+            </p>
+          </div>
+
+          {/* Étape 2 : jours */}
+          <div>
+            <div className="flex items-center justify-between">
+              <Label>Jours de la semaine *</Label>
+              <span className={cn(
+                'text-xs font-medium',
+                selectedDays.length === callsPerWeek ? 'text-green-600' : 'text-slate-400'
+              )}>
+                {selectedDays.length} / {callsPerWeek}
+              </span>
+            </div>
+            <div className="flex gap-2 mt-1">
+              {DAY_LABELS.map((label, i) => {
+                const isSelected = selectedDays.includes(i)
+                const quotaReached = selectedDays.length >= callsPerWeek
+                const disabled = !isSelected && quotaReached
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => toggleDay(i)}
+                    disabled={disabled}
+                    className={cn(
+                      'flex-1 py-2 rounded-xl text-sm font-semibold transition-all',
+                      isSelected
+                        ? 'bg-primary text-white shadow-sm'
+                        : disabled
+                          ? 'bg-slate-50 text-slate-300 cursor-not-allowed'
+                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    )}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -206,6 +274,80 @@ export function ScheduleForm({ beneficiary, schedule, onClose }: Props) {
             </select>
           </div>
 
+          {/* Section : en cas de non-réponse */}
+          <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 space-y-4">
+            <div>
+              <Label>Si {beneficiary.first_name} ne répond pas</Label>
+              <p className="text-xs text-slate-400 mt-1">
+                Nous attendons {Math.round(Number(watch('no_answer_timeout_seconds')) / 60)} min après la notification puis enclenchons la politique de relance.
+              </p>
+            </div>
+
+            {/* Nombre de relances */}
+            <div>
+              <Label className="text-xs text-slate-500">Nombre de relances</Label>
+              <div className="flex gap-2 mt-1">
+                {[0, 1, 2, 3].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setValue('retry_count', n)}
+                    className={cn(
+                      'flex-1 py-2 rounded-xl text-sm font-semibold transition-all',
+                      retryCount === n
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200'
+                    )}
+                  >
+                    {n === 0 ? 'Aucune' : `${n} fois`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Intervalle entre relances */}
+            {retryCount > 0 && (
+              <div>
+                <Label className="text-xs text-slate-500">Intervalle entre les tentatives</Label>
+                <div className="flex gap-2 mt-1 flex-wrap">
+                  {RETRY_INTERVALS.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setValue('retry_interval_minutes', m)}
+                      className={cn(
+                        'px-3 py-1.5 rounded-xl text-sm font-medium transition-all',
+                        retryIntervalMinutes === m
+                          ? 'bg-primary text-white'
+                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                      )}
+                    >
+                      {m} min
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Email si pas de réponse */}
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
+                {...register('notify_on_no_answer')}
+              />
+              <span className="text-sm text-slate-600 leading-snug">
+                M'envoyer un email si <strong>{beneficiary.first_name}</strong> ne répond {retryCount > 0 ? 'à aucune tentative' : 'pas'}.
+              </span>
+            </label>
+            {/* Hint sur l'envoi d'email — purement visuel, registre l'état actuel */}
+            {!notifyOnNoAnswer && (
+              <p className="text-xs text-slate-400 -mt-2">
+                Aucun email ne sera envoyé en cas de non-réponse.
+              </p>
+            )}
+          </div>
+
           {/* Sujets suggérés */}
           <div>
             <Label>Sujets suggérés pour cet appel</Label>
@@ -213,7 +355,6 @@ export function ScheduleForm({ beneficiary, schedule, onClose }: Props) {
               L'IA pourra aborder ces thèmes en priorité
             </p>
 
-            {/* Tags ajoutés */}
             {topics.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {topics.map((t) => (
@@ -230,7 +371,6 @@ export function ScheduleForm({ beneficiary, schedule, onClose }: Props) {
               </div>
             )}
 
-            {/* Input libre */}
             <div className="flex gap-2">
               <Input
                 placeholder="Ajouter un sujet…"
@@ -251,7 +391,6 @@ export function ScheduleForm({ beneficiary, schedule, onClose }: Props) {
               </Button>
             </div>
 
-            {/* Suggestions rapides */}
             <div className="flex flex-wrap gap-1.5 mt-2">
               {TOPIC_SUGGESTIONS.filter((s) => !topics.includes(s)).slice(0, 6).map((s) => (
                 <button
