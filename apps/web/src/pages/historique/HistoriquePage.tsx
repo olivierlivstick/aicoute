@@ -222,7 +222,10 @@ interface UpcomingSlot {
 }
 
 function UpcomingCallsTab({ schedules, loading }: { schedules: SessionSchedule[]; loading: boolean }) {
-  const slots = useMemo(() => projectUpcomingSlots(schedules, 14), [schedules])
+  // 1 seul planning par bénéficiaire (cf. contrainte SQL). On garde le 1er pour
+  // éviter les doublons si la migration n'est pas encore appliquée.
+  const primary = useMemo(() => (schedules.length > 0 ? [schedules[0]] : []), [schedules])
+  const slots = useMemo(() => projectUpcomingSlots(primary, 15), [primary])
 
   if (loading) {
     return (
@@ -232,14 +235,28 @@ function UpcomingCallsTab({ schedules, loading }: { schedules: SessionSchedule[]
     )
   }
 
-  const activeCount = schedules.filter((s) => s.is_active).length
+  const hasAnySchedule = primary.length > 0
+  const activeCount = primary.filter((s) => s.is_active).length
+
+  if (!hasAnySchedule) {
+    return (
+      <div className="text-center py-16 bg-white rounded-2xl border border-slate-100">
+        <CalendarClock size={40} className="mx-auto text-slate-200 mb-3" />
+        <p className="text-slate-400 mb-2">Aucun planning enregistré pour ce proche.</p>
+        <Link to="/planning" className="text-primary text-sm font-medium hover:underline">
+          Créer le planning →
+        </Link>
+      </div>
+    )
+  }
+
   if (activeCount === 0) {
     return (
       <div className="text-center py-16 bg-white rounded-2xl border border-slate-100">
         <CalendarClock size={40} className="mx-auto text-slate-200 mb-3" />
-        <p className="text-slate-400 mb-2">Aucun planning actif.</p>
+        <p className="text-slate-400 mb-2">Le planning est en pause.</p>
         <Link to="/planning" className="text-primary text-sm font-medium hover:underline">
-          Configurer un planning →
+          Réactiver le planning →
         </Link>
       </div>
     )
@@ -249,44 +266,52 @@ function UpcomingCallsTab({ schedules, loading }: { schedules: SessionSchedule[]
     return (
       <div className="text-center py-16 bg-white rounded-2xl border border-slate-100">
         <CalendarClock size={40} className="mx-auto text-slate-200 mb-3" />
-        <p className="text-slate-400">Aucun appel prévu dans les 14 prochains jours.</p>
+        <p className="text-slate-400">Aucun appel prévu dans les 15 prochains jours.</p>
       </div>
     )
   }
 
-  // Grouper par date (jour) pour affichage en sections
-  const grouped = groupByDay(slots)
+  // Grouper par semaine (lundi → dimanche)
+  const weeks = groupByWeek(slots)
 
   return (
     <div className="space-y-6">
       <p className="text-xs text-slate-400">
-        Projection sur les 14 prochains jours, basée sur vos plannings actifs.
+        Projection sur les 15 prochains jours, basée sur votre planning actif.
       </p>
-      {grouped.map(({ dayLabel, items }) => (
-        <div key={dayLabel}>
-          <h3 className="font-semibold text-slate-700 text-sm mb-2">{dayLabel}</h3>
-          <div className="space-y-2">
+      {weeks.map(({ weekStart, items }) => (
+        <div key={weekStart.toISOString()}>
+          <h3 className="font-semibold text-slate-700 text-sm mb-2">
+            Semaine du lundi {weekStart.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}
+          </h3>
+          <div className="flex gap-3 flex-wrap">
             {items.map((slot) => (
-              <div
-                key={`${slot.scheduleId}-${slot.at.toISOString()}`}
-                className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4 shadow-sm"
-              >
-                <div className="w-12 h-12 rounded-xl bg-primary-50 text-primary flex items-center justify-center flex-shrink-0">
-                  <CalendarClock size={20} />
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-slate-800">
-                    {slot.at.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    Durée prévue : {slot.duration} min
-                  </p>
-                </div>
-              </div>
+              <UpcomingCard key={`${slot.scheduleId}-${slot.at.toISOString()}`} slot={slot} />
             ))}
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+const SHORT_DAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
+
+function UpcomingCard({ slot }: { slot: UpcomingSlot }) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3 min-w-[180px]">
+      <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary flex items-center justify-center flex-shrink-0">
+        <CalendarClock size={18} />
+      </div>
+      <div>
+        <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+          {SHORT_DAYS[slot.at.getDay()]} {slot.at.getDate()}
+        </p>
+        <p className="font-semibold text-slate-800 leading-tight">
+          {slot.at.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+        </p>
+        <p className="text-[11px] text-slate-400">{slot.duration} min</p>
+      </div>
     </div>
   )
 }
@@ -320,18 +345,23 @@ function projectUpcomingSlots(schedules: SessionSchedule[], days: number): Upcom
   return slots.sort((a, b) => a.at.getTime() - b.at.getTime())
 }
 
-function groupByDay(slots: UpcomingSlot[]): Array<{ dayLabel: string; items: UpcomingSlot[] }> {
-  const map = new Map<string, UpcomingSlot[]>()
+// Retourne le lundi 00:00 de la semaine contenant `date` (semaine ISO commence le lundi)
+function getMondayOfWeek(date: Date): Date {
+  const d = new Date(date)
+  const day = d.getDay() // 0 = dimanche, 1 = lundi, ..., 6 = samedi
+  const diff = day === 0 ? -6 : 1 - day
+  d.setDate(d.getDate() + diff)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function groupByWeek(slots: UpcomingSlot[]): Array<{ weekStart: Date; items: UpcomingSlot[] }> {
+  const map = new Map<string, { weekStart: Date; items: UpcomingSlot[] }>()
   for (const slot of slots) {
-    const key = slot.at.toISOString().slice(0, 10)
-    if (!map.has(key)) map.set(key, [])
-    map.get(key)!.push(slot)
+    const monday = getMondayOfWeek(slot.at)
+    const key = monday.toISOString().slice(0, 10)
+    if (!map.has(key)) map.set(key, { weekStart: monday, items: [] })
+    map.get(key)!.items.push(slot)
   }
-  return Array.from(map.entries()).map(([key, items]) => {
-    const date = new Date(key + 'T00:00:00')
-    return {
-      dayLabel: date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }),
-      items,
-    }
-  })
+  return Array.from(map.values()).sort((a, b) => a.weekStart.getTime() - b.weekStart.getTime())
 }

@@ -2,13 +2,12 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, X } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
-import { createSchedule, updateSchedule } from '@/hooks/useSessionSchedule'
+import { createSchedule, updateSchedule, pauseSchedule, activateSchedule } from '@/hooks/useSessionSchedule'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
-import { Textarea } from '@/components/ui/Textarea'
 import { cn } from '@/lib/utils'
 import type { Beneficiary, SessionSchedule } from '@modect/shared'
 
@@ -21,7 +20,6 @@ const schema = z.object({
   retry_interval_minutes:    z.coerce.number().int().min(1).max(60),
   notify_on_no_answer:       z.boolean(),
   no_answer_timeout_seconds: z.coerce.number().int().min(30).max(600),
-  special_instructions:      z.string().optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -30,7 +28,6 @@ interface Props {
   beneficiary: Beneficiary
   schedule:    SessionSchedule | null
   onSaved:     () => void
-  onCancel:    () => void
 }
 
 const DAY_LABELS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
@@ -43,19 +40,37 @@ const TIMEZONES = [
 const DURATIONS = [5, 10, 15, 20, 30, 45, 60]
 const RETRY_INTERVALS = [2, 5, 10, 15]
 
-const TOPIC_SUGGESTIONS = [
-  'Météo du jour', 'Nouvelles de la famille', 'Jardinage', 'Cuisine',
-  'Souvenirs d\'enfance', 'Musique', 'Lecture', 'Actualité locale',
-  'Petits-enfants', 'Santé et bien-être',
-]
-
-export function ScheduleEditor({ beneficiary, schedule, onSaved, onCancel }: Props) {
+export function ScheduleEditor({ beneficiary, schedule, onSaved }: Props) {
   const { user } = useAuth()
   const [selectedDays, setSelectedDays] = useState<number[]>(schedule?.days_of_week ?? [1, 3, 5])
-  const [topics, setTopics] = useState<string[]>(schedule?.suggested_topics ?? [])
-  const [topicInput, setTopicInput] = useState('')
+  const [isActive, setIsActive] = useState<boolean>(schedule?.is_active ?? true)
+  const [togglingActive, setTogglingActive] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Toggle Actif / En pause : persistance immédiate en DB si le planning existe
+  // déjà (sinon l'état est local et sera appliqué à la création).
+  const handleToggleActive = async () => {
+    const next = !isActive
+    setIsActive(next)
+    setError(null)
+
+    if (!schedule) return  // mode création : juste local
+
+    setTogglingActive(true)
+    const ok = next
+      ? await activateSchedule(schedule.id)
+      : await pauseSchedule(schedule.id)
+    setTogglingActive(false)
+
+    if (!ok) {
+      setIsActive(!next)
+      setError("Impossible de mettre à jour l'état du planning.")
+      return
+    }
+    onSaved()
+  }
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -68,7 +83,6 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved, onCancel }: Pro
       retry_interval_minutes:    schedule?.retry_interval_minutes ?? 5,
       notify_on_no_answer:       schedule?.notify_on_no_answer ?? true,
       no_answer_timeout_seconds: schedule?.no_answer_timeout_seconds ?? 120,
-      special_instructions:      schedule?.special_instructions ?? '',
     },
   })
 
@@ -91,13 +105,6 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved, onCancel }: Pro
     setSelectedDays((prev) => prev.slice(0, n))
   }
 
-  const addTopic = (topic: string) => {
-    const t = topic.trim()
-    if (t && !topics.includes(t)) setTopics((prev) => [...prev, t])
-    setTopicInput('')
-  }
-  const removeTopic = (topic: string) => setTopics((prev) => prev.filter((t) => t !== topic))
-
   const onSubmit = async (values: FormData) => {
     if (selectedDays.length !== values.calls_per_week) {
       setError(`Sélectionnez exactement ${values.calls_per_week} jour${values.calls_per_week > 1 ? 's' : ''} (${selectedDays.length} sélectionné${selectedDays.length > 1 ? 's' : ''}).`)
@@ -107,6 +114,7 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved, onCancel }: Pro
 
     setSaving(true)
     setError(null)
+    setSaved(false)
 
     const payload = {
       beneficiary_id:            beneficiary.id,
@@ -120,9 +128,9 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved, onCancel }: Pro
       retry_interval_minutes:    values.retry_interval_minutes,
       notify_on_no_answer:       values.notify_on_no_answer,
       no_answer_timeout_seconds: values.no_answer_timeout_seconds,
-      suggested_topics:          topics.length > 0 ? topics : null,
-      special_instructions:      values.special_instructions || null,
-      is_active:                 schedule?.is_active ?? true,
+      suggested_topics:          null,
+      special_instructions:      null,
+      is_active:                 isActive,
       next_scheduled_at:         null,
     }
 
@@ -135,20 +143,49 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved, onCancel }: Pro
 
     setSaving(false)
     if (!ok) { setError('Une erreur est survenue.'); return }
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
     onSaved()
   }
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-100">
-      {/* Header */}
+      {/* Header avec toggle Actif / En pause */}
       <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
-        <div>
+        <div className="flex-1 min-w-0">
           <h2 className="font-title text-xl font-semibold text-slate-800">
-            {schedule ? 'Modifier le planning' : 'Nouveau planning'}
+            Planning d'appels
           </h2>
           <p className="text-sm text-slate-500">
-            {beneficiary.first_name} {beneficiary.last_name}
+            {isActive
+              ? 'Actif — les prochains appels sont planifiés automatiquement.'
+              : 'En pause — aucun appel ne sera passé tant que vous ne réactivez pas le planning.'}
           </p>
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0 ml-4">
+          <span className={cn(
+            'text-sm font-semibold transition-colors',
+            isActive ? 'text-primary' : 'text-slate-400'
+          )}>
+            {isActive ? 'Actif' : 'En pause'}
+          </span>
+          <button
+            type="button"
+            onClick={handleToggleActive}
+            disabled={togglingActive}
+            title={isActive ? 'Mettre en pause' : 'Activer le planning'}
+            className={cn(
+              'w-12 h-7 rounded-full transition-colors relative',
+              isActive ? 'bg-primary' : 'bg-slate-300',
+              togglingActive && 'opacity-50 cursor-wait'
+            )}
+          >
+            <span className={cn(
+              'absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform',
+              isActive ? 'translate-x-5' : 'translate-x-0.5'
+            )} />
+          </button>
         </div>
       </div>
 
@@ -332,80 +369,18 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved, onCancel }: Pro
           )}
         </div>
 
-        {/* Sujets suggérés */}
-        <div>
-          <Label>Sujets suggérés pour cet appel</Label>
-          <p className="text-xs text-slate-400 mb-2">
-            L'IA pourra aborder ces thèmes en priorité
-          </p>
-
-          {topics.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-2">
-              {topics.map((t) => (
-                <span
-                  key={t}
-                  className="flex items-center gap-1 bg-accent-50 text-accent-700 text-xs px-2.5 py-1 rounded-full"
-                >
-                  {t}
-                  <button type="button" onClick={() => removeTopic(t)} className="hover:text-red-500">
-                    <X size={10} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <Input
-              placeholder="Ajouter un sujet…"
-              value={topicInput}
-              onChange={(e) => setTopicInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') { e.preventDefault(); addTopic(topicInput) }
-              }}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => addTopic(topicInput)}
-              disabled={!topicInput.trim()}
-            >
-              <Plus size={16} />
-            </Button>
+        {/* Footer save */}
+        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+          <div className="flex-1">
+            {saved && (
+              <p className="text-sm text-sauge bg-sauge/10 rounded-lg px-3 py-1.5 inline-flex items-center gap-1.5">
+                <Check size={14} />
+                Planning enregistré
+              </p>
+            )}
           </div>
-
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {TOPIC_SUGGESTIONS.filter((s) => !topics.includes(s)).slice(0, 6).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => addTopic(s)}
-                className="text-xs border border-dashed border-slate-300 text-slate-500 px-2.5 py-1 rounded-full hover:border-primary hover:text-primary transition-colors"
-              >
-                + {s}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Instructions spéciales */}
-        <div>
-          <Label htmlFor="special_instructions">Instructions spéciales (optionnel)</Label>
-          <Textarea
-            id="special_instructions"
-            placeholder="Ex : C'est l'anniversaire de son petit-fils cette semaine, évoquer ce sujet chaleureusement."
-            rows={3}
-            {...register('special_instructions')}
-          />
-        </div>
-
-        <div className="flex gap-3 pt-2 border-t border-slate-100">
-          <Button type="button" variant="ghost" className="flex-1" onClick={onCancel}>
-            Annuler
-          </Button>
-          <Button type="submit" className="flex-1" loading={saving}>
-            {schedule ? 'Enregistrer' : 'Créer le planning'}
+          <Button type="submit" loading={saving}>
+            Enregistrer
           </Button>
         </div>
       </form>
