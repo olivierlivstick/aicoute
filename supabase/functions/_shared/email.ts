@@ -153,7 +153,7 @@ export function reportEmailHtml(params: {
 
       <!-- CTA -->
       <div style="text-align:center;margin-top:28px">
-        <a href="${app_url}/reports"
+        <a href="${app_url}/historique"
            style="display:inline-block;background:#F4A261;color:white;padding:14px 32px;border-radius:12px;font-size:16px;font-weight:700;text-decoration:none">
           Voir le compte-rendu complet →
         </a>
@@ -163,7 +163,7 @@ export function reportEmailHtml(params: {
     <!-- Footer -->
     <div style="background:#F8FAFC;padding:20px 32px;text-align:center;border-top:1px solid #E2E8F0">
       <p style="color:#94A3B8;font-size:13px;margin:0">
-        © 2026 MODECT · <a href="${app_url}/settings" style="color:#94A3B8">Gérer les notifications</a>
+        © 2026 MODECT · <a href="${app_url}/compte" style="color:#94A3B8">Gérer les notifications</a>
       </p>
     </div>
   </div>
@@ -199,7 +199,7 @@ export function noAnswerEmailHtml(params: {
         Cela peut être normal (sortie, sieste, téléphone hors de portée). Si cette situation se répète, n'hésitez pas à prendre contact directement avec votre proche.
       </p>
       <div style="text-align:center;margin-top:24px">
-        <a href="${app_url}/sessions"
+        <a href="${app_url}/planning"
            style="display:inline-block;background:#C75D3A;color:white;padding:14px 28px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none">
           Vérifier les plannings →
         </a>
@@ -207,7 +207,7 @@ export function noAnswerEmailHtml(params: {
     </div>
     <div style="background:#F8FAFC;padding:20px 32px;text-align:center;border-top:1px solid #E2E8F0">
       <p style="color:#94A3B8;font-size:13px;margin:0">
-        © 2026 MODECT · <a href="${app_url}/settings" style="color:#94A3B8">Gérer les notifications</a>
+        © 2026 MODECT · <a href="${app_url}/compte" style="color:#94A3B8">Gérer les notifications</a>
       </p>
     </div>
   </div>

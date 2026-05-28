@@ -67,7 +67,7 @@ export function CallDetailPage() {
     return (
       <div className="p-8 text-center">
         <p className="text-slate-500">Appel introuvable.</p>
-        <Link to="/reports" className="text-primary mt-2 inline-block hover:underline">← Retour</Link>
+        <Link to="/historique" className="text-primary mt-2 inline-block hover:underline">← Retour</Link>
       </div>
     )
   }
@@ -77,10 +77,10 @@ export function CallDetailPage() {
   const transcript  = (call.transcript ?? []) as TranscriptEntry[]
 
   return (
-    <div className="p-8 max-w-3xl mx-auto">
+    <div className="p-8 max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-4 mb-8">
-        <Link to="/reports" className="text-slate-400 hover:text-slate-600 transition-colors">
+        <Link to="/historique" className="text-slate-400 hover:text-slate-600 transition-colors">
           <ArrowLeft size={20} />
         </Link>
         <div>

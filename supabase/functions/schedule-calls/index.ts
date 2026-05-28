@@ -336,7 +336,7 @@ async function notifyCaregiverOfTriggerFailure(
         <h2 style="color:#C75D3A">⚠️ Appel non déclenché</h2>
         <p>Bonjour <strong>${caregiver.full_name}</strong>,</p>
         <p>L'appel planifié pour <strong>${beneficiary?.first_name}</strong> n'a pas pu être déclenché pour une raison technique.</p>
-        <a href="${appUrl}/sessions"
+        <a href="${appUrl}/planning"
            style="display:inline-block;background:#C75D3A;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;margin-top:12px">
           Vérifier les plannings →
         </a>

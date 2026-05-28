@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { createBeneficiary } from '@/hooks/useBeneficiary'
+import { useSelectedBeneficiary } from '@/hooks/useSelectedBeneficiary'
 import { Step1BasicInfo } from './steps/Step1BasicInfo'
 import { Step2History } from './steps/Step2History'
 import { Step3Tastes } from './steps/Step3Tastes'
@@ -25,6 +26,7 @@ const STEPS = [
 export function BeneficiaryWizard() {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { refetch, selectBeneficiary } = useSelectedBeneficiary()
   const [step, setStep] = useState(0)
   const [data, setData] = useState<WizardData>({
     language_preference: 'fr',
@@ -80,13 +82,16 @@ export function BeneficiaryWizard() {
       setError('Une erreur est survenue. Veuillez réessayer.')
       return
     }
-    navigate(`/beneficiary/${result.id}`, { replace: true })
+    // Recharger la liste du contexte et sélectionner le nouveau bénéficiaire
+    await refetch()
+    selectBeneficiary(result.id)
+    navigate('/contexte', { replace: true })
   }
 
   const stepProps = { data, onNext: next, onPrev: prev, onSubmit: submit, saving }
 
   return (
-    <div className="p-8 max-w-2xl mx-auto">
+    <div className="p-8 max-w-4xl mx-auto">
       {/* Titre */}
       <div className="mb-8">
         <h1 className="font-title text-3xl font-bold text-slate-800">Ajouter un proche</h1>

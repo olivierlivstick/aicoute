@@ -42,8 +42,8 @@ Note : `apps/web/public/gemini-audio-worklet.js` (servi statique) — AudioWorkl
 ## Base de données (tables principales)
 - `profiles` — extension de auth.users (trigger `handle_new_user`)
 - `beneficiaries` — profil bénéficiaire + config IA
-- `session_schedules` — planification récurrente (jours + heure)
-- `calls` — historique des appels bénéficiaires + transcript + rapport
+- `session_schedules` — planification récurrente + politique no-answer (`calls_per_week`, `days_of_week`, `time_of_day`, `retry_count`, `retry_interval_minutes`, `notify_on_no_answer`, `no_answer_timeout_seconds`). Contrainte : `array_length(days_of_week) == calls_per_week`. Vue `v_schedules_with_history` ajoute `last_call_at`.
+- `calls` — historique des appels + transcript + rapport. Colonnes clés : `attempt_number` (1-4), `notified_at` (origine du timer no-answer), `alerts JSONB` (array d'objets `{category, severity, evidence}` — signaux faibles structurés).
 - `conversation_memory` — mémoire long-terme par bénéficiaire
 - `demo_calls` — tracking des démos vitrine (séparé de `calls`), consultable via `/track_calls` (cf. ci-dessous). Colonne `engine` discrimine OpenAI vs Gemini ; les colonnes tokens et `openai_cost_eur_real` sont réutilisées pour les deux moteurs (sémantique "coût IA réel", quelle que soit l'origine).
 
@@ -57,6 +57,48 @@ Flux d'un appel :
 4. `save-transcript` (Edge Fn) — à la fin, persiste `calls.transcript` (écriture de confiance, service role) puis déclenche `generate-summary`.
 
 Modèle GA imposé : `realtime-token` ramène tout modèle Beta/legacy (`*-realtime-preview`) à `gpt-realtime-2`. Voix par défaut `cedar` (constante dans `realtime-token`).
+
+## Back-office aidant (app.modect.com)
+
+SPA React mono-utilisateur. Hypothèse : 95% des aidants n'ont qu'**un seul bénéficiaire**, donc l'architecture est centrée sur **un bénéficiaire sélectionné globalement** (pas de listes navigables).
+
+### Layout commun
+- **Sidebar gauche** ([AppLayout.tsx](apps/web/src/components/AppLayout.tsx)) : Tableau de bord / Contexte / Planning / Historique / Veille + section « Mon compte » séparée en bas.
+- **Header sticky** ([AppHeader.tsx](apps/web/src/components/AppHeader.tsx)) sur toutes les pages : dropdown bénéficiaire (défaut = 1er, persisté localStorage `modect.selected_beneficiary_id`) + bouton « Nouveau proche ».
+- **Bénéficiaire sélectionné** partagé via [useSelectedBeneficiary.tsx](apps/web/src/hooks/useSelectedBeneficiary.tsx) (React Context provisionné dans AppLayout). Les pages Contexte / Planning / Historique / Veille lisent `selected` du context, **pas l'URL**.
+
+### Pages
+| Route | Rôle | Composant |
+|---|---|---|
+| `/dashboard` | Vue d'ensemble (cards par bénéficiaire — à retravailler) | [Dashboard.tsx](apps/web/src/pages/dashboard/Dashboard.tsx) |
+| `/contexte` | Profil bénéficiaire en **5 onglets** (Infos / Histoire / Goûts / Personnalité / Configuration IA), save inline par section | [ContextePage.tsx](apps/web/src/pages/contexte/ContextePage.tsx) |
+| `/planning` | Plannings récurrents, édition **en page** (plus de modal). Liste + calendrier hebdo. | [PlanningPage.tsx](apps/web/src/pages/planning/PlanningPage.tsx) + [ScheduleEditor.tsx](apps/web/src/pages/planning/ScheduleEditor.tsx) |
+| `/historique` | **2 onglets** : appels passés / appels prévus (projection sur 14 j à partir des `session_schedules` actifs) | [HistoriquePage.tsx](apps/web/src/pages/historique/HistoriquePage.tsx) |
+| `/historique/:id` | Compte-rendu détaillé d'un appel (transcript, alerts structurés en cartes catégorie+gravité+citation) | [CallDetail.tsx](apps/web/src/pages/historique/CallDetail.tsx) |
+| `/veille` | Signaux faibles (placeholder — refonte à venir) | [VeillePage.tsx](apps/web/src/pages/veille/VeillePage.tsx) |
+| `/compte` | **3 onglets** : Mon profil / Mon abonnement (placeholder) / Mes factures (placeholder) | [ComptePage.tsx](apps/web/src/pages/compte/ComptePage.tsx) |
+| `/beneficiary/new` | Wizard d'onboarding 6 étapes (création initiale uniquement — l'édition se fait via `/contexte`) | [BeneficiaryWizard.tsx](apps/web/src/pages/beneficiary/BeneficiaryWizard.tsx) |
+
+Après création via le wizard, le nouveau bénéficiaire est automatiquement sélectionné dans le context puis redirige vers `/contexte`.
+
+### Redirections legacy (dans [App.tsx](apps/web/src/App.tsx))
+`/sessions → /planning`, `/reports → /historique`, `/reports/:id → /historique/:id`, `/settings → /compte`, `/beneficiary → /contexte`, `/beneficiary/:id → /contexte` (avec sélection auto), `/memories → /dashboard`, `/setup → /compte`.
+
+### Worker planning + politique no-answer
+[schedule-calls](supabase/functions/schedule-calls/index.ts) tourne via pg_cron toutes les minutes et exécute 3 passes :
+- **A — Planning principal** : `session_schedules` dont `next_scheduled_at` tombe dans ±90s → crée un `call` (`attempt_number=1`) + déclenche `initiate-call` + recalcule `next_scheduled_at`.
+- **B — Détection no-answer** : `calls` en `notified` dont `notified_at < now - no_answer_timeout_seconds` → marque `missed`. Si `attempt_number ≤ retry_count` → crée un nouveau call (`attempt+1`, `scheduled_at = now + retry_interval_minutes`). Sinon → email aidant via `noAnswerEmailHtml` (si `notify_on_no_answer`).
+- **C — Déclenchement des retries** : `calls` en `scheduled` avec `attempt_number > 1` et `scheduled_at ≤ now` → trigger `initiate-call`.
+
+[initiate-call](supabase/functions/initiate-call/index.ts) écrit `notified_at = now()` au passage en `notified` (origine du timer).
+
+### Signaux faibles structurés
+[generate-summary](supabase/functions/generate-summary/index.ts) produit `alerts: Array<{category, severity, evidence}>`. Catégories : `health` (douleur, sommeil, médication, fatigue physique) · `mood` (tristesse, anxiété, lassitude) · `cognition` (oublis, confusion, mots qui manquent) · `social` (solitude, isolement, conflit familial) · `autonomy` (chute, alimentation, gestes du quotidien) · `other`. Sévérité : `low` / `medium` / `high`. Rendu côté UI dans CallDetail (cartes avec icône + badges) et dans l'email aidant.
+
+### Largeurs visuelles (charte)
+- **Forms** (Contexte, Compte, ScheduleEditor, CallDetail) : `max-w-5xl` (1024px)
+- **Listes/grilles** (Dashboard, Planning, Historique, Veille) : `max-w-7xl` (1280px)
+- **Wizard onboarding** : `max-w-4xl` (896px)
 
 ## Démo vitrine (www.modect.com)
 Deux modes (navigateur / téléphone) × deux moteurs (OpenAI / Gemini), accessibles depuis la home (section `#essai`, `apps/web/src/marketing/components/Demo.tsx`). Un toggle `EngineToggle` au-dessus des cartes choisit le moteur, propagé comme prop `engine` aux deux modals et persisté dans `demo_calls.engine`.

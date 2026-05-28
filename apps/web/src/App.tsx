@@ -18,17 +18,14 @@ import { ResetPasswordPage } from '@/pages/auth/ResetPassword'
 
 // App pages
 import { DashboardPage } from '@/pages/dashboard/Dashboard'
-import { SettingsPage } from '@/pages/settings/Settings'
-import { BeneficiaryListPage } from '@/pages/beneficiary/BeneficiaryList'
 import { BeneficiaryWizard } from '@/pages/beneficiary/BeneficiaryWizard'
-import { BeneficiaryDetailPage } from '@/pages/beneficiary/BeneficiaryDetail'
-import { SessionsPage } from '@/pages/sessions/SessionsPage'
-import { ReportsPage } from '@/pages/reports/ReportsPage'
-import { CallDetailPage } from '@/pages/reports/CallDetail'
-import { MemoriesPage } from '@/pages/memories/MemoriesPage'
+import { ContextePage } from '@/pages/contexte/ContextePage'
+import { PlanningPage } from '@/pages/planning/PlanningPage'
+import { HistoriquePage } from '@/pages/historique/HistoriquePage'
+import { CallDetailPage } from '@/pages/historique/CallDetail'
+import { VeillePage } from '@/pages/veille/VeillePage'
+import { ComptePage } from '@/pages/compte/ComptePage'
 import { SimulateCallPage } from '@/pages/call/SimulateCall'
-import { SetupPage } from '@/pages/setup/Setup'
-
 
 export function App() {
   return (
@@ -57,17 +54,30 @@ export function App() {
             </AuthGuard>
           }
         >
+          {/* Pages principales */}
           <Route path="/dashboard"       element={<DashboardPage />} />
-          <Route path="/beneficiary"     element={<BeneficiaryListPage />} />
+          <Route path="/contexte"        element={<ContextePage />} />
+          <Route path="/planning"        element={<PlanningPage />} />
+          <Route path="/historique"      element={<HistoriquePage />} />
+          <Route path="/historique/:id"  element={<CallDetailPage />} />
+          <Route path="/veille"          element={<VeillePage />} />
+          <Route path="/compte"          element={<ComptePage />} />
+
+          {/* Création d'un bénéficiaire (wizard onboarding) */}
           <Route path="/beneficiary/new" element={<BeneficiaryWizard />} />
-          <Route path="/beneficiary/:id" element={<BeneficiaryDetailPage />} />
-          <Route path="/sessions"    element={<SessionsPage />} />
-          <Route path="/reports"      element={<ReportsPage />} />
-          <Route path="/reports/:id"  element={<CallDetailPage />} />
-          <Route path="/memories"    element={<MemoriesPage />} />
-          <Route path="/call"        element={<SimulateCallPage />} />
-          <Route path="/settings"    element={<SettingsPage />} />
-          <Route path="/setup"       element={<SetupPage />} />
+
+          {/* Page d'appel (utilisée en simulation desktop ; mobile = app Expo) */}
+          <Route path="/call" element={<SimulateCallPage />} />
+
+          {/* --- Redirections legacy --- */}
+          <Route path="/sessions"        element={<Navigate to="/planning"   replace />} />
+          <Route path="/reports"         element={<Navigate to="/historique" replace />} />
+          <Route path="/reports/:id"     element={<LegacyReportRedirect />} />
+          <Route path="/settings"        element={<Navigate to="/compte"     replace />} />
+          <Route path="/beneficiary"     element={<Navigate to="/contexte"   replace />} />
+          <Route path="/beneficiary/:id" element={<LegacyBeneficiaryRedirect />} />
+          <Route path="/memories"        element={<Navigate to="/dashboard"  replace />} />
+          <Route path="/setup"           element={<Navigate to="/compte"     replace />} />
         </Route>
 
         {/* 404 : back-office → dashboard ; vitrine → accueil */}
@@ -78,4 +88,26 @@ export function App() {
       </Routes>
     </BrowserRouter>
   )
+}
+
+// Redirige /reports/:id → /historique/:id en préservant l'ID
+import { useEffect } from 'react'
+import { useParams } from 'react-router-dom'
+import { useSelectedBeneficiary } from '@/hooks/useSelectedBeneficiary'
+
+function LegacyReportRedirect() {
+  const { id } = useParams<{ id: string }>()
+  return <Navigate to={`/historique/${id ?? ''}`} replace />
+}
+
+// Redirige /beneficiary/:id → /contexte après avoir sélectionné le bénéficiaire
+function LegacyBeneficiaryRedirect() {
+  const { id } = useParams<{ id: string }>()
+  const { beneficiaries, selectBeneficiary } = useSelectedBeneficiary()
+  useEffect(() => {
+    if (id && beneficiaries.some((b) => b.id === id)) {
+      selectBeneficiary(id)
+    }
+  }, [id, beneficiaries, selectBeneficiary])
+  return <Navigate to="/contexte" replace />
 }

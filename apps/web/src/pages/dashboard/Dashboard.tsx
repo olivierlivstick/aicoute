@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Phone, AlertTriangle } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { useSelectedBeneficiary } from '@/hooks/useSelectedBeneficiary'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { formatDate, formatTime, MOOD_LABELS } from '@/lib/utils'
@@ -15,8 +16,15 @@ interface BeneficiaryWithLastCall extends Beneficiary {
 
 export function DashboardPage() {
   const { profile } = useAuth()
+  const { selectBeneficiary } = useSelectedBeneficiary()
+  const navigate = useNavigate()
   const [beneficiaries, setBeneficiaries] = useState<BeneficiaryWithLastCall[]>([])
   const [loading, setLoading] = useState(true)
+
+  const goToBeneficiary = (id: string) => {
+    selectBeneficiary(id)
+    navigate('/contexte')
+  }
 
   useEffect(() => {
     async function load() {
@@ -73,7 +81,7 @@ export function DashboardPage() {
   const firstName = profile?.full_name?.split(' ')[0] ?? 'aidant'
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="p-8 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -121,68 +129,70 @@ export function DashboardPage() {
               : null
 
             return (
-              <Link key={b.id} to={`/beneficiary/${b.id}`}>
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:shadow-md hover:border-primary/20 transition-all cursor-pointer relative">
-                  {/* Badge rapport non lu */}
-                  {b.unread_reports > 0 && (
-                    <span className="absolute top-4 right-4 bg-accent text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                      {b.unread_reports} nouveau{b.unread_reports > 1 ? 'x' : ''}
-                    </span>
-                  )}
+              <div
+                key={b.id}
+                onClick={() => goToBeneficiary(b.id)}
+                className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:shadow-md hover:border-primary/20 transition-all cursor-pointer relative"
+              >
+                {/* Badge rapport non lu */}
+                {b.unread_reports > 0 && (
+                  <span className="absolute top-4 right-4 bg-accent text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                    {b.unread_reports} nouveau{b.unread_reports > 1 ? 'x' : ''}
+                  </span>
+                )}
 
-                  <div className="flex items-start gap-4">
-                    {/* Avatar */}
-                    <div className="w-12 h-12 rounded-2xl bg-primary-100 flex items-center justify-center text-primary font-title font-bold text-xl flex-shrink-0">
-                      {b.first_name[0]}
-                    </div>
+                <div className="flex items-start gap-4">
+                  {/* Avatar */}
+                  <div className="w-12 h-12 rounded-2xl bg-primary-100 flex items-center justify-center text-primary font-title font-bold text-xl flex-shrink-0">
+                    {b.first_name[0]}
+                  </div>
 
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-slate-800 text-lg leading-tight">
-                        {b.first_name} {b.last_name}
-                      </h3>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-slate-800 text-lg leading-tight">
+                      {b.first_name} {b.last_name}
+                    </h3>
 
-                      {/* Dernier appel */}
-                      {b.last_call ? (
-                        <p className="text-sm text-slate-500 mt-0.5">
-                          Dernier appel : {formatDate(b.last_call.ended_at ?? b.last_call.scheduled_at)}{' '}
-                          {mood && <span>{mood.emoji}</span>}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-slate-400 mt-0.5">Aucun appel pour l'instant</p>
-                      )}
+                    {/* Dernier appel */}
+                    {b.last_call ? (
+                      <p className="text-sm text-slate-500 mt-0.5">
+                        Dernier appel : {formatDate(b.last_call.ended_at ?? b.last_call.scheduled_at)}{' '}
+                        {mood && <span>{mood.emoji}</span>}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-slate-400 mt-0.5">Aucun appel pour l'instant</p>
+                    )}
 
-                      {/* Alertes (signaux faibles structurés) */}
-                      {b.last_call?.alerts && b.last_call.alerts.length > 0 && (
-                        <div className="flex items-center gap-1 mt-1 text-orange-600 text-xs font-medium">
-                          <AlertTriangle size={12} />
-                          <span className="truncate">
-                            {b.last_call.alerts.length} signal{b.last_call.alerts.length > 1 ? 'aux' : ''} faible{b.last_call.alerts.length > 1 ? 's' : ''}
-                            {b.last_call.alerts[0]?.evidence ? ` — ${b.last_call.alerts[0].evidence}` : ''}
-                          </span>
-                        </div>
-                      )}
+                    {/* Alertes (signaux faibles structurés) */}
+                    {b.last_call?.alerts && b.last_call.alerts.length > 0 && (
+                      <div className="flex items-center gap-1 mt-1 text-orange-600 text-xs font-medium">
+                        <AlertTriangle size={12} />
+                        <span className="truncate">
+                          {b.last_call.alerts.length} signal{b.last_call.alerts.length > 1 ? 'aux' : ''} faible{b.last_call.alerts.length > 1 ? 's' : ''}
+                          {b.last_call.alerts[0]?.evidence ? ` — ${b.last_call.alerts[0].evidence}` : ''}
+                        </span>
+                      </div>
+                    )}
 
-                      {/* Prochain appel */}
-                      {b.next_call ? (
-                        <div className="flex items-center gap-1.5 mt-2 text-primary text-sm">
-                          <Phone size={13} />
-                          <span>
-                            Prochain appel :{' '}
-                            {formatDate(b.next_call.scheduled_at, {
-                              weekday: 'short',
-                              day: 'numeric',
-                              month: 'short',
-                            })}{' '}
-                            à {formatTime(new Date(b.next_call.scheduled_at).toTimeString())}
-                          </span>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-slate-400 mt-2">Aucun appel planifié</p>
-                      )}
-                    </div>
+                    {/* Prochain appel */}
+                    {b.next_call ? (
+                      <div className="flex items-center gap-1.5 mt-2 text-primary text-sm">
+                        <Phone size={13} />
+                        <span>
+                          Prochain appel :{' '}
+                          {formatDate(b.next_call.scheduled_at, {
+                            weekday: 'short',
+                            day: 'numeric',
+                            month: 'short',
+                          })}{' '}
+                          à {formatTime(new Date(b.next_call.scheduled_at).toTimeString())}
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 mt-2">Aucun appel planifié</p>
+                    )}
                   </div>
                 </div>
-              </Link>
+              </div>
             )
           })}
         </div>
