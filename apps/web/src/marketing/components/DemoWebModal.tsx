@@ -21,9 +21,10 @@ const MAX_DURATION_SECONDS = 120 // 2 minutes (contrôle du coût de démo)
 
 interface Props {
   onClose: () => void
+  engine:  'openai' | 'gemini'
 }
 
-export function DemoWebModal({ onClose }: Props) {
+export function DemoWebModal({ onClose, engine }: Props) {
   const [status,   setStatus]   = useState<RealtimeStatus>('idle')
   const [messages, setMessages] = useState<RealtimeMessage[]>([])
   const [error,    setError]    = useState<string | null>(null)
@@ -80,7 +81,7 @@ export function DemoWebModal({ onClose }: Props) {
       // Token Realtime + log de démarrage en parallèle (non bloquant pour le token)
       const [tokenResp, logResp] = await Promise.all([
         supabase.functions.invoke('public-realtime-token'),
-        supabase.functions.invoke('log-demo', { body: { action: 'start', mode: 'web' } }),
+        supabase.functions.invoke('log-demo', { body: { action: 'start', mode: 'web', engine } }),
       ])
 
       if (tokenResp.error || !tokenResp.data?.value) {

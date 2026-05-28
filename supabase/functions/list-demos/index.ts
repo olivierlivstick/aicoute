@@ -41,7 +41,7 @@ Deno.serve(async (req: Request) => {
     const { data: rows, error } = await supabase
       .from('demo_calls')
       .select(`
-        id, mode, started_at, ended_at, duration_seconds, phone_prefix,
+        id, mode, engine, started_at, ended_at, duration_seconds, phone_prefix,
         twilio_cost_eur, openai_cost_eur, openai_cost_eur_real,
         tokens_input_audio, tokens_input_audio_cached, tokens_output_audio,
         tokens_input_text, tokens_output_text
@@ -57,6 +57,7 @@ Deno.serve(async (req: Request) => {
     type Row = {
       id: string
       mode: 'web' | 'phone'
+      engine: 'openai' | 'gemini'
       started_at: string
       ended_at: string | null
       duration_seconds: number | null

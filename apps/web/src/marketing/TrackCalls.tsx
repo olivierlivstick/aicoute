@@ -16,6 +16,7 @@ import { supabase } from '@/lib/supabase'
 interface Row {
   id:                        string
   mode:                      'web' | 'phone'
+  engine:                    'openai' | 'gemini'
   started_at:                string
   ended_at:                  string | null
   duration_seconds:          number | null
@@ -116,7 +117,7 @@ function Summary({ totals }: { totals: Totals }) {
       <Card label="Nombre de démos"          value={String(totals.calls)} />
       <Card label="Twilio cumulé"            value={formatEur(totals.twilio_eur)} />
       <Card label="OpenAI estimé (durée)"    value={formatEur(totals.openai_eur)}      sub="approximation" />
-      <Card label="OpenAI réel (tokens)"     value={formatEur(totals.openai_eur_real)} sub="appels téléphone uniquement" />
+      <Card label="IA réel (tokens)"         value={formatEur(totals.openai_eur_real)} sub="appels téléphone uniquement" />
       <Card label="Coût total"               value={formatEur(totals.total_eur)}        sub="réel quand dispo, sinon estimé" highlight />
     </div>
   )
@@ -170,10 +171,11 @@ function Table({ rows }: { rows: Row[] }) {
             <Th>Fin</Th>
             <Th>Durée</Th>
             <Th>Mode</Th>
+            <Th>Moteur</Th>
             <Th>Numéro</Th>
             <Th align="right">Twilio</Th>
-            <Th align="right">OpenAI est.</Th>
-            <Th align="right">OpenAI réel</Th>
+            <Th align="right">IA est.</Th>
+            <Th align="right">IA réel</Th>
             <Th align="right">Total</Th>
           </tr>
         </thead>
@@ -191,6 +193,15 @@ function Table({ rows }: { rows: Row[] }) {
                     : 'bg-primary-100 text-primary-700'
                 }`}>
                   {l.mode === 'web' ? 'Navigateur' : 'Téléphone'}
+                </span>
+              </Td>
+              <Td>
+                <span className={`inline-block px-2 py-0.5 rounded-md text-xs ${
+                  l.engine === 'gemini'
+                    ? 'bg-accent-100 text-accent-700'
+                    : 'bg-creme-sable text-brun-700'
+                }`}>
+                  {l.engine === 'gemini' ? 'Gemini' : 'OpenAI'}
                 </span>
               </Td>
               <Td mono>{l.phone_prefix ?? '—'}</Td>

@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react'
 
 interface Props {
   onClose: () => void
+  engine:  'openai' | 'gemini'
 }
 
 const VOICE_BRIDGE_URL = import.meta.env.VITE_VOICE_BRIDGE_URL as string | undefined
@@ -33,7 +34,7 @@ type State =
   | { kind: 'ringing'; callSid: string }
   | { kind: 'error'; message: string }
 
-export function DemoPhoneModal({ onClose }: Props) {
+export function DemoPhoneModal({ onClose, engine }: Props) {
   const [phone,  setPhone]  = useState('')
   const [opener, setOpener] = useState(DEFAULT_OPENER)
   const [accept, setAccept] = useState(false)
@@ -67,6 +68,7 @@ export function DemoPhoneModal({ onClose }: Props) {
         body:    JSON.stringify({
           phoneNumber: cleaned,
           opener:      openerTrimmed || undefined,
+          engine,
         }),
       })
 

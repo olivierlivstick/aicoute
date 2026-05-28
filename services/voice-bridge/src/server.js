@@ -2,33 +2,39 @@
 // Service Node hébergé sur Render. Fait :
 //   - POST /call         déclenche un appel sortant Twilio vers le numéro fourni
 //   - POST /outgoing     TwiML servi à Twilio quand le destinataire décroche
-//   - WSS  /media-stream pont audio µ-law Twilio ↔ OpenAI Realtime GA
-//   - GET  /health       healthcheck Render
+//   - WSS  /media-stream pont audio Twilio ↔ moteur conversationnel
+//                        (OpenAI Realtime ou Google Gemini Live au choix)
+//   - GET  /health       healthcheck Render + état des moteurs configurés
 //
 // Aucun frontend ici : c'est uniquement une API + un WebSocket. Le front
 // (apps/web/src/marketing/components/DemoPhoneModal.tsx) appelle /call.
 //
-// Architecture inspirée de realtime-phone-v3 mais adaptée à la prod :
+// Architecture :
+//   - server.js (ici) : lifecycle Twilio + dispatch vers le bon engine module
+//   - engines/openai-bridge.js : pont OpenAI (audio µ-law direct, pas de conversion)
+//   - engines/gemini-bridge.js : pont Gemini (conversion µ-law ↔ PCM16 16/24kHz)
+//   - engines/audio.js : helpers conversion audio (utilisé par gemini-bridge)
+//
+// Sécurité / robustesse :
 //   - pas de ngrok (Render expose le service publiquement)
 //   - CORS verrouillé sur les origines vitrine
 //   - rate-limit par IP + par numéro destinataire
 //   - coupure serveur de sécurité à MAX_CALL_SECONDS pour éviter les facturations qui dérapent
 
 import express from 'express'
-import { WebSocketServer, WebSocket } from 'ws'
+import { WebSocketServer } from 'ws'
 import twilio from 'twilio'
 import 'dotenv/config'
 
-import { buildSystemPrompt, buildFirstMessage } from './prompt.js'
 import { rateLimit, LIMITS } from './rateLimit.js'
-import { recordDemoStart, recordDemoEnd, computeOpenAICostEur } from './tracking.js'
+import { recordDemoStart, recordDemoEnd, computeAiCostEur } from './tracking.js'
+import { createOpenaiBridge } from './engines/openai-bridge.js'
+import { createGeminiBridge } from './engines/gemini-bridge.js'
 
 // --- Config ----------------------------------------------------------------
 
 const PORT             = Number(process.env.PORT || 5050)
 const MAX_CALL_SECONDS = Number(process.env.MAX_CALL_SECONDS || 240)
-const VOICE            = 'cedar'
-const MODEL            = 'gpt-realtime-2'
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
@@ -48,6 +54,10 @@ const OPENAI_API_KEY     = requireEnv('OPENAI_API_KEY')
 const TWILIO_ACCOUNT_SID = requireEnv('TWILIO_ACCOUNT_SID')
 const TWILIO_AUTH_TOKEN  = requireEnv('TWILIO_AUTH_TOKEN')
 const TWILIO_NUMBER      = requireEnv('TWILIO_NUMBER')
+// Gemini est optionnel : si absent, l'engine 'gemini' est refusé à /call (503).
+// Permet de déployer le service avec OpenAI seul et d'activer Gemini plus tard
+// sans modifier le code (juste ajouter GOOGLE_API_KEY dans les vars Render).
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY ?? null
 
 const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
@@ -76,7 +86,14 @@ app.use((req, res, next) => {
 // --- Health ----------------------------------------------------------------
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'voice-bridge', model: MODEL, voice: VOICE })
+  res.json({
+    ok:      true,
+    service: 'voice-bridge',
+    engines: {
+      openai: true,                  // toujours présent (env required)
+      gemini: GOOGLE_API_KEY !== null,
+    },
+  })
 })
 
 // --- Déclenchement d'appel sortant -----------------------------------------
@@ -87,11 +104,17 @@ const OPENER_MAX_LENGTH = 500
 
 app.post('/call', async (req, res) => {
   try {
-    const { phoneNumber, opener } = req.body ?? {}
+    const { phoneNumber, opener, engine: engineRaw } = req.body ?? {}
 
     const cleaned = String(phoneNumber || '').replace(/\s/g, '')
     if (!cleaned.match(/^\+\d{8,15}$/)) {
       return res.status(400).json({ error: 'Numéro invalide. Format attendu : +33XXXXXXXXX.' })
+    }
+
+    // Engine : 'openai' (défaut) ou 'gemini' (refusé si pas configuré)
+    const engine = engineRaw === 'gemini' ? 'gemini' : 'openai'
+    if (engine === 'gemini' && !GOOGLE_API_KEY) {
+      return res.status(503).json({ error: 'Le moteur Gemini n\'est pas configuré sur ce serveur.' })
     }
 
     const openerClean = String(opener ?? '').trim().slice(0, OPENER_MAX_LENGTH)
@@ -120,17 +143,18 @@ app.post('/call', async (req, res) => {
     const proto = req.headers['x-forwarded-proto'] || 'https'
     const publicBase = `${proto}://${host}`
 
-    // Tracking : INSERT row demo_calls avant l'appel Twilio (best-effort)
-    const demoCallId = await recordDemoStart(cleaned)
+    // Tracking : INSERT row demo_calls AVANT l'appel Twilio (best-effort).
+    // L'engine est persisté dès le start pour avoir le bon discriminant même
+    // si l'appel échoue avant que la WS ne s'établisse.
+    const demoCallId = await recordDemoStart(cleaned, engine)
 
-    // demoCallId + opener passés en query, /outgoing les retransmet via TwiML
-    // <Parameter> → la WS les récupère dans l'event 'start' (customParameters)
+    // demoCallId + opener + engine passés en query, /outgoing les retransmet via
+    // TwiML <Parameter> → la WS les récupère dans l'event 'start' (customParameters)
     const queryParts = []
-    if (demoCallId)   queryParts.push(`demoCallId=${encodeURIComponent(demoCallId)}`)
-    if (openerClean)  queryParts.push(`opener=${encodeURIComponent(openerClean)}`)
-    const outgoingUrl = queryParts.length
-      ? `${publicBase}/outgoing?${queryParts.join('&')}`
-      : `${publicBase}/outgoing`
+    if (demoCallId)  queryParts.push(`demoCallId=${encodeURIComponent(demoCallId)}`)
+    if (openerClean) queryParts.push(`opener=${encodeURIComponent(openerClean)}`)
+    queryParts.push(`engine=${encodeURIComponent(engine)}`)
+    const outgoingUrl = `${publicBase}/outgoing?${queryParts.join('&')}`
 
     const call = await twilioClient.calls.create({
       to:   cleaned,
@@ -138,7 +162,7 @@ app.post('/call', async (req, res) => {
       url:  outgoingUrl,
     })
 
-    console.log(`📞 Appel sortant initié vers ${maskNumber(cleaned)} (sid: ${call.sid}${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
+    console.log(`📞 Appel sortant initié vers ${maskNumber(cleaned)} engine=${engine} (sid: ${call.sid}${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
     res.json({ ok: true, callSid: call.sid })
   } catch (err) {
     console.error('❌ /call :', err)
@@ -152,12 +176,14 @@ app.all('/outgoing', (req, res) => {
   const host       = req.headers['x-forwarded-host'] || req.headers.host
   const demoCallId = (req.query.demoCallId ?? req.body?.demoCallId ?? '').toString()
   const opener     = (req.query.opener     ?? req.body?.opener     ?? '').toString()
-  console.log(`📩 /outgoing reçu (demoCallId=${demoCallId ? 'yes' : 'no'}, opener=${opener ? `"${opener.substring(0, 50)}…"` : 'no'})`)
+  const engine     = (req.query.engine     ?? req.body?.engine     ?? 'openai').toString()
+  console.log(`📩 /outgoing reçu (engine=${engine}, demoCallId=${demoCallId ? 'yes' : 'no'}, opener=${opener ? `"${opener.substring(0, 50)}…"` : 'no'})`)
   // <Parameter> est retransmis à la WS dans event start (data.start.customParameters)
   const params = []
   if (demoCallId) params.push(`      <Parameter name="demoCallId" value="${escapeXml(demoCallId)}" />`)
   if (opener)     params.push(`      <Parameter name="opener" value="${escapeXml(opener)}" />`)
-  const paramTags = params.length ? params.join('\n') + '\n' : ''
+  params.push(`      <Parameter name="engine" value="${escapeXml(engine)}" />`)
+  const paramTags = params.join('\n') + '\n'
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
@@ -176,7 +202,8 @@ function escapeXml(s) {
 
 const server = app.listen(PORT, () => {
   console.log(`✅ voice-bridge écoute sur :${PORT}`)
-  console.log(`   modèle=${MODEL} voix=${VOICE} maxCall=${MAX_CALL_SECONDS}s`)
+  console.log(`   engines : openai=on gemini=${GOOGLE_API_KEY ? 'on' : 'off'}`)
+  console.log(`   maxCall=${MAX_CALL_SECONDS}s`)
   if (ALLOWED_ORIGINS.length) {
     console.log(`   CORS autorisé pour : ${ALLOWED_ORIGINS.join(', ')}`)
   } else {
@@ -189,228 +216,89 @@ const wss = new WebSocketServer({ server, path: '/media-stream' })
 wss.on('connection', (twilioWs) => {
   console.log('🔌 Stream Twilio connecté')
 
-  let streamSid              = null
-  let openaiWs               = null
-  let latestMediaTimestamp   = 0
-  let lastAssistantItem      = null
-  let markQueue              = []
-  let responseStartTimestamp = null
-  let safetyTimer            = null
-  let demoCallId             = null
-  let streamStartedAt        = null
-  let opener                 = null
-  let openaiReady            = false
-  let twilioStarted          = false
-  let setupDone              = false
-  // Accumulateur de tokens OpenAI (incrémenté sur chaque event response.done).
-  // À la fin de l'appel → recordDemoEnd(id, dur, tokens) → coût réel en base.
-  const tokens = {
-    input_audio:        0, // audio in non cachés
-    input_audio_cached: 0, // audio in cachés (×80 moins cher)
-    output_audio:       0,
-    input_text:         0,
-    output_text:        0,
-  }
+  let session         = null   // engine bridge ({ handleTwilioEvent, close, getTokens })
+  let engine          = 'openai'
+  let streamStartedAt = null
+  let demoCallId      = null
 
   // Coupure serveur de sécurité (raccroche dur après MAX_CALL_SECONDS)
-  safetyTimer = setTimeout(() => {
+  const safetyTimer = setTimeout(() => {
     console.log(`⏱  Limite ${MAX_CALL_SECONDS}s atteinte — raccrochage`)
     try { twilioWs.close() } catch { /* */ }
   }, MAX_CALL_SECONDS * 1000)
 
-  // Connexion OpenAI Realtime
-  openaiWs = new WebSocket(
-    `wss://api.openai.com/v1/realtime?model=${MODEL}`,
-    { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } },
-  )
-
-  // L'initialisation OpenAI (session.update + response.create) ne doit se faire
-  // QU'APRÈS que les 2 conditions soient réunies :
-  //   1. openaiWs en état OPEN (openaiReady)
-  //   2. event 'start' Twilio reçu (twilioStarted) → opener + demoCallId connus
-  // Le system prompt dépend de l'opener (mode MODECT vs mode caméléon), il faut
-  // donc connaître l'opener AVANT de l'envoyer.
-  const trySetup = () => {
-    if (!openaiReady || !twilioStarted || setupDone) return
-    setupDone = true
-
-    const systemPrompt   = buildSystemPrompt(opener)
-    const firstMessage   = buildFirstMessage(opener)
-    console.log(`📤 session.update + response.create (mode ${opener ? 'opener custom' : 'MODECT'})`)
-
-    openaiWs.send(JSON.stringify({
-      type: 'session.update',
-      session: {
-        type:              'realtime',
-        model:             MODEL,
-        output_modalities: ['audio'],
-        audio: {
-          input: {
-            format:         { type: 'audio/pcmu' },
-            turn_detection: {
-              type:                'server_vad',
-              threshold:           0.5,
-              prefix_padding_ms:   300,
-              silence_duration_ms: 500,
-            },
-          },
-          output: {
-            format: { type: 'audio/pcmu' },
-            voice:  VOICE,
-          },
-        },
-        instructions: systemPrompt,
-      },
-    }))
-
-    // Petit délai pour laisser OpenAI digérer session.update avant la 1re réponse
-    setTimeout(() => {
-      openaiWs.send(JSON.stringify({
-        type:     'response.create',
-        response: { instructions: firstMessage },
-      }))
-    }, 250)
-  }
-
-  openaiWs.on('open', () => {
-    console.log('✅ Connecté à OpenAI Realtime')
-    openaiReady = true
-    trySetup()
-  })
-
-  openaiWs.on('message', (data) => {
-    let event
-    try { event = JSON.parse(data.toString()) } catch { return }
-
-    if (event.type === 'error') {
-      console.error('❌ OpenAI :', event.error?.message || event)
-      return
-    }
-
-    // Audio sortant : OpenAI → Twilio
-    if (event.type === 'response.output_audio.delta' && event.delta && streamSid) {
-      twilioWs.send(JSON.stringify({
-        event:     'media',
-        streamSid,
-        media:     { payload: event.delta },
-      }))
-
-      if (!responseStartTimestamp) responseStartTimestamp = latestMediaTimestamp
-      if (event.item_id) lastAssistantItem = event.item_id
-
-      // Mark pour mesurer la latence + détecter la fin de buffer côté Twilio
-      twilioWs.send(JSON.stringify({
-        event:     'mark',
-        streamSid,
-        mark:      { name: 'ai-chunk' },
-      }))
-      markQueue.push('ai-chunk')
-    }
-
-    // Comptage des tokens consommés (event envoyé à la fin de chaque réponse IA)
-    // → utilisé pour calculer le coût RÉEL en fin d'appel.
-    if (event.type === 'response.done') {
-      const u = event.response?.usage
-      if (u) {
-        const totalAudioIn  = u.input_token_details?.audio_tokens                       ?? 0
-        const cachedAudioIn = u.input_token_details?.cached_tokens_details?.audio_tokens ?? 0
-        tokens.input_audio        += Math.max(0, totalAudioIn - cachedAudioIn)
-        tokens.input_audio_cached += cachedAudioIn
-        tokens.input_text         += u.input_token_details?.text_tokens   ?? 0
-        tokens.output_audio       += u.output_token_details?.audio_tokens ?? 0
-        tokens.output_text        += u.output_token_details?.text_tokens  ?? 0
-      }
-    }
-
-    // Interruption : l'utilisateur prend la parole pendant que l'IA parle
-    if (event.type === 'input_audio_buffer.speech_started') {
-      if (markQueue.length > 0 && responseStartTimestamp != null && lastAssistantItem) {
-        const elapsed = latestMediaTimestamp - responseStartTimestamp
-        openaiWs.send(JSON.stringify({
-          type:          'conversation.item.truncate',
-          item_id:       lastAssistantItem,
-          content_index: 0,
-          audio_end_ms:  elapsed,
-        }))
-        twilioWs.send(JSON.stringify({ event: 'clear', streamSid }))
-        markQueue              = []
-        lastAssistantItem      = null
-        responseStartTimestamp = null
-      }
-    }
-  })
-
-  openaiWs.on('error', (err) => console.error('❌ OpenAI WS :', err?.message || err))
-  openaiWs.on('close', ()    => console.log('• OpenAI déconnecté'))
-
-  // Audio entrant : Twilio → OpenAI
   twilioWs.on('message', (msg) => {
     let data
     try { data = JSON.parse(msg.toString()) } catch { return }
 
-    switch (data.event) {
-      case 'start':
-        streamSid              = data.start.streamSid
-        responseStartTimestamp = null
-        latestMediaTimestamp   = 0
-        streamStartedAt        = Date.now()
-        demoCallId             = data.start.customParameters?.demoCallId ?? null
-        opener                 = data.start.customParameters?.opener ?? null
-        twilioStarted          = true
-        console.log(`✅ Stream démarré (${streamSid.substring(0, 12)}…${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
-        console.log(`   customParameters reçus :`, JSON.stringify(data.start.customParameters ?? {}))
-        // Maintenant qu'on a l'opener, on peut envoyer session.update + response.create
-        // (si OpenAI WS est déjà ouvert ; sinon trySetup attendra openaiReady).
-        trySetup()
-        break
+    // L'event 'start' est toujours le 1er reçu. Il porte streamSid +
+    // customParameters (opener, demoCallId, engine). On instancie le bon
+    // bridge engine APRÈS l'avoir reçu, pour ne pas avoir à propager l'opener
+    // / engine de manière asynchrone.
+    if (data.event === 'start' && !session) {
+      const streamSid = data.start.streamSid
+      const params    = data.start.customParameters ?? {}
+      const opener    = params.opener ?? null
+      demoCallId      = params.demoCallId ?? null
+      engine          = params.engine === 'gemini' ? 'gemini' : 'openai'
+      streamStartedAt = Date.now()
 
-      case 'media':
-        latestMediaTimestamp = data.media.timestamp
-        // Ne forwarder l'audio QU'APRÈS que setupDone soit true. Avant ça,
-        // OpenAI n'a pas reçu sa session.update et interpréterait l'audio
-        // sans connaître son format (µ-law) ni son contexte (system prompt).
-        if (setupDone && openaiWs.readyState === WebSocket.OPEN) {
-          openaiWs.send(JSON.stringify({
-            type:  'input_audio_buffer.append',
-            audio: data.media.payload,
-          }))
+      console.log(`✅ Stream démarré engine=${engine} (${streamSid.substring(0, 12)}…${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
+      console.log(`   customParameters reçus :`, JSON.stringify(params))
+
+      if (engine === 'gemini') {
+        if (!GOOGLE_API_KEY) {
+          // Cas pathologique : /call a accepté gemini mais la clé a disparu
+          // entre-temps (rolling deploy). On raccroche proprement.
+          console.error('❌ engine=gemini demandé mais GOOGLE_API_KEY absent — raccrochage')
+          try { twilioWs.close() } catch { /* */ }
+          return
         }
-        break
-
-      case 'mark':
-        if (markQueue.length > 0) markQueue.shift()
-        break
-
-      case 'stop':
-        console.log('• Stream stoppé par Twilio')
-        if (openaiWs.readyState === WebSocket.OPEN) openaiWs.close()
-        break
+        session = createGeminiBridge({
+          twilioWs, streamSid, opener,
+          geminiApiKey: GOOGLE_API_KEY,
+        })
+      } else {
+        session = createOpenaiBridge({
+          twilioWs, streamSid, opener,
+          openaiApiKey: OPENAI_API_KEY,
+        })
+      }
+      return
     }
+
+    // Tous les events suivants sont délégués au bridge engine
+    if (session) session.handleTwilioEvent(data)
   })
 
   twilioWs.on('close', () => {
     console.log('🔌 Stream Twilio fermé')
-    if (safetyTimer) clearTimeout(safetyTimer)
-    if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close()
+    clearTimeout(safetyTimer)
+    session?.close()
+
     // Log récapitulatif tokens + coût réel (audit / debug)
-    const totalAudioIn = tokens.input_audio + tokens.input_audio_cached
-    const cacheRatio   = totalAudioIn > 0
-      ? Math.round((tokens.input_audio_cached / totalAudioIn) * 100)
-      : 0
-    const realCostEur  = computeOpenAICostEur(tokens)
-    console.log(
-      `💰 Tokens : audio_in=${totalAudioIn} (cached=${tokens.input_audio_cached}, ${cacheRatio}%)` +
-      ` audio_out=${tokens.output_audio} text_in=${tokens.input_text} text_out=${tokens.output_text}` +
-      ` → coût réel ≈ €${realCostEur.toFixed(4)}`,
-    )
-    // Tracking : UPDATE row demo_calls avec durée + coûts (best-effort).
-    // Si aucun response.done n'a été reçu (appel coupé trop tôt), tokens sont
-    // tous à 0 → on passe undefined pour ne PAS écrire un coût réel à 0€ qui
-    // serait trompeur (NULL est meilleur que 0 pour "inconnu").
-    if (demoCallId && streamStartedAt) {
-      const durationSeconds = (Date.now() - streamStartedAt) / 1000
-      const tokensToSave    = totalAudioIn > 0 || tokens.output_audio > 0 ? tokens : undefined
-      void recordDemoEnd(demoCallId, durationSeconds, tokensToSave)
+    if (session) {
+      const tokens = session.getTokens()
+      const totalAudioIn = (tokens.input_audio ?? 0) + (tokens.input_audio_cached ?? 0)
+      const cacheRatio = totalAudioIn > 0
+        ? Math.round(((tokens.input_audio_cached ?? 0) / totalAudioIn) * 100)
+        : 0
+      const realCostEur = computeAiCostEur(engine, tokens)
+      console.log(
+        `💰 [${engine}] Tokens : audio_in=${totalAudioIn} (cached=${tokens.input_audio_cached ?? 0}, ${cacheRatio}%)` +
+        ` audio_out=${tokens.output_audio ?? 0} text_in=${tokens.input_text ?? 0} text_out=${tokens.output_text ?? 0}` +
+        ` → coût réel ≈ €${realCostEur.toFixed(4)}`,
+      )
+
+      // Tracking : UPDATE row demo_calls avec durée + coûts (best-effort).
+      // Si aucun event usage n'a été reçu (appel coupé trop tôt), tokens sont
+      // tous à 0 → on passe undefined pour ne PAS écrire un coût réel à 0€ qui
+      // serait trompeur (NULL est meilleur que 0 pour "inconnu").
+      if (demoCallId && streamStartedAt) {
+        const durationSeconds = (Date.now() - streamStartedAt) / 1000
+        const tokensToSave = totalAudioIn > 0 || (tokens.output_audio ?? 0) > 0 ? tokens : undefined
+        void recordDemoEnd(demoCallId, durationSeconds, tokensToSave, engine)
+      }
     }
   })
 })

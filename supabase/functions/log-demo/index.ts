@@ -53,6 +53,10 @@ async function handleStart(body: Record<string, unknown>): Promise<Response> {
   if (mode !== 'web' && mode !== 'phone') {
     return jsonResponse({ error: 'mode doit être "web" ou "phone"' }, 400)
   }
+  const engine = (body.engine as string | undefined) ?? 'openai'
+  if (engine !== 'openai' && engine !== 'gemini') {
+    return jsonResponse({ error: 'engine doit être "openai" ou "gemini"' }, 400)
+  }
   const phonePrefix = body.phone_prefix as string | null | undefined
 
   const supabase = getSupabaseAdmin()
@@ -60,6 +64,7 @@ async function handleStart(body: Record<string, unknown>): Promise<Response> {
     .from('demo_calls')
     .insert({
       mode,
+      engine,
       started_at:   new Date().toISOString(),
       phone_prefix: phonePrefix ?? null,
     })

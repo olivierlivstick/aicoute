@@ -5,10 +5,12 @@ import { Icon } from '@/marketing/components/icons'
 import { DemoWebModal } from '@/marketing/components/DemoWebModal'
 import { DemoPhoneModal } from '@/marketing/components/DemoPhoneModal'
 
-type Mode = null | 'web' | 'phone'
+type Mode   = null | 'web' | 'phone'
+export type Engine = 'openai' | 'gemini'
 
 export function Demo() {
-  const [mode, setMode] = useState<Mode>(null)
+  const [mode,   setMode]   = useState<Mode>(null)
+  const [engine, setEngine] = useState<Engine>('openai')
 
   return (
     <section id="essai" className="bg-creme py-20 md:py-28">
@@ -27,7 +29,9 @@ export function Demo() {
           </p>
         </div>
 
-        <div className="mt-14 grid md:grid-cols-2 gap-6">
+        <EngineToggle engine={engine} onChange={setEngine} />
+
+        <div className="mt-10 grid md:grid-cols-2 gap-6">
           {/* Carte 1 — Mode web */}
           <article className="bg-white border border-creme-sable rounded-xl p-8 transition-colors hover:border-terracotta/30 flex flex-col">
             <div className="w-12 h-12 rounded-lg bg-creme flex items-center justify-center text-terracotta">
@@ -55,9 +59,11 @@ export function Demo() {
             <div className="mt-auto pt-7">
               <button
                 onClick={() => setMode('web')}
-                className="inline-flex items-center justify-center bg-terracotta hover:bg-terracotta-dark text-creme px-6 py-3.5 rounded-md font-medium transition-colors w-full sm:w-auto"
+                disabled={engine === 'gemini'}
+                className="inline-flex items-center justify-center bg-terracotta hover:bg-terracotta-dark text-creme px-6 py-3.5 rounded-md font-medium transition-colors w-full sm:w-auto disabled:bg-terracotta/40 disabled:cursor-not-allowed"
+                title={engine === 'gemini' ? 'Mode navigateur disponible uniquement avec OpenAI pour l\'instant' : undefined}
               >
-                Démarrer la conversation
+                {engine === 'gemini' ? 'Bientôt en navigateur' : 'Démarrer la conversation'}
               </button>
             </div>
           </article>
@@ -104,8 +110,40 @@ export function Demo() {
         </p>
       </div>
 
-      {mode === 'web'   && <DemoWebModal   onClose={() => setMode(null)} />}
-      {mode === 'phone' && <DemoPhoneModal onClose={() => setMode(null)} />}
+      {mode === 'web'   && <DemoWebModal   engine={engine} onClose={() => setMode(null)} />}
+      {mode === 'phone' && <DemoPhoneModal engine={engine} onClose={() => setMode(null)} />}
     </section>
+  )
+}
+
+// --- Toggle moteur conversationnel ------------------------------------------
+// Phase 1 : Gemini activé pour le mode téléphone (voice-bridge le supporte).
+// Mode web Gemini : encore en phase 2, sera désactivé côté DemoWebModal si besoin.
+function EngineToggle({ engine, onChange }: { engine: Engine; onChange: (e: Engine) => void }) {
+  const base    = 'flex-1 px-4 py-2.5 rounded-md text-sm font-medium transition-colors'
+  const active  = 'bg-terracotta text-creme shadow-sm'
+  const passive = 'text-brun-700 hover:text-brun-900'
+  return (
+    <div className="mt-10 max-w-sm mx-auto">
+      <p className="text-center text-[11px] uppercase tracking-[0.18em] text-brun-700/70 mb-2.5">
+        Moteur conversationnel
+      </p>
+      <div className="flex p-1 bg-white border border-creme-sable rounded-lg">
+        <button
+          type="button"
+          onClick={() => onChange('openai')}
+          className={`${base} ${engine === 'openai' ? active : passive}`}
+        >
+          OpenAI
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange('gemini')}
+          className={`${base} ${engine === 'gemini' ? active : passive}`}
+        >
+          Gemini
+        </button>
+      </div>
+    </div>
   )
 }
