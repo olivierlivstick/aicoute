@@ -202,7 +202,15 @@ RÈGLES GÉNÉRALES :
     }
 
     // 8. Envoyer l'email de notification à l'aidant
-    if (caregiver?.email) {
+    //    Trois conditions cumulatives :
+    //      - le bénéficiaire a opt-in (notify_call_report)
+    //      - l'aidant a un email
+    //      - le rapport n'a pas déjà été envoyé (idempotence sur report_email_sent_at)
+    const alreadySent     = !!call.report_email_sent_at
+    const notifyOptIn     = beneficiary.notify_call_report !== false  // default TRUE
+    let   reportEmailSent = false
+
+    if (notifyOptIn && caregiver?.email && !alreadySent) {
       const callDate = new Date(call.ended_at ?? call.scheduled_at)
       const durationMin = call.duration_seconds
         ? Math.round(call.duration_seconds / 60)
@@ -213,31 +221,45 @@ RÈGLES GÉNÉRALES :
         hour: '2-digit', minute: '2-digit',
       })
 
-      await sendEmail({
+      const ok = await sendEmail({
         to:      caregiver.email,
-        subject: `📋 Compte-rendu de l'appel de ${beneficiary.first_name} — ${mood_detected === 'concerned' ? '⚠️ ' : ''}${MOOD_LABELS[mood_detected]}`,
+        subject: `Compte-rendu de l'appel de ${beneficiary.first_name} — ${mood_detected === 'concerned' ? '⚠️ ' : ''}${MOOD_LABELS[mood_detected]}`,
         html: reportEmailHtml({
           caregiver_name:   caregiver.full_name ?? 'Aidant',
           beneficiary_name: `${beneficiary.first_name} ${beneficiary.last_name}`,
           call_date:        dateFormatted,
           duration_min:     durationMin,
-          mood_emoji:       mood_detected === 'positive' ? '😊' : mood_detected === 'neutral' ? '😐' : '😟',
           mood_label:       MOOD_LABELS[mood_detected],
           summary,
           key_topics,
           alerts,
           app_url:          appUrl,
+          call_id,
         }),
       })
+
+      // Marquer envoyé uniquement si Resend a accepté
+      if (ok) {
+        reportEmailSent = true
+        await supabase
+          .from('calls')
+          .update({ report_email_sent_at: new Date().toISOString() })
+          .eq('id', call_id)
+      }
+    } else if (alreadySent) {
+      console.log(`[generate-summary] Email déjà envoyé pour call ${call_id}, skip.`)
+    } else if (!notifyOptIn) {
+      console.log(`[generate-summary] Bénéficiaire ${beneficiary.id} a opt-out (notify_call_report=false), skip email.`)
     }
 
     console.log(`[generate-summary] ✓ Call ${call_id} traité — mood: ${mood_detected}, ${new_memories.length} mémoires`)
 
     return jsonResponse({
-      success:    true,
+      success:           true,
       call_id,
       mood_detected,
-      memories_added: new_memories.length,
+      memories_added:    new_memories.length,
+      report_email_sent: reportEmailSent,
     })
 
   } catch (err) {

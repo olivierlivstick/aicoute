@@ -31,11 +31,17 @@ import { recordDemoStart, recordDemoEnd, computeAiCostEur } from './tracking.js'
 import { createOpenaiBridge } from './engines/openai-bridge.js'
 import { createGeminiBridge } from './engines/gemini-bridge.js'
 import { createGeminiBridgeWeb } from './engines/gemini-bridge-web.js'
+import { createModectCallBridge } from './engines/modect-call-bridge.js'
+import { markCallInProgress, recordCallTokens } from './persistence/modect-call.js'
 
 // --- Config ----------------------------------------------------------------
 
 const PORT             = Number(process.env.PORT || 5050)
 const MAX_CALL_SECONDS = Number(process.env.MAX_CALL_SECONDS || 240)
+// Appels planifiés : durée beaucoup plus longue qu'une démo (cible 5-15 min)
+const MAX_SCHEDULED_CALL_SECONDS = Number(process.env.MAX_SCHEDULED_CALL_SECONDS || 900)
+// Sonnerie max côté Twilio avant de basculer en no-answer (passe B prend ensuite le relais)
+const SCHEDULED_RING_TIMEOUT = Number(process.env.SCHEDULED_RING_TIMEOUT || 30)
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
@@ -59,6 +65,18 @@ const TWILIO_NUMBER      = requireEnv('TWILIO_NUMBER')
 // Permet de déployer le service avec OpenAI seul et d'activer Gemini plus tard
 // sans modifier le code (juste ajouter GOOGLE_API_KEY dans les vars Render).
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY ?? null
+
+// Pour les appels planifiés Modect : appels Supabase Edge Functions internes.
+// Le token est partagé avec Supabase (get-call-context le vérifie).
+// Si absent → /scheduled-call sera refusé en 503 (le service reste utilisable
+// pour la démo vitrine).
+const MODECT_INTERNAL_TOKEN     = process.env.MODECT_INTERNAL_TOKEN     ?? null
+const SUPABASE_URL              = process.env.SUPABASE_URL              ?? null
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? null
+const SCHEDULED_CALLS_ENABLED   =
+  MODECT_INTERNAL_TOKEN !== null &&
+  SUPABASE_URL          !== null &&
+  SUPABASE_SERVICE_ROLE_KEY !== null
 
 const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
@@ -94,6 +112,7 @@ app.get('/health', (_req, res) => {
       openai: true,                  // toujours présent (env required)
       gemini: GOOGLE_API_KEY !== null,
     },
+    scheduledCalls: SCHEDULED_CALLS_ENABLED,
   })
 })
 
@@ -199,6 +218,69 @@ function escapeXml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+// --- Appels planifiés Modect (Twilio sortant → bénéficiaire réel) ----------
+//
+// Auth : header Authorization: Bearer ${MODECT_INTERNAL_TOKEN}.
+// Pas de rate-limit IP / numéro : c'est l'Edge Function `initiate-call` qui
+// appelle, et le worker Modect est seul responsable du rythme via les passes
+// A/B/C de schedule-calls.
+
+app.post('/scheduled-call', async (req, res) => {
+  if (!SCHEDULED_CALLS_ENABLED) {
+    return res.status(503).json({ error: 'Appels planifiés non configurés (MODECT_INTERNAL_TOKEN / SUPABASE_* manquants)' })
+  }
+  const auth = req.headers.authorization ?? ''
+  if (auth !== `Bearer ${MODECT_INTERNAL_TOKEN}`) {
+    return res.status(401).json({ error: 'Forbidden' })
+  }
+
+  try {
+    const { call_id: callId, phone } = req.body ?? {}
+    if (!callId || typeof callId !== 'string') {
+      return res.status(400).json({ error: 'call_id requis' })
+    }
+    const cleaned = String(phone || '').replace(/\s/g, '')
+    if (!cleaned.match(/^\+\d{8,15}$/)) {
+      return res.status(400).json({ error: 'Numéro invalide. Format attendu : +33XXXXXXXXX.' })
+    }
+
+    const host  = req.headers['x-forwarded-host'] || req.headers.host
+    const proto = req.headers['x-forwarded-proto'] || 'https'
+    const publicBase = `${proto}://${host}`
+
+    // call_id passé via query → /scheduled-outgoing le retransmet en <Parameter>
+    const outgoingUrl = `${publicBase}/scheduled-outgoing?call_id=${encodeURIComponent(callId)}`
+
+    const call = await twilioClient.calls.create({
+      to:      cleaned,
+      from:    TWILIO_NUMBER,
+      url:     outgoingUrl,
+      timeout: SCHEDULED_RING_TIMEOUT,  // sonneries max avant que Twilio raccroche
+    })
+
+    console.log(`📞 [scheduled] Appel sortant vers ${maskNumber(cleaned)} (callId: ${callId.slice(0, 8)}…, sid: ${call.sid})`)
+    res.json({ ok: true, callSid: call.sid })
+  } catch (err) {
+    console.error('❌ /scheduled-call :', err)
+    res.status(500).json({ error: err?.message || 'Erreur interne' })
+  }
+})
+
+app.all('/scheduled-outgoing', (req, res) => {
+  const host    = req.headers['x-forwarded-host'] || req.headers.host
+  const callId  = (req.query.call_id ?? req.body?.call_id ?? '').toString()
+  console.log(`📩 /scheduled-outgoing reçu (callId: ${callId ? callId.slice(0, 8) + '…' : 'no'})`)
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="wss://${host}/scheduled-media-stream">
+      <Parameter name="call_id" value="${escapeXml(callId)}" />
+    </Stream>
+  </Connect>
+</Response>`
+  res.type('text/xml').send(twiml)
+})
+
 // --- Démarrage HTTP + WebSocket --------------------------------------------
 
 const server = app.listen(PORT, () => {
@@ -221,8 +303,9 @@ const server = app.listen(PORT, () => {
 // ce qui empêche le 2e WSS de voir la requête. On crée donc les WSS en mode
 // noServer et on dispatche nous-mêmes l'event 'upgrade' selon le pathname.
 
-const wss    = new WebSocketServer({ noServer: true })  // Twilio /media-stream
-const wssWeb = new WebSocketServer({ noServer: true })  // browser /ws/gemini-web
+const wss          = new WebSocketServer({ noServer: true })  // Twilio /media-stream (démo vitrine)
+const wssWeb       = new WebSocketServer({ noServer: true })  // browser /ws/gemini-web (démo vitrine)
+const wssScheduled = new WebSocketServer({ noServer: true })  // Twilio /scheduled-media-stream (appels Modect)
 
 function abortHandshake(socket, code, message = '') {
   socket.write(
@@ -240,6 +323,15 @@ server.on('upgrade', (req, socket, head) => {
 
   if (pathname === '/media-stream') {
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+    return
+  }
+
+  if (pathname === '/scheduled-media-stream') {
+    if (!SCHEDULED_CALLS_ENABLED) {
+      abortHandshake(socket, 503, 'Scheduled calls not configured')
+      return
+    }
+    wssScheduled.handleUpgrade(req, socket, head, (ws) => wssScheduled.emit('connection', ws, req))
     return
   }
 
@@ -408,6 +500,93 @@ wssWeb.on('connection', (clientWs) => {
     console.log('🔌 [web] gemini-web fermé')
     clearTimeout(safetyTimer)
     bridge.close()
+  })
+})
+
+// --- WSS /scheduled-media-stream : appels planifiés Modect -----------------
+// Twilio ouvre la WS quand le bénéficiaire DÉCROCHE (Stream démarre côté
+// destinataire, pas à la sonnerie). On marque alors le call 'in_progress'
+// dans Supabase, on instancie modect-call-bridge qui fetche le contexte +
+// négocie OpenAI Realtime, et on accumule transcript + tokens pour le flush
+// final via save-transcript.
+
+wssScheduled.on('connection', (twilioWs) => {
+  console.log('🔌 [scheduled] Stream Twilio connecté')
+
+  let session         = null
+  let callId          = null
+  let streamStartedAt = null
+
+  const safetyTimer = setTimeout(() => {
+    console.log(`⏱  [scheduled] Limite ${MAX_SCHEDULED_CALL_SECONDS}s atteinte — raccrochage`)
+    try { twilioWs.close() } catch { /* */ }
+  }, MAX_SCHEDULED_CALL_SECONDS * 1000)
+
+  twilioWs.on('message', (msg) => {
+    let data
+    try { data = JSON.parse(msg.toString()) } catch { return }
+
+    if (data.event === 'start' && !session) {
+      const streamSid = data.start.streamSid
+      const params    = data.start.customParameters ?? {}
+      callId          = params.call_id ?? null
+      streamStartedAt = Date.now()
+
+      if (!callId) {
+        console.error('❌ [scheduled] Stream démarré sans call_id — raccrochage')
+        try { twilioWs.close() } catch { /* */ }
+        return
+      }
+
+      console.log(`✅ [scheduled] Stream démarré callId=${callId.slice(0, 8)}… (sid: ${streamSid.slice(0, 12)}…)`)
+
+      // Marquer le call en cours côté Supabase (best-effort, async)
+      void markCallInProgress(callId)
+
+      session = createModectCallBridge({
+        twilioWs,
+        streamSid,
+        callId,
+        openaiApiKey:   OPENAI_API_KEY,
+        supabaseUrl:    SUPABASE_URL,
+        internalToken:  MODECT_INTERNAL_TOKEN,
+        serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+      })
+      return
+    }
+
+    if (session) session.handleTwilioEvent(data)
+  })
+
+  twilioWs.on('close', async () => {
+    console.log(`🔌 [scheduled] Stream Twilio fermé${callId ? ` (callId=${callId.slice(0, 8)}…)` : ''}`)
+    clearTimeout(safetyTimer)
+
+    if (!session || !callId || !streamStartedAt) {
+      session?.close()
+      return
+    }
+
+    const durationSeconds = (Date.now() - streamStartedAt) / 1000
+    const tokens          = session.getTokens()
+    const totalAudioIn    = (tokens.input_audio ?? 0) + (tokens.input_audio_cached ?? 0)
+
+    // Flush transcript → save-transcript (chaîne generate-summary)
+    await session.flushFinal(durationSeconds, 'completed')
+
+    // Écrire tokens + coût IA réel en parallèle (UPDATE séparé, save-transcript
+    // ne gère pas ces champs)
+    if (totalAudioIn > 0 || (tokens.output_audio ?? 0) > 0) {
+      await recordCallTokens(callId, tokens)
+    }
+
+    session.close()
+
+    console.log(
+      `💰 [scheduled:${callId.slice(0, 8)}…] tokens audio_in=${totalAudioIn} audio_out=${tokens.output_audio ?? 0}` +
+      ` text_in=${tokens.input_text ?? 0} text_out=${tokens.output_text ?? 0}` +
+      ` durée=${durationSeconds.toFixed(1)}s`,
+    )
   })
 })
 

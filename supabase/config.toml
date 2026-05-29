@@ -58,3 +58,6 @@ verify_jwt = false   # appelée depuis la vitrine publique (DemoWebModal)
 
 [functions.list-demos]
 verify_jwt = false   # auth interne via ?key=<DEMO_TRACK_KEY>
+
+[functions.get-call-context]
+verify_jwt = false   # auth interne via MODECT_INTERNAL_TOKEN (appelée par le voice-bridge)

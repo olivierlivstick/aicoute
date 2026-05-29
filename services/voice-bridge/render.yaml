@@ -29,7 +29,17 @@ services:
         value: https://www.modect.com,https://modect.com
       - key: MAX_CALL_SECONDS
         value: "120"
+      - key: MAX_SCHEDULED_CALL_SECONDS
+        value: "900"            # appels Modect : 15 min max (cf. CLAUDE.md)
+      - key: SCHEDULED_RING_TIMEOUT
+        value: "30"             # sonnerie max avant que Twilio raccroche → passe B no-answer prend le relais
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Auth interne Supabase ↔ voice-bridge pour les appels planifiés.
+      # MÊME valeur que le secret MODECT_INTERNAL_TOKEN côté Supabase.
+      # Si absent → endpoint /scheduled-call refusé en 503 (le service reste
+      # utilisable pour la démo vitrine).
+      - key: MODECT_INTERNAL_TOKEN
         sync: false
