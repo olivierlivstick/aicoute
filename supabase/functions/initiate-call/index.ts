@@ -55,10 +55,10 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Call introuvable', detail: callError?.message }, 404)
     }
 
-    // 2. Récupérer le bénéficiaire (juste le numéro et le nom pour les logs)
+    // 2. Récupérer le bénéficiaire (numéro, persona pour logs, moteur préféré)
     const { data: beneficiary, error: benError } = await supabase
       .from('beneficiaries')
-      .select('id, first_name, phone, ai_persona_name')
+      .select('id, first_name, phone, ai_persona_name, preferred_engine')
       .eq('id', call.beneficiary_id)
       .single()
 
@@ -85,7 +85,8 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // 3. Déclencher l'appel Twilio via voice-bridge
+    // 3. Déclencher l'appel Twilio via voice-bridge — propage le moteur préféré
+    const engine = beneficiary.preferred_engine === 'gemini' ? 'gemini' : 'openai'
     const bridgeRes = await fetch(`${voiceBridgeUrl}/scheduled-call`, {
       method: 'POST',
       headers: {
@@ -95,6 +96,7 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         call_id,
         phone: beneficiary.phone,
+        engine,
       }),
     })
 
@@ -120,13 +122,16 @@ Deno.serve(async (req: Request) => {
     const bridgeData = await bridgeRes.json().catch(() => ({})) as { callSid?: string }
     const twilioSid  = bridgeData.callSid ?? null
 
-    // 4. Marquer le call notifié — origine du timer no-answer (passe B de schedule-calls)
+    // 4. Marquer le call notifié + tracer le moteur prévu pour cet appel.
+    //    L'engine sera potentiellement écrasé par markCallInProgress côté
+    //    voice-bridge si fallback (ex: gemini demandé mais clé absente).
     const { error: updateError } = await supabase
       .from('calls')
       .update({
         status:          'notified',
         notified_at:     new Date().toISOString(),
         twilio_call_sid: twilioSid,
+        engine,
       })
       .eq('id', call_id)
 

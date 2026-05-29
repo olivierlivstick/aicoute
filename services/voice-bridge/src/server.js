@@ -32,6 +32,7 @@ import { createOpenaiBridge } from './engines/openai-bridge.js'
 import { createGeminiBridge } from './engines/gemini-bridge.js'
 import { createGeminiBridgeWeb } from './engines/gemini-bridge-web.js'
 import { createModectCallBridge } from './engines/modect-call-bridge.js'
+import { createModectGeminiBridge } from './engines/modect-gemini-bridge.js'
 import {
   markCallInProgress,
   recordCallTokens,
@@ -241,7 +242,7 @@ app.post('/scheduled-call', async (req, res) => {
   }
 
   try {
-    const { call_id: callId, phone } = req.body ?? {}
+    const { call_id: callId, phone, engine: engineRaw } = req.body ?? {}
     if (!callId || typeof callId !== 'string') {
       return res.status(400).json({ error: 'call_id requis' })
     }
@@ -249,13 +250,19 @@ app.post('/scheduled-call', async (req, res) => {
     if (!cleaned.match(/^\+\d{8,15}$/)) {
       return res.status(400).json({ error: 'Numéro invalide. Format attendu : +33XXXXXXXXX.' })
     }
+    // Engine : 'openai' (défaut) ou 'gemini' (refusé si pas configuré côté Render)
+    const engine = engineRaw === 'gemini' ? 'gemini' : 'openai'
+    if (engine === 'gemini' && !GOOGLE_API_KEY) {
+      return res.status(503).json({ error: 'Le moteur Gemini n\'est pas configuré sur ce serveur.' })
+    }
 
     const host  = req.headers['x-forwarded-host'] || req.headers.host
     const proto = req.headers['x-forwarded-proto'] || 'https'
     const publicBase = `${proto}://${host}`
 
-    // call_id passé via query → /scheduled-outgoing le retransmet en <Parameter>
-    const outgoingUrl = `${publicBase}/scheduled-outgoing?call_id=${encodeURIComponent(callId)}`
+    // call_id + engine passés via query → /scheduled-outgoing les retransmet via <Parameter>
+    const queryParts = [`call_id=${encodeURIComponent(callId)}`, `engine=${encodeURIComponent(engine)}`]
+    const outgoingUrl = `${publicBase}/scheduled-outgoing?${queryParts.join('&')}`
 
     // statusCallback : Twilio nous notifie des changements de statut de l'appel
     // (no-answer, busy, failed, completed). On l'utilise pour court-circuiter
@@ -272,7 +279,7 @@ app.post('/scheduled-call', async (req, res) => {
       statusCallbackMethod: 'POST',
     })
 
-    console.log(`📞 [scheduled] Appel sortant vers ${maskNumber(cleaned)} (callId: ${callId.slice(0, 8)}…, sid: ${call.sid})`)
+    console.log(`📞 [scheduled] Appel sortant vers ${maskNumber(cleaned)} engine=${engine} (callId: ${callId.slice(0, 8)}…, sid: ${call.sid})`)
     res.json({ ok: true, callSid: call.sid })
   } catch (err) {
     console.error('❌ /scheduled-call :', err)
@@ -319,12 +326,14 @@ app.post('/scheduled-status', async (req, res) => {
 app.all('/scheduled-outgoing', (req, res) => {
   const host    = req.headers['x-forwarded-host'] || req.headers.host
   const callId  = (req.query.call_id ?? req.body?.call_id ?? '').toString()
-  console.log(`📩 /scheduled-outgoing reçu (callId: ${callId ? callId.slice(0, 8) + '…' : 'no'})`)
+  const engine  = (req.query.engine  ?? req.body?.engine  ?? 'openai').toString()
+  console.log(`📩 /scheduled-outgoing reçu (callId: ${callId ? callId.slice(0, 8) + '…' : 'no'}, engine=${engine})`)
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
     <Stream url="wss://${host}/scheduled-media-stream">
       <Parameter name="call_id" value="${escapeXml(callId)}" />
+      <Parameter name="engine" value="${escapeXml(engine)}" />
     </Stream>
   </Connect>
 </Response>`
@@ -565,6 +574,7 @@ wssScheduled.on('connection', (twilioWs) => {
 
   let session         = null
   let callId          = null
+  let engine          = 'openai'
   let streamStartedAt = null
 
   const safetyTimer = setTimeout(() => {
@@ -580,6 +590,7 @@ wssScheduled.on('connection', (twilioWs) => {
       const streamSid = data.start.streamSid
       const params    = data.start.customParameters ?? {}
       callId          = params.call_id ?? null
+      engine          = params.engine === 'gemini' ? 'gemini' : 'openai'
       streamStartedAt = Date.now()
 
       if (!callId) {
@@ -588,20 +599,39 @@ wssScheduled.on('connection', (twilioWs) => {
         return
       }
 
-      console.log(`✅ [scheduled] Stream démarré callId=${callId.slice(0, 8)}… (sid: ${streamSid.slice(0, 12)}…)`)
+      // Garde-fou : Gemini demandé mais pas configuré → on tombe sur OpenAI
+      // (au lieu de raccrocher) pour ne pas pénaliser le bénéficiaire.
+      if (engine === 'gemini' && !GOOGLE_API_KEY) {
+        console.error(`❌ [scheduled:${callId.slice(0, 8)}…] engine=gemini demandé mais GOOGLE_API_KEY absent — fallback openai`)
+        engine = 'openai'
+      }
 
-      // Marquer le call en cours côté Supabase (best-effort, async)
-      void markCallInProgress(callId)
+      console.log(`✅ [scheduled] Stream démarré callId=${callId.slice(0, 8)}… engine=${engine} (sid: ${streamSid.slice(0, 12)}…)`)
 
-      session = createModectCallBridge({
-        twilioWs,
-        streamSid,
-        callId,
-        openaiApiKey:   OPENAI_API_KEY,
-        supabaseUrl:    SUPABASE_URL,
-        internalToken:  MODECT_INTERNAL_TOKEN,
-        serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
-      })
+      // Marquer le call en cours côté Supabase avec le moteur effectif
+      void markCallInProgress(callId, engine)
+
+      if (engine === 'gemini') {
+        session = createModectGeminiBridge({
+          twilioWs,
+          streamSid,
+          callId,
+          geminiApiKey:   GOOGLE_API_KEY,
+          supabaseUrl:    SUPABASE_URL,
+          internalToken:  MODECT_INTERNAL_TOKEN,
+          serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+        })
+      } else {
+        session = createModectCallBridge({
+          twilioWs,
+          streamSid,
+          callId,
+          openaiApiKey:   OPENAI_API_KEY,
+          supabaseUrl:    SUPABASE_URL,
+          internalToken:  MODECT_INTERNAL_TOKEN,
+          serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+        })
+      }
       return
     }
 
@@ -624,16 +654,15 @@ wssScheduled.on('connection', (twilioWs) => {
     // Flush transcript → save-transcript (chaîne generate-summary)
     await session.flushFinal(durationSeconds, 'completed')
 
-    // Écrire tokens + coût IA réel en parallèle (UPDATE séparé, save-transcript
-    // ne gère pas ces champs)
+    // Écrire tokens + coût IA réel (tarifs différents selon engine)
     if (totalAudioIn > 0 || (tokens.output_audio ?? 0) > 0) {
-      await recordCallTokens(callId, tokens)
+      await recordCallTokens(callId, tokens, engine)
     }
 
     session.close()
 
     console.log(
-      `💰 [scheduled:${callId.slice(0, 8)}…] tokens audio_in=${totalAudioIn} audio_out=${tokens.output_audio ?? 0}` +
+      `💰 [scheduled:${callId.slice(0, 8)}…] engine=${engine} tokens audio_in=${totalAudioIn} audio_out=${tokens.output_audio ?? 0}` +
       ` text_in=${tokens.input_text ?? 0} text_out=${tokens.output_text ?? 0}` +
       ` durée=${durationSeconds.toFixed(1)}s`,
     )

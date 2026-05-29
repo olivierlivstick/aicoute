@@ -16,6 +16,7 @@ interface CallRow {
   duration_seconds: number | null
   attempt_number:   number
   ai_cost_eur_real: number | null
+  engine:           'openai' | 'gemini' | null
   alerts:           Array<{ severity: string }> | null
   beneficiaries: {
     id: string
@@ -23,6 +24,11 @@ interface CallRow {
     last_name:  string
     profiles: { email: string; full_name: string } | null
   } | null
+}
+
+const ENGINE_LABEL: Record<'openai' | 'gemini', { label: string; tone: string }> = {
+  openai: { label: 'OpenAI', tone: 'bg-sauge/15 text-sauge'     },
+  gemini: { label: 'Gemini', tone: 'bg-accent-50 text-accent-700' },
 }
 
 interface BeneficiaryOption {
@@ -93,7 +99,7 @@ export function AdminAppelsPage() {
     // Tri : passés desc (plus récents en haut), prévus asc (prochain en haut)
     let q = supabase
       .from('calls')
-      .select('id, status, scheduled_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, alerts, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
+      .select('id, status, scheduled_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, engine, alerts, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
       .in('status', statuses)
       .order('scheduled_at', { ascending: tab === 'upcoming' })
       .limit(200)
@@ -260,6 +266,7 @@ export function AdminAppelsPage() {
                 <th className="px-5 py-3">Bénéficiaire</th>
                 <th className="px-5 py-3">Aidant</th>
                 <th className="px-5 py-3">Statut</th>
+                {tab === 'past' && <th className="px-5 py-3 text-center">Moteur</th>}
                 {tab === 'past' && <th className="px-5 py-3 text-center">Durée</th>}
                 {tab === 'past' && <th className="px-5 py-3 text-right">Coût IA</th>}
                 <th className="px-5 py-3">Actions</th>
@@ -303,6 +310,17 @@ export function AdminAppelsPage() {
                       )}
                     </td>
                     {tab === 'past' && (
+                      <td className="px-5 py-3 text-center">
+                        {c.engine ? (
+                          <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${ENGINE_LABEL[c.engine].tone}`}>
+                            {ENGINE_LABEL[c.engine].label}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                    )}
+                    {tab === 'past' && (
                       <td className="px-5 py-3 text-center text-brun-700">{dur}</td>
                     )}
                     {tab === 'past' && (
@@ -345,7 +363,7 @@ export function AdminAppelsPage() {
               })}
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={tab === 'past' ? 7 : 5} className="px-5 py-10 text-center text-slate-400 text-sm">
+                  <td colSpan={tab === 'past' ? 8 : 5} className="px-5 py-10 text-center text-slate-400 text-sm">
                     <PhoneCall size={24} className="mx-auto mb-2 text-slate-300" />
                     {tab === 'past'
                       ? 'Aucun appel passé ne correspond aux filtres.'

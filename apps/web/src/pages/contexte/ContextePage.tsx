@@ -447,6 +447,7 @@ const aiSchema = z.object({
   ai_voice:            z.enum(['cedar', 'marin']),
   conversation_style:  z.enum(['warm', 'playful', 'calm', 'formal']),
   language_preference: z.string().min(2),
+  preferred_engine:    z.enum(['openai', 'gemini']),
 })
 
 type AIForm = z.infer<typeof aiSchema>
@@ -454,6 +455,11 @@ type AIForm = z.infer<typeof aiSchema>
 const VOICES: { value: AIVoice; label: string; description: string }[] = [
   { value: 'marin', label: 'Féminin',  description: 'Voix féminine, douce et chaleureuse' },
   { value: 'cedar', label: 'Masculin', description: 'Voix masculine, posée et rassurante' },
+]
+
+const ENGINES: { value: 'openai' | 'gemini'; label: string; description: string }[] = [
+  { value: 'openai', label: 'OpenAI',        description: 'gpt-realtime-2 (voix cedar/marin)' },
+  { value: 'gemini', label: 'Google Gemini', description: 'Gemini Live (voix Aoede)' },
 ]
 
 const STYLES: { value: ConversationStyle; label: string; description: string; emoji: string }[] = [
@@ -487,11 +493,15 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
       ai_voice:            voiceToGenderValue(beneficiary.ai_voice),
       conversation_style:  beneficiary.conversation_style ?? 'warm',
       language_preference: beneficiary.language_preference ?? 'fr',
+      // preferred_engine vient de la DB (cast pour contourner les types Database
+      // incomplets cf. CLAUDE.md "Build Netlify : utiliser vite build sans tsc")
+      preferred_engine:    ((beneficiary as unknown as { preferred_engine?: string }).preferred_engine === 'gemini' ? 'gemini' : 'openai'),
     },
   })
 
-  const selectedVoice = watch('ai_voice')
-  const selectedStyle = watch('conversation_style')
+  const selectedVoice  = watch('ai_voice')
+  const selectedStyle  = watch('conversation_style')
+  const selectedEngine = watch('preferred_engine')
 
   const onSubmit = async (values: AIForm) => {
     const ok = await save({
@@ -499,7 +509,8 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
       ai_voice:            values.ai_voice,
       conversation_style:  values.conversation_style,
       language_preference: values.language_preference,
-    })
+      preferred_engine:    values.preferred_engine,
+    } as unknown as Partial<Beneficiary>)
     if (ok) onSaved()
   }
 
@@ -576,6 +587,31 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <Label>Moteur conversationnel</Label>
+          <p className="text-xs text-slate-400 mb-1">
+            Le modèle IA qui anime les appels. Vous pouvez en changer à tout moment.
+          </p>
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            {ENGINES.map(({ value, label, description }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setValue('preferred_engine', value)}
+                className={cn(
+                  'text-left px-3 py-2.5 rounded-xl border text-sm transition-all',
+                  selectedEngine === value
+                    ? 'border-primary bg-primary-50 text-primary'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                )}
+              >
+                <span className="font-semibold block">{label}</span>
+                <span className="text-xs opacity-70">{description}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

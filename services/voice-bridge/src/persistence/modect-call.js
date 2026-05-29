@@ -24,25 +24,36 @@ if (!supabase) {
   console.warn('⚠️  [modect-call] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY absents — persistance désactivée.')
 }
 
-// Tarifs (alignés sur tracking.js → moteur OpenAI uniquement pour les calls
-// planifiés ; Gemini n'est utilisé que sur la démo vitrine).
+// Tarifs alignés sur tracking.js (utilisé pour les démos vitrine). Mêmes
+// sources : openai.com/api/pricing pour gpt-realtime-2, ai.google.dev/pricing
+// pour gemini live.
 const USD_TO_EUR = 0.92
-const RATES_OPENAI = {
-  input_audio:        32   / 1_000_000,
-  input_audio_cached:  0.40 / 1_000_000,
-  output_audio:       64   / 1_000_000,
-  input_text:          4   / 1_000_000,
-  output_text:        24   / 1_000_000,
+const RATES = {
+  openai: {
+    input_audio:        32   / 1_000_000,
+    input_audio_cached:  0.40 / 1_000_000,
+    output_audio:       64   / 1_000_000,
+    input_text:          4   / 1_000_000,
+    output_text:        24   / 1_000_000,
+  },
+  gemini: {
+    input_audio:         3   / 1_000_000,
+    input_audio_cached:  0,
+    output_audio:       12   / 1_000_000,
+    input_text:          0.50 / 1_000_000,
+    output_text:         2   / 1_000_000,
+  },
 }
 
-/** Coût IA réel en EUR à partir des tokens (4 décimales). */
-export function computeCallAiCostEur(tokens) {
+/** Coût IA réel en EUR à partir des tokens (4 décimales). engine = 'openai' | 'gemini' */
+export function computeCallAiCostEur(tokens, engine = 'openai') {
+  const r = RATES[engine] ?? RATES.openai
   const usd =
-    (tokens.input_audio        ?? 0) * RATES_OPENAI.input_audio +
-    (tokens.input_audio_cached ?? 0) * RATES_OPENAI.input_audio_cached +
-    (tokens.output_audio       ?? 0) * RATES_OPENAI.output_audio +
-    (tokens.input_text         ?? 0) * RATES_OPENAI.input_text +
-    (tokens.output_text        ?? 0) * RATES_OPENAI.output_text
+    (tokens.input_audio        ?? 0) * r.input_audio +
+    (tokens.input_audio_cached ?? 0) * r.input_audio_cached +
+    (tokens.output_audio       ?? 0) * r.output_audio +
+    (tokens.input_text         ?? 0) * r.input_text +
+    (tokens.output_text        ?? 0) * r.output_text
   return +(usd * USD_TO_EUR).toFixed(4)
 }
 
@@ -50,13 +61,18 @@ export function computeCallAiCostEur(tokens) {
  * Marque le call comme en cours (le bénéficiaire a décroché).
  *   - status      → 'in_progress'
  *   - started_at  → now()
+ *   - engine      → 'openai' | 'gemini' (le moteur effectivement utilisé)
  * Idempotent : ne fait rien si le call n'est pas en 'notified' ou 'scheduled'.
  */
-export async function markCallInProgress(callId) {
+export async function markCallInProgress(callId, engine = 'openai') {
   if (!supabase || !callId) return
   const { error } = await supabase
     .from('calls')
-    .update({ status: 'in_progress', started_at: new Date().toISOString() })
+    .update({
+      status:     'in_progress',
+      started_at: new Date().toISOString(),
+      engine,
+    })
     .eq('id', callId)
     .in('status', ['scheduled', 'notified'])
   if (error) console.error(`❌ [modect-call] markInProgress ${callId}:`, error.message)
@@ -70,7 +86,7 @@ export async function markCallInProgress(callId) {
  * en arrière-plan via EdgeRuntime.waitUntil — on garde ce chaînage côté Edge
  * Function plutôt que de le re-implémenter côté Render.
  */
-export async function recordCallTokens(callId, tokens) {
+export async function recordCallTokens(callId, tokens, engine = 'openai') {
   if (!supabase || !callId) return
   const update = {
     tokens_input_audio:        tokens.input_audio        ?? 0,
@@ -78,7 +94,7 @@ export async function recordCallTokens(callId, tokens) {
     tokens_output_audio:       tokens.output_audio       ?? 0,
     tokens_input_text:         tokens.input_text         ?? 0,
     tokens_output_text:        tokens.output_text        ?? 0,
-    ai_cost_eur_real:          computeCallAiCostEur(tokens),
+    ai_cost_eur_real:          computeCallAiCostEur(tokens, engine),
   }
   const { error } = await supabase.from('calls').update(update).eq('id', callId)
   if (error) console.error(`❌ [modect-call] recordTokens ${callId}:`, error.message)
