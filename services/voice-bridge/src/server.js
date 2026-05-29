@@ -38,6 +38,8 @@ import {
   recordCallTokens,
   markCallByTwilioStatus,
   findCallIdByTwilioSid,
+  saveTwilioCostBySid,
+  listCallsMissingTwilioCost,
 } from './persistence/modect-call.js'
 import { logEvent as logSystemEvent } from './persistence/system-events.js'
 
@@ -86,6 +88,52 @@ const SCHEDULED_CALLS_ENABLED   =
   SUPABASE_SERVICE_ROLE_KEY !== null
 
 const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+// Taux de change USD→EUR (aligné sur tracking.js / modect-call.js). Twilio peut
+// facturer en USD ou EUR selon le compte ; on convertit seulement si USD.
+const USD_TO_EUR = 0.92
+
+/**
+ * Récupère le prix d'un appel Twilio et le convertit en EUR.
+ * Renvoie le coût en EUR (number, 4 décimales) ou null si pas encore dispo.
+ * price est une chaîne négative (ex "-0.0130") dans la devise priceUnit.
+ */
+async function fetchTwilioPriceEur(sid) {
+  const call = await twilioClient.calls(sid).fetch()
+  if (call.price == null) return null  // pas encore renseigné par Twilio
+  const raw = Math.abs(parseFloat(call.price))
+  if (!Number.isFinite(raw)) return null
+  const unit = (call.priceUnit || 'USD').toUpperCase()
+  return +(unit === 'EUR' ? raw : raw * USD_TO_EUR).toFixed(4)
+}
+
+/**
+ * Récupère le coût RÉEL d'un appel Twilio et l'écrit dans calls.twilio_cost_eur.
+ *
+ * Le champ `price` est renseigné de façon ASYNCHRONE par Twilio : null au moment
+ * du callback `completed`, il n'apparaît que quelques secondes/minutes plus tard.
+ * On poll donc l'API plusieurs fois avec délai croissant. Fire-and-forget :
+ * lancé sans await depuis /scheduled-status. Best-effort — en cas d'échec on
+ * garde l'estimation par la durée côté UI.
+ */
+async function captureTwilioCost(sid) {
+  if (!sid) return
+  const delaysMs = [15_000, 30_000, 45_000, 60_000, 90_000]
+  for (let attempt = 0; attempt < delaysMs.length; attempt++) {
+    await new Promise((r) => setTimeout(r, delaysMs[attempt]))
+    try {
+      const eur = await fetchTwilioPriceEur(sid)
+      if (eur == null) continue  // pas encore prêt → réessaie plus tard
+      await saveTwilioCostBySid(sid, eur)
+      console.log(`💶 [twilio-cost] sid=${sid.slice(0, 12)}… → €${eur}`)
+      return
+    } catch (err) {
+      console.error(`❌ [twilio-cost] fetch ${sid.slice(0, 12)}… :`, err?.message)
+      // On continue à réessayer : une erreur transitoire ne doit pas tout annuler.
+    }
+  }
+  console.warn(`⚠️  [twilio-cost] prix toujours indisponible pour sid=${sid.slice(0, 12)}… après ${delaysMs.length} tentatives`)
+}
 
 // --- App Express -----------------------------------------------------------
 
@@ -302,6 +350,14 @@ app.post('/scheduled-status', async (req, res) => {
     return res.status(400).end()
   }
 
+  // Sur tout statut terminal, on lance en arrière-plan la récupération du coût
+  // Twilio réel (le prix n'est pas encore dispo à cet instant → poller différé).
+  // Pour 'completed', c'est le seul endroit où on l'apprend (markCallByTwilioStatus
+  // ignore 'completed', géré par save-transcript côté flush WS).
+  if (['completed', 'no-answer', 'busy', 'failed', 'canceled'].includes(status)) {
+    void captureTwilioCost(sid)
+  }
+
   try {
     const callId = await findCallIdByTwilioSid(sid)
     const applied = await markCallByTwilioStatus(sid, status)
@@ -321,6 +377,46 @@ app.post('/scheduled-status', async (req, res) => {
     console.error('❌ /scheduled-status :', err)
     res.status(200).end()  // idem, on absorbe pour éviter les retries Twilio
   }
+})
+
+// Backfill du coût Twilio réel sur les appels passés (completed) qui n'ont pas
+// encore de twilio_cost_eur — typiquement les appels antérieurs à l'ajout de la
+// capture automatique. Protégé par le token interne (mêmes credentials que les
+// appels planifiés). À déclencher manuellement :
+//   curl -X POST https://voice.modect.com/backfill-twilio-costs \
+//        -H "Authorization: Bearer $MODECT_INTERNAL_TOKEN" \
+//        -H "Content-Type: application/json" -d '{"limit":200}'
+// Pour les appels anciens, le prix Twilio est déjà finalisé → pas de polling,
+// un seul fetch suffit. On espace légèrement les appels pour ménager l'API.
+app.post('/backfill-twilio-costs', async (req, res) => {
+  if (!SCHEDULED_CALLS_ENABLED) {
+    return res.status(503).json({ error: 'Persistance Supabase non configurée.' })
+  }
+  const auth = req.headers['authorization'] || req.headers['Authorization']
+  if (auth !== `Bearer ${MODECT_INTERNAL_TOKEN}`) {
+    return res.status(401).json({ error: 'Forbidden' })
+  }
+
+  const limit = Math.min(Math.max(Number(req.body?.limit) || 200, 1), 500)
+  const calls = await listCallsMissingTwilioCost(limit)
+
+  let updated = 0, notReady = 0, errors = 0
+  for (const c of calls) {
+    try {
+      const eur = await fetchTwilioPriceEur(c.twilio_call_sid)
+      if (eur == null) { notReady++; continue }
+      await saveTwilioCostBySid(c.twilio_call_sid, eur)
+      updated++
+    } catch (err) {
+      console.error(`❌ [backfill] ${c.twilio_call_sid?.slice(0, 12)}… :`, err?.message)
+      errors++
+    }
+    await new Promise((r) => setTimeout(r, 120))  // ~8 req/s max
+  }
+
+  const summary = { scanned: calls.length, updated, notReady, errors }
+  console.log('💶 [backfill-twilio-costs]', JSON.stringify(summary))
+  res.json({ ok: true, ...summary })
 })
 
 app.all('/scheduled-outgoing', (req, res) => {

@@ -134,6 +134,41 @@ export async function markCallByTwilioStatus(twilioSid, twilioStatus) {
   return data ? nextStatus : null
 }
 
+/**
+ * Écrit le coût Twilio RÉEL (en EUR) sur le call identifié par son SID Twilio.
+ * Appelé par le poller de server.js une fois que Twilio a renseigné le prix.
+ * Idempotent : un simple UPDATE, on peut le rejouer sans dommage.
+ */
+export async function saveTwilioCostBySid(twilioSid, costEur) {
+  if (!supabase || !twilioSid || costEur == null) return
+  const { error } = await supabase
+    .from('calls')
+    .update({ twilio_cost_eur: costEur })
+    .eq('twilio_call_sid', twilioSid)
+  if (error) console.error(`❌ [modect-call] saveTwilioCost ${twilioSid}:`, error.message)
+}
+
+/**
+ * Liste les appels terminés ayant un SID Twilio mais pas encore de coût réel.
+ * Utilisé par le backfill (/backfill-twilio-costs). Renvoie [{ id, twilio_call_sid }].
+ */
+export async function listCallsMissingTwilioCost(limit = 200) {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('calls')
+    .select('id, twilio_call_sid')
+    .eq('status', 'completed')
+    .not('twilio_call_sid', 'is', null)
+    .is('twilio_cost_eur', null)
+    .order('scheduled_at', { ascending: false })
+    .limit(limit)
+  if (error) {
+    console.error('❌ [modect-call] listCallsMissingTwilioCost:', error.message)
+    return []
+  }
+  return data ?? []
+}
+
 /** Lookup pour le statusCallback : trouve l'id Modect à partir du SID Twilio. */
 export async function findCallIdByTwilioSid(twilioSid) {
   if (!supabase || !twilioSid) return null

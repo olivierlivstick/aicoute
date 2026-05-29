@@ -1,9 +1,13 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { RefreshCcw, ExternalLink, PhoneCall, Zap } from 'lucide-react'
+import { RefreshCcw, ExternalLink, PhoneCall, Zap, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 type CallStatus = 'scheduled' | 'notified' | 'in_progress' | 'completed' | 'missed' | 'failed'
+
+// Tarif Twilio FR mobile sortant — même taux que services/voice-bridge/src/tracking.js
+// (le coût Twilio n'est pas stocké sur `calls`, on l'approxime depuis la durée).
+const TWILIO_EUR_PER_SECOND = 0.0007
 
 const PAST_STATUSES:     CallStatus[] = ['completed', 'missed', 'failed']
 const UPCOMING_STATUSES: CallStatus[] = ['scheduled', 'notified', 'in_progress']
@@ -12,10 +16,13 @@ interface CallRow {
   id:               string
   status:           CallStatus
   scheduled_at:     string
+  started_at:       string | null
+  notified_at:      string | null
   ended_at:         string | null
   duration_seconds: number | null
   attempt_number:   number
   ai_cost_eur_real: number | null
+  twilio_cost_eur:  number | null
   engine:           'openai' | 'gemini' | null
   alerts:           Array<{ severity: string }> | null
   beneficiaries: {
@@ -99,7 +106,7 @@ export function AdminAppelsPage() {
     // Tri : passés desc (plus récents en haut), prévus asc (prochain en haut)
     let q = supabase
       .from('calls')
-      .select('id, status, scheduled_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, engine, alerts, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
+      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, engine, alerts, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
       .in('status', statuses)
       .order('scheduled_at', { ascending: tab === 'upcoming' })
       .limit(200)
@@ -208,6 +215,21 @@ export function AdminAppelsPage() {
     }
   }
 
+  /** Supprime définitivement un appel prévu (DELETE direct, RLS admin autorise). */
+  async function deleteCall(callId: string) {
+    if (!confirm('Effacer définitivement cet appel prévu ? Cette action est irréversible.')) return
+    setBusy(callId)
+    try {
+      const { error } = await supabase.from('calls').delete().eq('id', callId)
+      if (error) throw new Error(error.message)
+      await load()
+    } catch (err) {
+      alert(`Échec de la suppression : ${err instanceof Error ? err.message : 'erreur inconnue'}`)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-6 py-8">
       <header className="mb-6">
@@ -262,13 +284,21 @@ export function AdminAppelsPage() {
           <table className="w-full text-sm">
             <thead className="bg-creme text-brun-700 text-left text-xs uppercase tracking-wider">
               <tr>
-                <th className="px-5 py-3">Date</th>
+                {tab === 'past' ? (
+                  <>
+                    <th className="px-5 py-3">Planifié</th>
+                    <th className="px-5 py-3">Effectif</th>
+                  </>
+                ) : (
+                  <th className="px-5 py-3">Date</th>
+                )}
                 <th className="px-5 py-3">Bénéficiaire</th>
                 <th className="px-5 py-3">Aidant</th>
                 <th className="px-5 py-3">Statut</th>
                 {tab === 'past' && <th className="px-5 py-3 text-center">Moteur</th>}
                 {tab === 'past' && <th className="px-5 py-3 text-center">Durée</th>}
                 {tab === 'past' && <th className="px-5 py-3 text-right">Coût IA</th>}
+                {tab === 'past' && <th className="px-5 py-3 text-right">Coût Twilio</th>}
                 <th className="px-5 py-3">Actions</th>
               </tr>
             </thead>
@@ -279,8 +309,20 @@ export function AdminAppelsPage() {
                 const dur = c.duration_seconds
                   ? `${Math.floor(c.duration_seconds / 60)}m${(c.duration_seconds % 60).toString().padStart(2, '0')}`
                   : '—'
+                // Heure effective = décroché réel (started_at), fallback sur le
+                // déclenchement Twilio (notified_at) pour les missed/failed.
+                const effective = c.started_at ?? c.notified_at
+                // Coût Twilio : valeur réelle remontée par l'API Twilio si dispo,
+                // sinon estimation par la durée (préfixée « ~ »).
+                const twilioReal = c.twilio_cost_eur != null
+                const twilioCost = twilioReal
+                  ? `€${c.twilio_cost_eur!.toFixed(4)}`
+                  : c.duration_seconds != null
+                    ? `~€${(c.duration_seconds * TWILIO_EUR_PER_SECOND).toFixed(4)}`
+                    : '—'
                 const canRelaunch  = tab === 'past'     && (c.status === 'missed' || c.status === 'failed') && ben?.id
                 const canTriggerNow = tab === 'upcoming' && c.status === 'scheduled'
+                const canDelete     = tab === 'upcoming'
                 const hasHighAlert = Array.isArray(c.alerts) && c.alerts.some((a) => a.severity === 'high')
                 return (
                   <tr key={c.id} className="hover:bg-creme/40 transition-colors">
@@ -292,6 +334,13 @@ export function AdminAppelsPage() {
                         </span>
                       )}
                     </td>
+                    {tab === 'past' && (
+                      <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
+                        {effective
+                          ? new Date(effective).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
+                          : '—'}
+                      </td>
+                    )}
                     <td className="px-5 py-3 text-brun-900">
                       {ben ? `${ben.first_name} ${ben.last_name}` : '—'}
                     </td>
@@ -328,6 +377,14 @@ export function AdminAppelsPage() {
                         {c.ai_cost_eur_real != null ? `€${c.ai_cost_eur_real.toFixed(4)}` : '—'}
                       </td>
                     )}
+                    {tab === 'past' && (
+                      <td
+                        className={`px-5 py-3 text-right font-mono text-xs ${twilioReal ? 'text-brun-700' : 'text-slate-400'}`}
+                        title={twilioReal ? 'Coût réel facturé par Twilio' : 'Estimation à partir de la durée (≈ 0,0007 €/s) — coût réel pas encore remonté'}
+                      >
+                        {twilioCost}
+                      </td>
+                    )}
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-3">
                         <Link
@@ -356,6 +413,16 @@ export function AdminAppelsPage() {
                             Déclencher maintenant
                           </button>
                         )}
+                        {canDelete && (
+                          <button
+                            onClick={() => deleteCall(c.id)}
+                            disabled={busy === c.id}
+                            className="inline-flex items-center gap-1 text-xs text-brique hover:underline disabled:opacity-50"
+                          >
+                            <Trash2 size={12} />
+                            Supprimer
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -363,7 +430,7 @@ export function AdminAppelsPage() {
               })}
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={tab === 'past' ? 8 : 5} className="px-5 py-10 text-center text-slate-400 text-sm">
+                  <td colSpan={tab === 'past' ? 10 : 5} className="px-5 py-10 text-center text-slate-400 text-sm">
                     <PhoneCall size={24} className="mx-auto mb-2 text-slate-300" />
                     {tab === 'past'
                       ? 'Aucun appel passé ne correspond aux filtres.'
