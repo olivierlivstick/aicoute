@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Search, Phone } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Search, Phone, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface BeneficiaryRow {
@@ -107,11 +108,12 @@ export function AdminBeneficiairesPage() {
                 <th className="px-5 py-3 text-center">Appels</th>
                 <th className="px-5 py-3">Dernier appel</th>
                 <th className="px-5 py-3">État</th>
+                <th className="px-5 py-3 text-right">Gérer</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-creme-sable">
               {filtered.map((b) => (
-                <tr key={b.id} className="hover:bg-creme/40 transition-colors">
+                <tr key={b.id} className="hover:bg-creme/40 transition-colors group">
                   <td className="px-5 py-3">
                     <p className="font-medium text-brun-900">{b.first_name} {b.last_name}</p>
                     <p className="text-xs text-slate-500">{b.language_preference}</p>
@@ -146,11 +148,19 @@ export function AdminBeneficiairesPage() {
                       )}
                     </div>
                   </td>
+                  <td className="px-5 py-3 text-right">
+                    <Link
+                      to={`/admin/beneficiaires/${b.id}`}
+                      className="inline-flex items-center gap-1 text-sm text-primary font-medium hover:underline"
+                    >
+                      Gérer <ChevronRight size={14} />
+                    </Link>
+                  </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-sm">
+                  <td colSpan={7} className="px-5 py-8 text-center text-slate-400 text-sm">
                     Aucun bénéficiaire ne correspond à ce filtre.
                   </td>
                 </tr>

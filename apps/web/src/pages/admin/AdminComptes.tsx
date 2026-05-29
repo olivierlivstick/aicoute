@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Search, ShieldCheck } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Search, ShieldCheck, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface CaregiverRow {
@@ -114,6 +115,7 @@ export function AdminComptesPage() {
                 <th className="px-5 py-3 text-center">Appels 30 j</th>
                 <th className="px-5 py-3">Dernier appel</th>
                 <th className="px-5 py-3">Inscrit le</th>
+                <th className="px-5 py-3 text-right">Gérer</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-creme-sable">
@@ -142,11 +144,19 @@ export function AdminComptesPage() {
                   <td className="px-5 py-3 text-xs text-slate-500">
                     {new Date(r.created_at).toLocaleDateString('fr-FR')}
                   </td>
+                  <td className="px-5 py-3 text-right">
+                    <Link
+                      to={`/admin/comptes/${r.id}`}
+                      className="inline-flex items-center gap-1 text-sm text-primary font-medium hover:underline"
+                    >
+                      Gérer <ChevronRight size={14} />
+                    </Link>
+                  </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-sm">
+                  <td colSpan={7} className="px-5 py-8 text-center text-slate-400 text-sm">
                     Aucun compte ne correspond à ce filtre.
                   </td>
                 </tr>

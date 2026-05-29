@@ -33,8 +33,10 @@ import { SimulateCallPage } from '@/pages/call/SimulateCall'
 // Admin pages
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboard'
 import { AdminComptesPage } from '@/pages/admin/AdminComptes'
+import { AdminCompteDetailPage } from '@/pages/admin/AdminCompteDetail'
 import { AdminAppelsPage } from '@/pages/admin/AdminAppels'
 import { AdminBeneficiairesPage } from '@/pages/admin/AdminBeneficiaires'
+import { AdminBeneficiaireDetailPage } from '@/pages/admin/AdminBeneficiaireDetail'
 import { AdminSantePage } from '@/pages/admin/AdminSante'
 
 export function App() {
@@ -84,7 +86,9 @@ export function App() {
           {/* --- Module admin (visible uniquement si profile.role === 'admin') --- */}
           <Route path="/admin"               element={<RequireAdmin><AdminDashboardPage    /></RequireAdmin>} />
           <Route path="/admin/comptes"       element={<RequireAdmin><AdminComptesPage      /></RequireAdmin>} />
+          <Route path="/admin/comptes/:id"   element={<RequireAdmin><AdminCompteDetailPage /></RequireAdmin>} />
           <Route path="/admin/beneficiaires" element={<RequireAdmin><AdminBeneficiairesPage /></RequireAdmin>} />
+          <Route path="/admin/beneficiaires/:id" element={<RequireAdmin><AdminBeneficiaireDetailPage /></RequireAdmin>} />
           <Route path="/admin/appels"        element={<RequireAdmin><AdminAppelsPage       /></RequireAdmin>} />
           <Route path="/admin/sante"         element={<RequireAdmin><AdminSantePage        /></RequireAdmin>} />
 
