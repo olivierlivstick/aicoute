@@ -61,26 +61,36 @@ Deno.serve(async (req: Request) => {
 
     if (updateError) throw new Error(`Update call failed: ${updateError.message}`)
 
-    // 2. Déclencher generate-summary (en arrière-plan, sans bloquer le client)
+    // 2. Déclencher generate-summary EN ATTENDANT sa réponse.
+    //
+    // Pourquoi pas en fire-and-forget (la version précédente) : le runtime
+    // Deno Supabase ne garantissait pas l'exécution du promise via
+    // EdgeRuntime.waitUntil → generate-summary n'était souvent jamais
+    // invoquée → ni résumé, ni alertes, ni email. La fetch ajoute ~5s à la
+    // latence de save-transcript mais le voice-bridge ne fait que loguer la
+    // réponse (la WS Twilio est déjà fermée à ce stade).
     let summaryTriggered = false
     if (status === 'completed' && transcript.length > 0) {
-      const supabaseUrl     = Deno.env.get('SUPABASE_URL')!
-      const serviceRoleKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      const supabaseUrl    = Deno.env.get('SUPABASE_URL')!
+      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-      const summaryPromise = fetch(`${supabaseUrl}/functions/v1/generate-summary`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${serviceRoleKey}`,
-          'Content-Type':  'application/json',
-        },
-        body: JSON.stringify({ call_id }),
-      }).catch((err) => console.error('[save-transcript] generate-summary error:', err))
-
-      // Garder la tâche vivante après l'envoi de la réponse (runtime Supabase)
-      const waitUntil = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } })
-        .EdgeRuntime?.waitUntil
-      if (waitUntil) waitUntil(summaryPromise)
-      summaryTriggered = true
+      try {
+        const res = await fetch(`${supabaseUrl}/functions/v1/generate-summary`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${serviceRoleKey}`,
+            'Content-Type':  'application/json',
+          },
+          body: JSON.stringify({ call_id }),
+        })
+        summaryTriggered = res.ok
+        if (!res.ok) {
+          const detail = await res.text().catch(() => '')
+          console.error(`[save-transcript] generate-summary HTTP ${res.status}: ${detail.slice(0, 500)}`)
+        }
+      } catch (err) {
+        console.error('[save-transcript] generate-summary fetch error:', err)
+      }
     }
 
     return jsonResponse({ success: true, call_id, summary_triggered: summaryTriggered })

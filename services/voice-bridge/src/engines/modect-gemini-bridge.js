@@ -125,21 +125,24 @@ export function createModectGeminiBridge(opts) {
         userBuffer += sc.inputTranscription.text
       }
 
-      // Fin de turn → commit les buffers
+      // Fin de turn → commit les buffers dans l'ordre temporel : l'user a
+      // parlé en premier, l'assistant a répondu ensuite. Au tout premier
+      // turn (initié par le firstMessageHint serveur), userBuffer est vide
+      // et seul l'assistant est commité — ordre correct dans tous les cas.
       if (sc.turnComplete) {
-        const aText = assistantBuffer.trim()
-        if (aText) {
-          transcript.push({
-            role:      'assistant',
-            text:      aText,
-            timestamp: new Date().toISOString(),
-          })
-        }
         const uText = userBuffer.trim()
         if (uText) {
           transcript.push({
             role:      'user',
             text:      uText,
+            timestamp: new Date().toISOString(),
+          })
+        }
+        const aText = assistantBuffer.trim()
+        if (aText) {
+          transcript.push({
+            role:      'assistant',
+            text:      aText,
             timestamp: new Date().toISOString(),
           })
         }
@@ -256,11 +259,11 @@ export function createModectGeminiBridge(opts) {
     if (flushed) return
     flushed = true
 
-    // Commit les buffers restants en best-effort
-    const aText = assistantBuffer.trim()
-    if (aText) transcript.push({ role: 'assistant', text: aText, timestamp: new Date().toISOString() })
+    // Commit les buffers restants en best-effort (même ordre temporel que ci-dessus)
     const uText = userBuffer.trim()
     if (uText) transcript.push({ role: 'user', text: uText, timestamp: new Date().toISOString() })
+    const aText = assistantBuffer.trim()
+    if (aText) transcript.push({ role: 'assistant', text: aText, timestamp: new Date().toISOString() })
 
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/save-transcript`, {
