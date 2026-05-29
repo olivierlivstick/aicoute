@@ -96,6 +96,26 @@ SPA React mono-utilisateur. Hypothèse : 95% des aidants n'ont qu'**un seul bén
 
 Après création via le wizard, le nouveau bénéficiaire est automatiquement sélectionné dans le context puis redirige vers `/contexte`.
 
+### Module administration (`/admin/*`)
+
+Visible uniquement si `profile.role = 'admin'`. Entrée dédiée dans la sidebar (palette `accent` ocre, distincte de la navigation aidant). Garde-fou [RequireAdmin.tsx](apps/web/src/components/RequireAdmin.tsx) + hook [useIsAdmin.ts](apps/web/src/hooks/useIsAdmin.ts).
+
+| Route | Rôle | Composant |
+|---|---|---|
+| `/admin` | KPI globaux 24h/7j (comptes, bénéficiaires, appels, coût IA, alertes haute sévérité du jour, calls bloqués) | [AdminDashboard.tsx](apps/web/src/pages/admin/AdminDashboard.tsx) |
+| `/admin/comptes` | Liste de tous les profils (aidants + admins) avec nb bénéficiaires, nb calls 30j, dernier appel | [AdminComptes.tsx](apps/web/src/pages/admin/AdminComptes.tsx) |
+| `/admin/beneficiaires` | Liste globale + colonne aidant + état `notify_call_report` + alerte si pas de téléphone | [AdminBeneficiaires.tsx](apps/web/src/pages/admin/AdminBeneficiaires.tsx) |
+| `/admin/appels` | Tous les appels, filtres URL (`?period=`, `?status=`, `?severity=high`), action « Relancer » sur les missed/failed | [AdminAppels.tsx](apps/web/src/pages/admin/AdminAppels.tsx) |
+| `/admin/sante` | Calls bloqués (`notified` > 5 min · `in_progress` > 30 min · `scheduled` retry > 5 min) + dernier appel terminé + auto-refresh 30s | [AdminSante.tsx](apps/web/src/pages/admin/AdminSante.tsx) |
+
+**RLS admin** : la migration `20260529000003_admin_role.sql` ajoute une fonction `is_admin()` (SECURITY DEFINER + STABLE) et des policies additives `admin_all_*` qui ouvrent SELECT (et UPDATE/INSERT sur `calls`) à tout admin. Les policies caregiver existantes ne sont pas touchées — les deux jeux sont OU-isés par Postgres.
+
+**Pour rendre un compte admin** : `UPDATE profiles SET role='admin' WHERE email='...'` (CHECK élargi à `caregiver | beneficiary | admin`).
+
+**Action « Relancer »** sur `/admin/appels` : INSERT direct via client supabase (RLS admin autorise) + `supabase.functions.invoke('initiate-call', { body: { call_id } })`. Pas d'Edge Fn dédiée.
+
+**Différé** (non inclus dans ce lot) : impersonate / vue « comme cet aidant », page emails séparée (l'info est déjà sur `calls.report_email_sent_at`).
+
 ### Redirections legacy (dans [App.tsx](apps/web/src/App.tsx))
 `/sessions → /planning`, `/reports → /historique`, `/reports/:id → /historique/:id`, `/settings → /compte`, `/beneficiary → /contexte`, `/beneficiary/:id → /contexte` (avec sélection auto), `/memories → /dashboard`, `/setup → /compte`.
 

@@ -1,6 +1,6 @@
 // Types TypeScript partagés entre web, mobile et edge functions
 
-export type UserRole = 'caregiver' | 'beneficiary'
+export type UserRole = 'caregiver' | 'beneficiary' | 'admin'
 
 export interface Profile {
   id: string

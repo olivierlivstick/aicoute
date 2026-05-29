@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AppLayout } from '@/components/AppLayout'
+import { RequireAdmin } from '@/components/RequireAdmin'
 import { Home } from '@/marketing/Home'
 import { TrackCallsPage } from '@/marketing/TrackCalls'
 
@@ -26,6 +27,13 @@ import { CallDetailPage } from '@/pages/historique/CallDetail'
 import { VeillePage } from '@/pages/veille/VeillePage'
 import { ComptePage } from '@/pages/compte/ComptePage'
 import { SimulateCallPage } from '@/pages/call/SimulateCall'
+
+// Admin pages
+import { AdminDashboardPage } from '@/pages/admin/AdminDashboard'
+import { AdminComptesPage } from '@/pages/admin/AdminComptes'
+import { AdminAppelsPage } from '@/pages/admin/AdminAppels'
+import { AdminBeneficiairesPage } from '@/pages/admin/AdminBeneficiaires'
+import { AdminSantePage } from '@/pages/admin/AdminSante'
 
 export function App() {
   return (
@@ -68,6 +76,13 @@ export function App() {
 
           {/* Page d'appel (utilisée en simulation desktop ; mobile = app Expo) */}
           <Route path="/call" element={<SimulateCallPage />} />
+
+          {/* --- Module admin (visible uniquement si profile.role === 'admin') --- */}
+          <Route path="/admin"               element={<RequireAdmin><AdminDashboardPage    /></RequireAdmin>} />
+          <Route path="/admin/comptes"       element={<RequireAdmin><AdminComptesPage      /></RequireAdmin>} />
+          <Route path="/admin/beneficiaires" element={<RequireAdmin><AdminBeneficiairesPage /></RequireAdmin>} />
+          <Route path="/admin/appels"        element={<RequireAdmin><AdminAppelsPage       /></RequireAdmin>} />
+          <Route path="/admin/sante"         element={<RequireAdmin><AdminSantePage        /></RequireAdmin>} />
 
           {/* --- Redirections legacy --- */}
           <Route path="/sessions"        element={<Navigate to="/planning"   replace />} />

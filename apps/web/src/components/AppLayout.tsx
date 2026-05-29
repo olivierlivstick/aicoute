@@ -6,10 +6,12 @@ import {
   History,
   Radar,
   UserCog,
+  ShieldCheck,
   LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
+import { useIsAdmin } from '@/hooks/useIsAdmin'
 import { Logo } from '@/components/Logo'
 import { AppHeader } from '@/components/AppHeader'
 import { SelectedBeneficiaryProvider } from '@/hooks/useSelectedBeneficiary'
@@ -28,6 +30,7 @@ const accountNav = [
 
 export function AppLayout() {
   const { profile, signOut } = useAuth()
+  const { isAdmin } = useIsAdmin()
   const navigate = useNavigate()
 
   const handleSignOut = async () => {
@@ -65,6 +68,51 @@ export function AppLayout() {
                 {label}
               </NavLink>
             ))}
+
+            {/* Section admin (visible uniquement si role=admin) */}
+            {isAdmin && (
+              <div className="pt-4 mt-4 border-t border-slate-100 space-y-1">
+                <p className="px-3 mb-1 text-[10px] uppercase tracking-widest text-accent-700 font-semibold">
+                  Administration
+                </p>
+                <NavLink
+                  to="/admin"
+                  end
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-body font-medium transition-colors',
+                      isActive
+                        ? 'bg-accent-50 text-accent-700'
+                        : 'text-slate-600 hover:bg-accent-50 hover:text-accent-700'
+                    )
+                  }
+                >
+                  <ShieldCheck size={18} />
+                  Vue d'ensemble
+                </NavLink>
+                {[
+                  { to: '/admin/comptes',       label: 'Aidants' },
+                  { to: '/admin/beneficiaires', label: 'Bénéficiaires' },
+                  { to: '/admin/appels',        label: 'Appels' },
+                  { to: '/admin/sante',         label: 'Santé système' },
+                ].map(({ to, label }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-3 pl-10 pr-3 py-2 rounded-xl text-sm font-body transition-colors',
+                        isActive
+                          ? 'bg-accent-50 text-accent-700 font-medium'
+                          : 'text-slate-500 hover:bg-accent-50 hover:text-accent-700'
+                      )
+                    }
+                  >
+                    {label}
+                  </NavLink>
+                ))}
+              </div>
+            )}
 
             {/* Section compte (séparée visuellement) */}
             <div className="pt-4 mt-4 border-t border-slate-100 space-y-1">
