@@ -224,6 +224,7 @@ GEMINI_VOICE=                # défaut : Aoede (validée meilleure que cedar Ope
 
 ## Déploiement
 - **Netlify** : **un seul site** (Base directory `apps/web`, `apps/web/netlify.toml`). Faire pointer **les deux domaines** `www.modect.com` + `app.modect.com` vers ce site. L'app route selon le sous-domaine (`src/App.tsx` : `app.*` → back-office, sinon vitrine). `Permissions-Policy: microphone=(self)` pour WebRTC. Penser à whitelister `app.modect.com` dans Supabase → Auth → URL Configuration.
+- **Analytics (Umami)** : snippet chargé **conditionnellement** depuis `apps/web/index.html` via un garde inline — uniquement sur la **vitrine** (exclut `app.*` + `localhost`/`127.0.0.1`), pour ne pas tracker le back-office ni le dev local. `data-website-id` Umami Cloud en dur dans `index.html`.
 - **Supabase** : `supabase link --project-ref XXX` puis `supabase functions deploy`
 - **Render** : Web Service Node pour `services/voice-bridge` (plan **Starter** minimum — le Free dort après 15 min et casse la démo). Région Frankfurt. Custom domain `voice.modect.com` (CNAME). Variables à renseigner dans l'UI Render. Blueprint disponible dans `services/voice-bridge/render.yaml`.
 - **pg_cron** : cron toutes les minutes → appelle `schedule-calls` via `pg_net`. Les secrets nécessaires (`supabase_url`, `service_role_key`) sont stockés dans **Supabase Vault** et lus via `vault.decrypted_secrets` (cf. ci-dessous — Supabase managé interdit `ALTER DATABASE SET app.settings.*`).
