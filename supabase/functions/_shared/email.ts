@@ -12,12 +12,18 @@ export interface SendEmailOptions {
 
 export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
   const apiKey  = Deno.env.get('RESEND_API_KEY')
-  const from    = Deno.env.get('RESEND_FROM_EMAIL') ?? 'noreply@modect.app'
+  // FROM_EMAIL est le nom standard du projet (cf. CLAUDE.md). RESEND_FROM_EMAIL
+  // est un fallback historique. Le placeholder noreply@modect.app est volontaire-
+  // ment NON-vérifié dans Resend pour échouer bruyamment si aucune var n'est setté.
+  const from    = Deno.env.get('FROM_EMAIL')
+                  ?? Deno.env.get('RESEND_FROM_EMAIL')
+                  ?? 'noreply@modect.app'
 
   if (!apiKey) {
     console.warn('[Email] RESEND_API_KEY non défini — email non envoyé')
     return false
   }
+  console.log(`[Email] envoi via Resend (from=${from}, to=${Array.isArray(options.to) ? options.to.join(',') : options.to})`)
 
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
