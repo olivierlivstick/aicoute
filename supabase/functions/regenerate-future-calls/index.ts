@@ -79,11 +79,27 @@ Deno.serve(async (req: Request) => {
 
     let inserted = 0
     let skipped  = 0
+    const debug: Array<{ schedule_id: string; days_of_week: number[]; time_of_day: string; timezone: string; days_of_week_is_array: boolean; days_of_week_type: string; slots: number; first_slot: string | null; error: string | null }> = []
+
     for (const s of schedules) {
       const slots = projectSlots(s, HORIZON_DAYS)
-      if (slots.length === 0) continue
+      const dbg = {
+        schedule_id:           s.id,
+        days_of_week:          s.days_of_week,
+        time_of_day:           s.time_of_day,
+        timezone:              s.timezone,
+        days_of_week_is_array: Array.isArray(s.days_of_week),
+        days_of_week_type:     typeof s.days_of_week,
+        slots:                 slots.length,
+        first_slot:            slots[0]?.toISOString() ?? null,
+        error:                 null as string | null,
+      }
 
-      // UPSERT en bulk : pour chaque créneau, INSERT … ON CONFLICT DO NOTHING
+      if (slots.length === 0) {
+        debug.push(dbg)
+        continue
+      }
+
       const rows = slots.map((at) => ({
         beneficiary_id: s.beneficiary_id,
         schedule_id:    s.id,
@@ -100,14 +116,17 @@ Deno.serve(async (req: Request) => {
           count:             'exact',
         })
       if (error) {
+        dbg.error = error.message
         console.error(`[regenerate-future-calls] upsert schedule=${s.id}: ${error.message}`)
+        debug.push(dbg)
         continue
       }
       inserted += count ?? 0
       skipped  += slots.length - (count ?? 0)
+      debug.push(dbg)
     }
 
-    return jsonResponse({ success: true, schedules: schedules.length, inserted, skipped })
+    return jsonResponse({ success: true, schedules: schedules.length, inserted, skipped, debug })
 
   } catch (err) {
     console.error('[regenerate-future-calls] erreur:', err)

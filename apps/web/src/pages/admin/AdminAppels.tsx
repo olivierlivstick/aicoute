@@ -98,15 +98,20 @@ export function AdminAppelsPage() {
       .order('scheduled_at', { ascending: tab === 'upcoming' })
       .limit(200)
 
-    if (period !== 'all') {
-      const sinceMs = period === 'today' ? Date.now() - 24 * 3600 * 1000
-                    : period === '7d'    ? Date.now() - 7  * 24 * 3600 * 1000
-                    :                      Date.now() - 30 * 24 * 3600 * 1000
-      // Pour l'onglet « passés » : depuis cette date → maintenant
-      // Pour l'onglet « prévus » : on filtre dans la fenêtre future (today/7d/30d → jusque +X)
-      if (tab === 'past') {
+    if (tab === 'past') {
+      // Onglet passés : on remonte au plus jusqu'à now - X (sauf 'all').
+      if (period !== 'all') {
+        const sinceMs = period === 'today' ? Date.now() - 24 * 3600 * 1000
+                      : period === '7d'    ? Date.now() - 7  * 24 * 3600 * 1000
+                      :                      Date.now() - 30 * 24 * 3600 * 1000
         q = q.gte('scheduled_at', new Date(sinceMs).toISOString())
-      } else {
+      }
+    } else {
+      // Onglet prévus : strict futur, borné à now + X (sauf 'all').
+      // Le >= now exclut les vieux résidus en scheduled/notified qui ont
+      // pourri en base (cf. cas Suzette mars 2026).
+      q = q.gte('scheduled_at', new Date().toISOString())
+      if (period !== 'all') {
         const horizonMs = period === 'today' ? Date.now() + 24 * 3600 * 1000
                         : period === '7d'    ? Date.now() + 7  * 24 * 3600 * 1000
                         :                      Date.now() + 30 * 24 * 3600 * 1000
