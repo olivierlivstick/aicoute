@@ -12,7 +12,7 @@ SaaS de compagnon conversationnel IA pour personnes âgées/isolées.
 | App mobile | Expo (React Native) |
 | Base de données | Supabase (PostgreSQL + RLS + Auth) |
 | Edge Functions | Supabase (Deno) |
-| Voix temps réel | **Démo vitrine multi-moteur** : OpenAI Realtime GA (`gpt-realtime-2`) ou Google Gemini Live (`gemini-3.1-flash-live-preview`, voix `Aoede`), au choix via toggle UI. Voix bénéficiaire (app mobile) : OpenAI uniquement pour l'instant |
+| Voix temps réel | **Multi-moteur** OpenAI Realtime GA (`gpt-realtime-2`, voix `cedar`/`marin`) ou Google Gemini Live (`gemini-3.1-flash-live-preview`, voix `Aoede`). Choisi par bénéficiaire via `beneficiaries.preferred_engine` pour les appels planifiés ; choisi par toggle UI pour la démo vitrine. Voix bénéficiaire (app mobile Expo) : phase 2, non branchée pour l'instant. |
 | Emails | Resend |
 | Déploiement web | Netlify |
 
@@ -24,9 +24,11 @@ modect/
 │   │                 #   → www.modect.com (vitrine) + app.modect.com (back-office), routage par sous-domaine
 │   └── mobile/       # App bénéficiaire (Expo) — couche vocale à migrer (phase 2)
 ├── services/
-│   └── voice-bridge/ # Service Node (Render) — pont multi-moteur pour la démo vitrine.
-│       └── src/engines/  # openai-bridge.js, gemini-bridge.js (téléphone),
-│                         # gemini-bridge-web.js (navigateur), audio.js (µ-law ↔ PCM)
+│   └── voice-bridge/ # Service Node (Render) — pont multi-moteur démos vitrine + appels Modect.
+│       └── src/engines/  # openai-bridge.js, gemini-bridge.js (démo téléphone),
+│                         # gemini-bridge-web.js (démo navigateur), audio.js (µ-law ↔ PCM),
+│                         # modect-call-bridge.js (appels Modect OpenAI),
+│                         # modect-gemini-bridge.js (appels Modect Gemini)
 ├── supabase/
 │   ├── migrations/   # migrations SQL
 │   └── functions/    # Edge Functions Deno
@@ -41,9 +43,9 @@ Note : `apps/web/public/gemini-audio-worklet.js` (servi statique) — AudioWorkl
 
 ## Base de données (tables principales)
 - `profiles` — extension de auth.users (trigger `handle_new_user`)
-- `beneficiaries` — profil bénéficiaire + config IA
+- `beneficiaries` — profil bénéficiaire + config IA (dont `preferred_engine` : `'openai' | 'gemini'`, défaut OpenAI, choisi dans `/contexte` onglet Configuration IA)
 - `session_schedules` — planification récurrente + politique no-answer (`calls_per_week`, `days_of_week`, `time_of_day`, `retry_count`, `retry_interval_minutes`, `notify_on_no_answer`, `no_answer_timeout_seconds`). Contrainte : `array_length(days_of_week) == calls_per_week`. Vue `v_schedules_with_history` ajoute `last_call_at`.
-- `calls` — historique des appels + transcript + rapport. Colonnes clés : `attempt_number` (1-4), `notified_at` (origine du timer no-answer), `alerts JSONB` (array d'objets `{category, severity, evidence}` — signaux faibles structurés), `twilio_call_sid` (sid Twilio de l'appel sortant pour idempotence + debug), `tokens_*` + `ai_cost_eur_real` (snapshot en fin d'appel, cf. Lot 1 chantier appels planifiés).
+- `calls` — historique des appels + transcript + rapport. Colonnes clés : `attempt_number` (1-4), `notified_at` (origine du timer no-answer + heure effective de déclenchement Twilio), `alerts JSONB` (array d'objets `{category, severity, evidence}` — signaux faibles structurés), `twilio_call_sid` (sid Twilio de l'appel sortant pour idempotence + debug), `engine` (`'openai' | 'gemini' | NULL` — moteur effectif, écrit par initiate-call et confirmé/fallback par le voice-bridge à `markCallInProgress`), `tokens_*` + `ai_cost_eur_real` (snapshot en fin d'appel, tarifs dispatched selon `engine`). `scheduled_at` est immutable après création (= créneau prévu original).
 - `conversation_memory` — mémoire long-terme par bénéficiaire
 - `demo_calls` — tracking des démos vitrine (séparé de `calls`), consultable via `/track_calls` (cf. ci-dessous). Colonne `engine` discrimine OpenAI vs Gemini ; les colonnes tokens et `openai_cost_eur_real` sont réutilisées pour les deux moteurs (sémantique "coût IA réel", quelle que soit l'origine).
 - `system_events` — log structuré (level / source / call_id / message / payload JSONB) écrit par `schedule-calls`, `initiate-call`, voice-bridge. Lu uniquement par les admins via `/admin/sante`. Sert d'historique d'observabilité sans toucher au reste.
@@ -56,19 +58,19 @@ Deux canaux distincts selon le contexte d'appel — **les deux partagent le mêm
 Utilisé quand l'aidant simule un appel depuis `app.modect.com` (test du contexte / debug). WebRTC direct navigateur ↔ OpenAI.
 1. `realtime-token` (Edge Fn) — construit le system prompt via `loadCallContext`, génère un **ephemeral token** GA via `POST /v1/realtime/client_secrets` (token dans `response.value`), passe le call `in_progress`. Le prompt n'est jamais exposé au client.
 2. Client — `packages/shared/src/realtime.ts` (`RealtimeSession`) : `getUserMedia` → `RTCPeerConnection` → SDP offer vers `POST /v1/realtime/calls?model=gpt-realtime-2` → data channel `oai-events` (events GA + transcription `whisper-1`).
-3. `save-transcript` (Edge Fn) — à la fin, persiste `calls.transcript` puis déclenche `generate-summary`.
+3. `save-transcript` (Edge Fn) — à la fin, persiste `calls.transcript` puis **await** `generate-summary` (cf. Bugs connus : EdgeRuntime.waitUntil instable).
 
 ### Canal 2 — Appels planifiés Twilio (production)
 Utilisé pour les vrais appels vers le bénéficiaire, déclenchés par le worker [schedule-calls](supabase/functions/schedule-calls/index.ts). Le bénéficiaire reçoit un appel sur son téléphone (numéro `beneficiaries.phone`), pas de mobile app nécessaire.
 
-1. **[initiate-call](supabase/functions/initiate-call/index.ts)** — POST `${VOICE_BRIDGE_URL}/scheduled-call` avec `Authorization: Bearer ${MODECT_INTERNAL_TOKEN}`, body `{ call_id, phone }`. Si OK → marque le call `notified` + `notified_at` + `twilio_call_sid`. Si KO → `failed`.
-2. **[voice-bridge `/scheduled-call`](services/voice-bridge/src/server.js)** — auth token interne, crée l'appel Twilio sortant avec `timeout=SCHEDULED_RING_TIMEOUT` (30 s) vers TwiML `/scheduled-outgoing` qui ouvre une WS `/scheduled-media-stream` (avec `<Parameter name="call_id">`).
+1. **[initiate-call](supabase/functions/initiate-call/index.ts)** — lit `beneficiary.preferred_engine` puis POST `${VOICE_BRIDGE_URL}/scheduled-call` avec `Authorization: Bearer ${MODECT_INTERNAL_TOKEN}`, body `{ call_id, phone, engine }`. Si OK → marque le call `notified` + `notified_at` + `twilio_call_sid` + `engine`. Si KO → `failed`.
+2. **[voice-bridge `/scheduled-call`](services/voice-bridge/src/server.js)** — auth token interne, refuse `engine='gemini'` en 503 si `GOOGLE_API_KEY` absente, crée l'appel Twilio sortant avec `timeout=SCHEDULED_RING_TIMEOUT` (30 s) vers TwiML `/scheduled-outgoing` qui ouvre une WS `/scheduled-media-stream` (avec `<Parameter name="call_id">` + `<Parameter name="engine">`).
 3. **Bénéficiaire décroche** → la WS Twilio démarre :
-   - `markCallInProgress(call_id)` côté Supabase (status='in_progress', started_at=now)
-   - Instanciation [modect-call-bridge.js](services/voice-bridge/src/engines/modect-call-bridge.js) qui :
-     - Fetch le contexte via `get-call-context` (Edge Fn protégée par `MODECT_INTERNAL_TOKEN`, jamais publique)
-     - Ouvre WS OpenAI Realtime (µ-law direct, comme la démo vitrine), envoie `session.update` + `response.create`
-     - Accumule transcript (events `response.output_audio_transcript.*` côté IA + `conversation.item.input_audio_transcription.completed` côté user) + tokens
+   - `markCallInProgress(call_id, engine)` côté Supabase (status='in_progress', started_at=now, engine effectif)
+   - Dispatch selon engine — fallback automatique vers OpenAI si gemini demandé mais la clé est absente entre-temps :
+     - **OpenAI** → [modect-call-bridge.js](services/voice-bridge/src/engines/modect-call-bridge.js) (µ-law direct, events `response.output_audio_transcript.*` + `conversation.item.input_audio_transcription.completed`)
+     - **Gemini** → [modect-gemini-bridge.js](services/voice-bridge/src/engines/modect-gemini-bridge.js) (audio converti µ-law ↔ PCM via `engines/audio.js`, events `serverContent.outputTranscription`/`inputTranscription`, voix `Aoede`)
+   - Les deux fetchent le contexte via `get-call-context` (Edge Fn protégée par `MODECT_INTERNAL_TOKEN`, jamais publique) — le prompt est partagé via `_shared/callContext.ts`.
 4. **Raccrochage** — `flushFinal()` appelle `save-transcript` (qui chaîne `generate-summary` en arrière-plan) puis `recordCallTokens` écrit `ai_cost_eur_real` + tokens directement dans `calls`.
 5. **No-answer / busy / failed** — Twilio notifie le voice-bridge via `POST /scheduled-status` (déclaré comme `statusCallback`), qui marque le call `missed` (no-answer/busy) ou `failed` (failed/canceled) en quelques secondes. **Court-circuite** la passe B qui aurait attendu `no_answer_timeout_seconds` (120s par défaut). La passe B reste un filet de sécurité au cas où le webhook serait perdu.
 
@@ -130,8 +132,8 @@ Visible uniquement si `profile.role = 'admin'`. Entrée dédiée dans la sidebar
 
 ### Worker planning + politique no-answer
 
-**Pré-création des calls** : les calls correspondant à chaque créneau récurrent sont pré-créés à l'avance sur un horizon de **15 jours** par [regenerate-future-calls](supabase/functions/regenerate-future-calls/index.ts). Idempotent grâce au UNIQUE partial index `calls(schedule_id, scheduled_at)`. Déclenché :
-- Par le trigger SQL `session_schedules_regenerate_calls` à chaque INSERT/UPDATE/DELETE sur `session_schedules` (via pg_net)
+**Pré-création des calls** : les calls correspondant à chaque créneau récurrent sont pré-créés à l'avance sur un horizon de **15 jours** par [regenerate-future-calls](supabase/functions/regenerate-future-calls/index.ts). Idempotent grâce au UNIQUE constraint `calls(schedule_id, scheduled_at)` (non-partial — cf. Bugs connus). Déclenché :
+- Par le trigger SQL `session_schedules_regenerate_calls` à chaque INSERT/UPDATE/DELETE sur `session_schedules` (via pg_net, secrets lus via `vault.decrypted_secrets`)
 - Côté client back-office après save dans [useSessionSchedule.ts](apps/web/src/hooks/useSessionSchedule.ts) (belt+suspenders)
 - Devrait l'être par un cron quotidien pour étendre l'horizon (TODO : à câbler avec pg_cron une fois validé)
 
@@ -218,7 +220,7 @@ GEMINI_VOICE=                # défaut : Aoede (validée meilleure que cedar Ope
 - **Netlify** : **un seul site** (Base directory `apps/web`, `apps/web/netlify.toml`). Faire pointer **les deux domaines** `www.modect.com` + `app.modect.com` vers ce site. L'app route selon le sous-domaine (`src/App.tsx` : `app.*` → back-office, sinon vitrine). `Permissions-Policy: microphone=(self)` pour WebRTC. Penser à whitelister `app.modect.com` dans Supabase → Auth → URL Configuration.
 - **Supabase** : `supabase link --project-ref XXX` puis `supabase functions deploy`
 - **Render** : Web Service Node pour `services/voice-bridge` (plan **Starter** minimum — le Free dort après 15 min et casse la démo). Région Frankfurt. Custom domain `voice.modect.com` (CNAME). Variables à renseigner dans l'UI Render. Blueprint disponible dans `services/voice-bridge/render.yaml`.
-- **pg_cron** : cron toutes les minutes → appelle `schedule-calls` via `pg_net`
+- **pg_cron** : cron toutes les minutes → appelle `schedule-calls` via `pg_net`. Les secrets nécessaires (`supabase_url`, `service_role_key`) sont stockés dans **Supabase Vault** et lus via `vault.decrypted_secrets` (cf. ci-dessous — Supabase managé interdit `ALTER DATABASE SET app.settings.*`).
 
 ## Bugs connus et fixes appliqués
 - `handle_new_user()` trigger : doit avoir `SET search_path = public` sinon "relation profiles does not exist"
@@ -229,6 +231,10 @@ GEMINI_VOICE=                # défaut : Aoede (validée meilleure que cedar Ope
 - `calls.livekit_room_name` / `livekit_room_sid` : colonnes héritées désormais inutilisées (schéma conservé, non écrites)
 - **ws v8 multi-WSS** : créer deux `WebSocketServer({ server, path })` sur le même HTTP server NE marche PAS — le 1er WSS appelle `abortHandshake(400)` sur tout path qui ne lui correspond pas, empêchant le 2e WSS de répondre (proxy renvoie 404). Voice-bridge utilise donc `noServer: true` + dispatch manuel `server.on('upgrade')` selon `req.url`.
 - Gemini Live model ID : `models/gemini-2.5-flash-native-audio` n'existe pas via v1beta ; le bon ID est `models/gemini-3.1-flash-live-preview` (2026-05). Google bouge les preview labels — surcharger via env `GEMINI_MODEL` plutôt que modifier le code.
+- **Supabase managé sans `ALTER DATABASE`** : `ALTER DATABASE postgres SET app.settings.*` est refusé (`permission denied to set parameter`, superuser only). Du coup `current_setting('app.settings.supabase_url')` retourne NULL et toute fonction trigger qui s'en servait fait silencieusement `pg_net.http_post('NULL/...')`. **Solution** : stocker les secrets dans `vault.secrets` (`SELECT vault.create_secret('https://xxx.supabase.co', 'supabase_url')`) et les lire via `vault.decrypted_secrets` depuis une fonction `SECURITY DEFINER` (ex: `trigger_regenerate_future_calls`). Le cron `modect-schedule-calls` suit le même pattern.
+- **Postgres `ON CONFLICT` + UNIQUE partial index** : un index `CREATE UNIQUE INDEX ... WHERE ...` ne peut être utilisé par `INSERT ... ON CONFLICT (col)` que si on **répète la clause WHERE**, ce que PostgREST/`supabase.upsert()` ne sait pas faire → erreur « there is no unique or exclusion constraint matching the ON CONFLICT specification ». **Solution** : utiliser un UNIQUE constraint non-partial (les NULL sont distincts par défaut, donc même sémantique fonctionnelle pour les colonnes nullable).
+- **`EdgeRuntime.waitUntil` instable** : le pattern fire-and-forget pour chaîner deux Edge Functions (`fetch().catch()` + `EdgeRuntime?.waitUntil`) n'est pas garanti côté runtime Supabase — la fetch est souvent garbage-collected avant d'arriver à destination. **Symptôme observé** : `save-transcript` n'invoquait jamais `generate-summary` en pratique → ni résumé, ni alertes, ni email. **Solution** : `await` la fetch même si ça allonge la latence (la WS Twilio appelante est déjà fermée à ce stade donc impact UX nul).
+- **Resend domain verification** : le DKIM verified ne suffit pas pour autoriser l'envoi — il faut aussi SPF + (idéalement) MX vérifiés. Et l'API key par défaut (créée à l'inscription) est **scopée au premier domaine** ; pour envoyer depuis un nouveau domaine il faut créer une nouvelle key avec **Domain = All domains** (mode Full access).
 
 ## Identité visuelle — charte « cocon familial » (apps/web : vitrine + back-office)
 - **Couleurs** : terracotta `#C75D3A` (primaire) + ocre `#D9943E` (accent) ; texte brun `#3D2817`/`#6B4423` ; fonds crème `#FBF5EE` / crème sable `#F5EBDC` ; succès sauge `#7BA05B`, erreur brique `#B23A48`
