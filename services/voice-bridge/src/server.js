@@ -27,7 +27,7 @@ import twilio from 'twilio'
 import 'dotenv/config'
 
 import { rateLimit, LIMITS } from './rateLimit.js'
-import { recordDemoStart, recordDemoEnd, computeAiCostEur } from './tracking.js'
+import { recordDemoStart, recordDemoEnd, recordDemoRealCost, computeAiCostEur } from './tracking.js'
 import { createOpenaiBridge } from './engines/openai-bridge.js'
 import { createGeminiBridge } from './engines/gemini-bridge.js'
 import { createGeminiBridgeWeb } from './engines/gemini-bridge-web.js'
@@ -620,12 +620,18 @@ wss.on('connection', (twilioWs) => {
 // le mode web OpenAI qui passe par une Edge Function publique sans token non
 // plus.
 
-wssWeb.on('connection', (clientWs) => {
-  console.log('🔌 [web] Connexion gemini-web')
+wssWeb.on('connection', (clientWs, req) => {
+  // demoId transmis par le client en query (?demoId=…) pour pouvoir écrire le
+  // coût IA RÉEL : les tokens Gemini ne sont visibles que côté serveur (ici),
+  // alors que ended_at/duration/estimation sont écrits par le client via log-demo.
+  let demoCallId = null
+  try {
+    demoCallId = new URL(req.url, 'http://localhost').searchParams.get('demoId') || null
+  } catch { /* url malformée → pas de tracking coût réel */ }
+  console.log(`🔌 [web] Connexion gemini-web${demoCallId ? ` (demoId: ${demoCallId.substring(0, 8)}…)` : ''}`)
 
-  // Tracking demo_calls : géré côté CLIENT via log-demo (Edge Function),
-  // comme pour le mode web OpenAI. Ici on ne fait que loguer pour le debug
-  // Render — l'UPDATE final avec la durée vient du navigateur au stop.
+  // Tracking demo_calls : ended_at/duration/estimation gérés côté CLIENT via
+  // log-demo. Le coût RÉEL (tokens) est complété ici, côté serveur, dans onEnd.
   const streamStartedAt = Date.now()
 
   // Coupure serveur de sécurité (identique téléphone : ferme dur si on
@@ -648,6 +654,8 @@ wssWeb.on('connection', (clientWs) => {
         ` text_in=${tokens.input_text ?? 0} text_out=${tokens.output_text ?? 0}` +
         ` durée=${dur.toFixed(1)}s → coût réel ≈ €${realCostEur.toFixed(4)}`,
       )
+      // Persiste le coût réel + tokens (colonnes disjointes de log-demo).
+      void recordDemoRealCost(demoCallId, tokens, 'gemini')
     },
   })
 

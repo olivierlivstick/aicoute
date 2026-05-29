@@ -1,8 +1,7 @@
 // HERO — 2 colonnes, inversé en mobile
-// Côté image : placeholder chaleureux (mains + téléphone + tasse) — à remplacer
-// par la photo finale dans l'asset pipeline. Aucun visage stock cliché.
+// Côté image : photo finale `public/hero.jpg` (portrait 4:5), avec lueur dorée
+// en arrière-plan et carte flottante « Dernier appel ».
 import { Icon } from '@/marketing/components/icons'
-import { Logo } from '@/components/Logo'
 import { SIGNUP_URL } from '@/config/links'
 
 export function Hero() {
@@ -63,54 +62,33 @@ export function Hero() {
   )
 }
 
-// Placeholder photo — composition douce (motif rayé + tasse + téléphone)
-// pour visualiser le cadrage. À remplacer par une vraie photo dans l'asset pipeline.
+// Photo du Hero — `public/hero.jpg` cadrée en portrait, lueur dorée derrière
+// et carte flottante « Dernier appel » par-dessus.
 function HeroPhoto() {
   return (
     <div className="relative">
-      <div
-        className="photo-placeholder rounded-xl aspect-[4/5] md:aspect-[5/6] w-full"
-        data-label="PHOTO — mains de personne âgée, téléphone, tasse fumante, lumière dorée"
-      >
-        {/* Soleil chaud en arrière-plan */}
-        <div className="absolute -top-6 -right-6 w-40 h-40 rounded-full bg-ocre/35 blur-2xl" />
-        {/* Lueur dorée bas */}
+      {/* Soleil chaud en arrière-plan */}
+      <div className="absolute -top-6 -right-6 w-40 h-40 rounded-full bg-ocre/35 blur-2xl" />
+
+      <div className="relative rounded-xl overflow-hidden aspect-[4/5] md:aspect-[5/6] w-full shadow-sm">
+        <img
+          src="/hero.jpg"
+          alt="Une personne âgée au téléphone, dans une lumière chaleureuse"
+          className="w-full h-full object-cover"
+          loading="eager"
+        />
+        {/* Lueur dorée bas pour fondre la carte flottante */}
         <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-terracotta/15 to-transparent" />
-
-        {/* Suggestion : tasse + vapeur */}
-        <div className="absolute top-[18%] left-[10%] flex flex-col items-center">
-          <svg width="44" height="36" viewBox="0 0 44 36" fill="none" stroke="#8B4A2B" strokeWidth="1.2" strokeLinecap="round" opacity="0.55">
-            <path d="M14 4c-1 3 1 5 0 8M20 2c-1 3 1 5 0 8M26 4c-1 3 1 5 0 8" />
-          </svg>
-          <div className="w-16 h-12 rounded-b-[20px] rounded-t-md border border-brun-700/40 bg-creme/60 relative -mt-1">
-            <div className="absolute -right-2 top-2 w-3 h-5 rounded-r-full border border-brun-700/40 border-l-0" />
-          </div>
-        </div>
-
-        {/* Suggestion : téléphone tenu */}
-        <div className="absolute bottom-[14%] right-[14%] w-28 h-44 rounded-[18px] bg-brun-900/70 border border-brun-700/50 rotate-[-8deg] shadow-sm">
-          <div className="absolute inset-2 rounded-[12px] bg-creme/95 flex flex-col items-center justify-center text-center px-2">
-            <Logo variant="mark" size={18} />
-            <p className="font-serif text-[11px] mt-2 text-brun-900 leading-tight">
-              modect<br />appelle…
-            </p>
-            <div className="mt-3 flex gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-terracotta animate-pulse" />
-              <span className="w-1.5 h-1.5 rounded-full bg-terracotta animate-pulse [animation-delay:120ms]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-terracotta animate-pulse [animation-delay:240ms]" />
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Carte flottante — petit moment de réconfort */}
-      <div className="hidden md:flex absolute -left-6 bottom-10 bg-creme border border-creme-sable rounded-xl p-4 pr-5 items-center gap-3 max-w-[260px]">
-        <div className="w-10 h-10 rounded-full bg-creme-sable flex items-center justify-center text-terracotta">
+      <div className="hidden md:flex absolute -left-6 bottom-10 bg-creme border border-creme-sable rounded-xl p-4 pr-5 items-center gap-3">
+        <div className="w-10 h-10 shrink-0 rounded-full bg-creme-sable flex items-center justify-center text-terracotta">
           <Icon.Heart size={20} />
         </div>
         <div>
           <p className="text-xs text-brun-700">Dernier appel — mardi</p>
-          <p className="font-serif text-base text-brun-900 leading-tight mt-0.5">
+          <p className="font-serif text-base text-brun-900 leading-tight mt-0.5 whitespace-nowrap">
             « Mes rosiers ont fleuri ! »
           </p>
         </div>

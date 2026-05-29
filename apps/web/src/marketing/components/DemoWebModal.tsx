@@ -96,8 +96,13 @@ export function DemoWebModal({ onClose, engine }: Props) {
         if (!VOICE_BRIDGE_URL) {
           throw new Error('Le service voix Gemini n\'est pas configuré (VITE_VOICE_BRIDGE_URL manquant).')
         }
-        // Construit l'URL WebSocket : https → wss, http → ws, sans trailing /
+        // Construit l'URL WebSocket : https → wss, http → ws, sans trailing /.
+        // On propage le demoId (issu de log-demo start) pour que le voice-bridge
+        // puisse écrire le coût IA RÉEL (les tokens Gemini ne sont visibles que
+        // côté serveur). ended_at/duration/estimation restent gérés via log-demo.
+        const demoId = demoCallIdRef.current
         const wsUrl = VOICE_BRIDGE_URL.replace(/^http/, 'ws').replace(/\/$/, '') + '/ws/gemini-web'
+          + (demoId ? `?demoId=${encodeURIComponent(demoId)}` : '')
         const session = new GeminiLiveSession({
           bridgeUrl:        wsUrl,
           opener:           null,

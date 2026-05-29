@@ -140,3 +140,28 @@ export async function recordDemoEnd(id, durationSeconds, tokens, engine = 'opena
     console.error('❌ tracking end UPDATE failed:', error.message)
   }
 }
+
+/**
+ * Écrit UNIQUEMENT le coût IA RÉEL + tokens sur une démo (typiquement web Gemini).
+ *
+ * Pour les démos WEB, ended_at/duration/estimation sont écrits par le CLIENT via
+ * l'Edge Function log-demo. Mais les tokens (donc le coût réel) ne sont visibles
+ * que côté SERVEUR : pour Gemini web, ils sont captés par le proxy
+ * gemini-bridge-web.js. On complète donc la row avec le coût réel sans toucher
+ * aux colonnes gérées par log-demo (colonnes disjointes → pas de course d'écriture).
+ *
+ * Silencieux si id null / supabase absent / pas de tokens.
+ */
+export async function recordDemoRealCost(id, tokens, engine = 'openai') {
+  if (!supabase || !id || !tokens) return
+  const update = {
+    openai_cost_eur_real:      computeAiCostEur(engine, tokens),
+    tokens_input_audio:        tokens.input_audio        ?? 0,
+    tokens_input_audio_cached: tokens.input_audio_cached ?? 0,
+    tokens_output_audio:       tokens.output_audio       ?? 0,
+    tokens_input_text:         tokens.input_text         ?? 0,
+    tokens_output_text:        tokens.output_text        ?? 0,
+  }
+  const { error } = await supabase.from('demo_calls').update(update).eq('id', id)
+  if (error) console.error('❌ tracking realCost UPDATE failed:', error.message)
+}
