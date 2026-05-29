@@ -129,9 +129,21 @@ Visible uniquement si `profile.role = 'admin'`. Entrée dédiée dans la sidebar
 `/sessions → /planning`, `/reports → /historique`, `/reports/:id → /historique/:id`, `/settings → /compte`, `/beneficiary → /contexte`, `/beneficiary/:id → /contexte` (avec sélection auto), `/memories → /dashboard`, `/setup → /compte`.
 
 ### Worker planning + politique no-answer
+
+**Pré-création des calls** : les calls correspondant à chaque créneau récurrent sont pré-créés à l'avance sur un horizon de **15 jours** par [regenerate-future-calls](supabase/functions/regenerate-future-calls/index.ts). Idempotent grâce au UNIQUE partial index `calls(schedule_id, scheduled_at)`. Déclenché :
+- Par le trigger SQL `session_schedules_regenerate_calls` à chaque INSERT/UPDATE/DELETE sur `session_schedules` (via pg_net)
+- Côté client back-office après save dans [useSessionSchedule.ts](apps/web/src/hooks/useSessionSchedule.ts) (belt+suspenders)
+- Devrait l'être par un cron quotidien pour étendre l'horizon (TODO : à câbler avec pg_cron une fois validé)
+
+Conséquences :
+- `calls.scheduled_at` est désormais **immutable après création** (= créneau prévu original)
+- `calls.notified_at` est l'heure **effective** de déclenchement (écrit par `initiate-call`)
+- Le bouton « Déclencher maintenant » du back-office admin n'écrit donc plus que `notified_at`, laissant `scheduled_at` intact pour la traçabilité
+- Stats SQL faciles : `SELECT COUNT(*) WHERE scheduled_at BETWEEN X AND Y`
+
 [schedule-calls](supabase/functions/schedule-calls/index.ts) tourne via pg_cron toutes les minutes et exécute 3 passes :
-- **A — Planning principal** : `session_schedules` dont `next_scheduled_at` tombe dans ±90s → crée un `call` (`attempt_number=1`) + déclenche `initiate-call` + recalcule `next_scheduled_at`.
-- **B — Détection no-answer** : `calls` en `notified` dont `notified_at < now - no_answer_timeout_seconds` → marque `missed`. Si `attempt_number ≤ retry_count` → crée un nouveau call (`attempt+1`, `scheduled_at = now + retry_interval_minutes`). Sinon → email aidant via `noAnswerEmailHtml` (si `notify_on_no_answer`).
+- **A — Déclenchement principal** : lit `calls` en `scheduled` (attempt_number=1) dont `scheduled_at` tombe dans ±90s → déclenche `initiate-call`. **Ne crée plus** de calls (c'est `regenerate-future-calls` qui le fait à l'avance).
+- **B — Détection no-answer** : `calls` en `notified` dont `notified_at < now - no_answer_timeout_seconds` → marque `missed`. Si `attempt_number ≤ retry_count` → crée un nouveau call (`attempt+1`, `scheduled_at = now + retry_interval_minutes`). Sinon → email aidant via `noAnswerEmailHtml` (si `notify_on_no_answer`). Le statusCallback Twilio (cf. canal 2) court-circuite généralement la passe B en quelques secondes.
 - **C — Déclenchement des retries** : `calls` en `scheduled` avec `attempt_number > 1` et `scheduled_at ≤ now` → trigger `initiate-call`.
 
 [initiate-call](supabase/functions/initiate-call/index.ts) déclenche l'appel Twilio via le voice-bridge puis écrit `notified_at = now()` + `twilio_call_sid` au passage en `notified` (origine du timer no-answer). Cf. **Canal 2 — Appels planifiés Twilio** ci-dessus pour le flow complet.
@@ -236,6 +248,7 @@ supabase functions deploy initiate-call
 supabase functions deploy realtime-token
 supabase functions deploy public-realtime-token
 supabase functions deploy get-call-context     # appelée par voice-bridge (auth: MODECT_INTERNAL_TOKEN)
+supabase functions deploy regenerate-future-calls  # pré-création des calls 15 jours à l'avance
 supabase functions deploy log-demo
 supabase functions deploy list-demos
 supabase functions deploy save-transcript

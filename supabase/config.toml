@@ -61,3 +61,6 @@ verify_jwt = false   # auth interne via ?key=<DEMO_TRACK_KEY>
 
 [functions.get-call-context]
 verify_jwt = false   # auth interne via MODECT_INTERNAL_TOKEN (appelée par le voice-bridge)
+
+[functions.regenerate-future-calls]
+verify_jwt = false   # appelée par le trigger SQL session_schedules + par le client back-office

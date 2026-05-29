@@ -2,6 +2,19 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { SessionSchedule } from '@modect/shared'
 
+/**
+ * Belt+suspenders avec le trigger SQL session_schedules_regenerate_calls
+ * (migration 20260529000005). Si le trigger DB plante (réseau, secret, ...),
+ * le client-side garde la cohérence. Idempotent grâce au UNIQUE index sur
+ * calls(schedule_id, scheduled_at). Best-effort : on n'attend pas la réponse
+ * pour ne pas ralentir le retour UI.
+ */
+function regenerateFutureCalls(scheduleId?: string): void {
+  void supabase.functions.invoke('regenerate-future-calls', {
+    body: scheduleId ? { schedule_id: scheduleId } : {},
+  }).catch((err) => console.warn('[regenerate-future-calls] invoke failed:', err))
+}
+
 export function useSessionSchedules(beneficiaryId?: string) {
   const [schedules, setSchedules] = useState<SessionSchedule[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,7 +59,9 @@ export async function createSchedule(
     .select('*')
     .single()
   if (error) return null
-  return result as SessionSchedule
+  const schedule = result as SessionSchedule
+  regenerateFutureCalls(schedule.id)
+  return schedule
 }
 
 export async function updateSchedule(
@@ -57,7 +72,9 @@ export async function updateSchedule(
     .from('session_schedules')
     .update(updates)
     .eq('id', id)
-  return !error
+  if (error) return false
+  regenerateFutureCalls(id)
+  return true
 }
 
 export async function deleteSchedule(id: string): Promise<boolean> {
@@ -65,7 +82,12 @@ export async function deleteSchedule(id: string): Promise<boolean> {
     .from('session_schedules')
     .delete()
     .eq('id', id)
-  return !error
+  if (error) return false
+  // Le trigger SQL DELETE va régénérer (= supprimer les futurs calls), mais on
+  // le déclenche aussi côté client pour ne pas laisser de calls orphelins
+  // visibles entre-temps si le trigger est lent.
+  regenerateFutureCalls(id)
+  return true
 }
 
 export async function toggleSchedule(id: string, isActive: boolean): Promise<boolean> {
@@ -73,32 +95,27 @@ export async function toggleSchedule(id: string, isActive: boolean): Promise<boo
 }
 
 /**
- * Mettre un planning en pause : désactive + reset next_scheduled_at + supprime
- * les calls futurs encore en 'scheduled' (pas encore notifiés). Les calls déjà
- * en 'notified', 'in_progress' ou complétés sont laissés intacts.
+ * Mettre un planning en pause : désactive + reset next_scheduled_at. La
+ * régénération (côté client + trigger SQL) supprime ensuite les futurs
+ * calls 'scheduled' liés à ce planning. Les calls déjà en 'notified',
+ * 'in_progress' ou complétés sont laissés intacts par regenerate-future-calls
+ * (qui ne touche qu'aux status='scheduled' avec scheduled_at >= now).
  */
 export async function pauseSchedule(id: string): Promise<boolean> {
-  const { error: updErr } = await supabase
+  const { error } = await supabase
     .from('session_schedules')
     .update({ is_active: false, next_scheduled_at: null })
     .eq('id', id)
-  if (updErr) return false
-
-  // Supprimer les calls futurs encore 'scheduled' pour ce planning
-  const nowIso = new Date().toISOString()
-  await supabase
-    .from('calls')
-    .delete()
-    .eq('schedule_id', id)
-    .eq('status', 'scheduled')
-    .gte('scheduled_at', nowIso)
-
+  if (error) return false
+  regenerateFutureCalls(id)
   return true
 }
 
 /**
  * Réactiver un planning : remet is_active=true. Le trigger SQL
- * `session_schedule_calc_next` recalcule automatiquement next_scheduled_at.
+ * `session_schedule_calc_next` recalcule next_scheduled_at, et notre nouveau
+ * trigger session_schedules_regenerate_calls + l'appel client ci-dessous
+ * pré-créent les futurs calls.
  */
 export async function activateSchedule(id: string): Promise<boolean> {
   return updateSchedule(id, { is_active: true })

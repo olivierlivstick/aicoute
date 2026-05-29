@@ -21,34 +21,10 @@
  */
 
 import { getSupabaseAdmin }              from '../_shared/supabaseAdmin.ts'
-import { calculateNextScheduledAt }      from '../_shared/scheduling.ts'
 import { sendEmail, noAnswerEmailHtml }  from '../_shared/email.ts'
 import { logEvent }                      from '../_shared/systemEvents.ts'
 
 type Supabase = ReturnType<typeof getSupabaseAdmin>
-
-interface ScheduleRow {
-  id: string
-  beneficiary_id: string
-  caregiver_id: string
-  days_of_week: number[]
-  time_of_day: string
-  timezone: string
-  retry_count: number
-  retry_interval_minutes: number
-  notify_on_no_answer: boolean
-  no_answer_timeout_seconds: number
-  next_scheduled_at: string | null
-  beneficiaries?: {
-    id: string
-    first_name: string
-    last_name: string
-    push_token: string | null
-    is_active: boolean
-    caregiver_id: string
-    profiles?: { email: string; full_name: string } | null
-  } | null
-}
 
 interface CallRow {
   id: string
@@ -111,78 +87,51 @@ Deno.serve(async (_req: Request) => {
 })
 
 // ============================================================================
-// Pass A — Planning principal (créneau récurrent)
+// Pass A — Déclenchement des calls pré-créés (créneau récurrent)
 // ============================================================================
+// Depuis la refonte « pré-création » : les calls sont déjà en base avec
+// status='scheduled' (créés par regenerate-future-calls). La passe A se
+// contente de DÉCLENCHER ceux dont scheduled_at tombe dans la fenêtre ±90s.
+//
+// Le filtre attempt_number=1 distingue les premières tentatives (gérées ici)
+// des retries (gérés par la passe C, qui scrute scheduled_at déjà passé).
 
 async function passA_main(
   supabase: Supabase,
   supabaseUrl: string,
   serviceKey: string,
-  appUrl: string,
+  _appUrl: string,
   results: { triggered: number; skipped: number; errors: string[] },
 ): Promise<void> {
   const windowStart = new Date(Date.now() - 90_000).toISOString()
   const windowEnd   = new Date(Date.now() + 90_000).toISOString()
 
-  const { data: schedules, error: schedErr } = await supabase
-    .from('session_schedules')
-    .select('*, beneficiaries(id, first_name, last_name, push_token, is_active, caregiver_id, profiles(email, full_name))')
-    .eq('is_active', true)
-    .not('next_scheduled_at', 'is', null)
-    .gte('next_scheduled_at', windowStart)
-    .lte('next_scheduled_at', windowEnd)
+  const { data: due, error } = await supabase
+    .from('calls')
+    .select('id, beneficiary_id, beneficiaries(is_active)')
+    .eq('status', 'scheduled')
+    .eq('attempt_number', 1)
+    .gte('scheduled_at', windowStart)
+    .lte('scheduled_at', windowEnd)
 
-  if (schedErr) throw new Error(`Fetch schedules: ${schedErr.message}`)
-  if (!schedules || schedules.length === 0) return
+  if (error) throw new Error(`Fetch due calls: ${error.message}`)
+  if (!due || due.length === 0) return
 
-  for (const schedule of schedules as ScheduleRow[]) {
+  for (const call of due as Array<{ id: string; beneficiary_id: string; beneficiaries: { is_active: boolean } | null }>) {
     try {
-      const beneficiary = schedule.beneficiaries
-      if (!beneficiary?.is_active) {
+      // Bénéficiaire désactivé entre-temps → on saute (le call reste 'scheduled'
+      // mais ne sera jamais déclenché ; régénération suivante le supprimera).
+      if (call.beneficiaries && call.beneficiaries.is_active === false) {
         results.skipped++
         continue
       }
 
-      // Dédoublonner sur les 10 dernières minutes
-      const tenMinAgo = new Date(Date.now() - 10 * 60_000).toISOString()
-      const { count: existingCount } = await supabase
-        .from('calls')
-        .select('*', { count: 'exact', head: true })
-        .eq('beneficiary_id', beneficiary.id)
-        .eq('schedule_id', schedule.id)
-        .in('status', ['scheduled', 'notified', 'in_progress'])
-        .gte('created_at', tenMinAgo)
-
-      if (existingCount && existingCount > 0) {
-        results.skipped++
-        await recalculateNext(supabase, schedule)
-        continue
-      }
-
-      const { data: newCall, error: callErr } = await supabase
-        .from('calls')
-        .insert({
-          beneficiary_id: beneficiary.id,
-          schedule_id:    schedule.id,
-          status:         'scheduled',
-          scheduled_at:   schedule.next_scheduled_at,
-          attempt_number: 1,
-        })
-        .select('id')
-        .single()
-
-      if (callErr || !newCall) throw new Error(`Insert call failed: ${callErr?.message}`)
-
-      console.log(`[schedule-calls/A] Call créé: ${newCall.id} pour ${beneficiary.first_name}`)
-      triggerInitiateCall(supabaseUrl, serviceKey, newCall.id)
-      await recalculateNext(supabase, schedule)
+      triggerInitiateCall(supabaseUrl, serviceKey, call.id)
       results.triggered++
-
-    } catch (scheduleErr) {
-      const msg = scheduleErr instanceof Error ? scheduleErr.message : String(scheduleErr)
-      console.error(`[schedule-calls/A] Erreur schedule ${schedule.id}:`, msg)
-      results.errors.push(`A:${schedule.id}: ${msg}`)
-      await notifyCaregiverOfTriggerFailure(supabase, schedule, appUrl)
+    } catch (callErr) {
+      const msg = callErr instanceof Error ? callErr.message : String(callErr)
+      console.error(`[schedule-calls/A] Erreur call ${call.id}:`, msg)
+      results.errors.push(`A:${call.id}: ${msg}`)
     }
   }
 }
@@ -329,45 +278,6 @@ function triggerInitiateCall(supabaseUrl: string, serviceKey: string, callId: st
     },
     body: JSON.stringify({ call_id: callId }),
   }).catch((err) => console.error(`[schedule-calls] initiate-call error: ${err.message}`))
-}
-
-async function recalculateNext(supabase: Supabase, schedule: ScheduleRow): Promise<void> {
-  const next = calculateNextScheduledAt(schedule.days_of_week, schedule.time_of_day, schedule.timezone)
-  await supabase
-    .from('session_schedules')
-    .update({ next_scheduled_at: next?.toISOString() ?? null })
-    .eq('id', schedule.id)
-}
-
-async function notifyCaregiverOfTriggerFailure(
-  supabase: Supabase,
-  schedule: ScheduleRow,
-  appUrl: string,
-): Promise<void> {
-  const beneficiary = schedule.beneficiaries
-  const caregiver   = beneficiary?.profiles
-  if (!caregiver?.email) return
-
-  await supabase
-    .from('calls')
-    .update({ status: 'missed' })
-    .eq('schedule_id', schedule.id)
-    .eq('status', 'scheduled')
-
-  await sendEmail({
-    to:      caregiver.email,
-    subject: `⚠️ Échec du déclenchement de l'appel — ${beneficiary?.first_name}`,
-    html: `
-      <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:24px">
-        <h2 style="color:#C75D3A">⚠️ Appel non déclenché</h2>
-        <p>Bonjour <strong>${caregiver.full_name}</strong>,</p>
-        <p>L'appel planifié pour <strong>${beneficiary?.first_name}</strong> n'a pas pu être déclenché pour une raison technique.</p>
-        <a href="${appUrl}/planning"
-           style="display:inline-block;background:#C75D3A;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;margin-top:12px">
-          Vérifier les plannings →
-        </a>
-      </div>`,
-  })
 }
 
 function okResponse(results: object): Response {

@@ -175,28 +175,15 @@ export function AdminAppelsPage() {
   }
 
   /**
-   * Anticipe un appel prévu (status='scheduled') → on UPDATE son scheduled_at
-   * à maintenant + reset attempt_number=1 puis on invoque initiate-call. Le call
-   * existant change d'horaire — pas de duplication, pas de status à inventer.
-   * Le planning récurrent (session_schedules.next_scheduled_at) reste inchangé,
-   * donc le prochain créneau récurrent passera normalement.
+   * Anticipe un appel prévu (status='scheduled') → on invoque directement
+   * initiate-call sans toucher à scheduled_at (= créneau prévu, immutable).
+   * initiate-call écrit notified_at = now() en interne. Sur les rapports, la
+   * différence (notified_at - scheduled_at) montrera la durée d'anticipation.
    */
   async function triggerNow(callId: string) {
-    if (!confirm('Déclencher cet appel maintenant ? L\'horaire prévu sera remplacé par maintenant.')) return
+    if (!confirm('Déclencher cet appel maintenant ? Le créneau d\'origine sera conservé pour la traçabilité.')) return
     setBusy(callId)
     try {
-      // Même cast que relaunch — cf. note ci-dessus.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const callsTable = supabase.from('calls') as any
-      const { error: updateErr } = await callsTable
-        .update({
-          scheduled_at:   new Date().toISOString(),
-          attempt_number: 1,
-        })
-        .eq('id', callId)
-        .eq('status', 'scheduled')   // safety : ne touche pas si statut a changé entre-temps
-      if (updateErr) throw new Error(updateErr.message)
-
       const { error: invokeErr } = await supabase.functions.invoke('initiate-call', {
         body: { call_id: callId },
       })
