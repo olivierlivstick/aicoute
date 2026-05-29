@@ -46,12 +46,15 @@ export function AppLayout() {
           {/* Logo */}
           <div className="px-6 py-5 border-b border-slate-100">
             <Logo variant="full" size={22} />
-            <p className="text-[11px] uppercase tracking-widest text-slate-400 mt-2">Espace aidant</p>
+            <p className="text-[11px] uppercase tracking-widest text-slate-400 mt-2">
+              {isAdmin ? 'Espace admin' : 'Espace aidant'}
+            </p>
           </div>
 
           {/* Navigation principale */}
           <nav className="flex-1 px-3 py-4 space-y-1">
-            {mainNav.map(({ to, icon: Icon, label }) => (
+            {/* Nav aidant : masquée pour les admins (pas de bénéficiaire propre) */}
+            {!isAdmin && mainNav.map(({ to, icon: Icon, label }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -71,7 +74,7 @@ export function AppLayout() {
 
             {/* Section admin (visible uniquement si role=admin) */}
             {isAdmin && (
-              <div className="pt-4 mt-4 border-t border-slate-100 space-y-1">
+              <div className="space-y-1">
                 <p className="px-3 mb-1 text-[10px] uppercase tracking-widest text-accent-700 font-semibold">
                   Administration
                 </p>
@@ -159,9 +162,11 @@ export function AppLayout() {
           </div>
         </aside>
 
-        {/* Colonne droite : header sticky + contenu */}
+        {/* Colonne droite : header sticky + contenu.
+            Le header (dropdown bénéficiaire + bouton « Nouveau proche ») n'a
+            pas de sens pour un admin → masqué. */}
         <div className="flex-1 flex flex-col min-w-0">
-          <AppHeader />
+          {!isAdmin && <AppHeader />}
           <main className="flex-1 overflow-auto">
             <Outlet />
           </main>

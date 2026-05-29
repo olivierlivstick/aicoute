@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AppLayout } from '@/components/AppLayout'
 import { RequireAdmin } from '@/components/RequireAdmin'
+import { AidantOnly } from '@/components/AidantOnly'
+import { useIsAdmin } from '@/hooks/useIsAdmin'
 import { Home } from '@/marketing/Home'
 import { TrackCallsPage } from '@/marketing/TrackCalls'
 
@@ -39,10 +41,11 @@ export function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Racine : back-office sur app.*, vitrine sinon */}
+        {/* Racine : back-office sur app.*, vitrine sinon.
+            En back-office, on dispatch selon le rôle : admin → /admin, sinon /dashboard. */}
         <Route
           path="/"
-          element={isAppHost ? <Navigate to="/dashboard" replace /> : <Home />}
+          element={isAppHost ? <AppHostRoot /> : <Home />}
         />
 
         {/* Auth (public) */}
@@ -62,8 +65,9 @@ export function App() {
             </AuthGuard>
           }
         >
-          {/* Pages principales */}
-          <Route path="/dashboard"       element={<DashboardPage />} />
+          {/* Pages principales (aidant) — un admin atterrissant sur /dashboard
+              est redirigé vers /admin par <AidantOnly>. */}
+          <Route path="/dashboard"       element={<AidantOnly><DashboardPage /></AidantOnly>} />
           <Route path="/contexte"        element={<ContextePage />} />
           <Route path="/planning"        element={<PlanningPage />} />
           <Route path="/historique"      element={<HistoriquePage />} />
@@ -103,6 +107,16 @@ export function App() {
       </Routes>
     </BrowserRouter>
   )
+}
+
+// Racine du back-office : dispatch selon le rôle (admin → /admin, aidant → /dashboard).
+// Si non connecté, on tombe sur /dashboard qui passera par <AuthGuard> et renverra
+// vers /auth/login. Pendant le chargement du profil, on ne rend rien pour éviter de
+// flasher une mauvaise destination.
+function AppHostRoot() {
+  const { isAdmin, loading } = useIsAdmin()
+  if (loading) return null
+  return <Navigate to={isAdmin ? '/admin' : '/dashboard'} replace />
 }
 
 // Redirige /reports/:id → /historique/:id en préservant l'ID
