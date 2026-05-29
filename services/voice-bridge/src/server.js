@@ -32,7 +32,13 @@ import { createOpenaiBridge } from './engines/openai-bridge.js'
 import { createGeminiBridge } from './engines/gemini-bridge.js'
 import { createGeminiBridgeWeb } from './engines/gemini-bridge-web.js'
 import { createModectCallBridge } from './engines/modect-call-bridge.js'
-import { markCallInProgress, recordCallTokens } from './persistence/modect-call.js'
+import {
+  markCallInProgress,
+  recordCallTokens,
+  markCallByTwilioStatus,
+  findCallIdByTwilioSid,
+} from './persistence/modect-call.js'
+import { logEvent as logSystemEvent } from './persistence/system-events.js'
 
 // --- Config ----------------------------------------------------------------
 
@@ -251,11 +257,19 @@ app.post('/scheduled-call', async (req, res) => {
     // call_id passé via query → /scheduled-outgoing le retransmet en <Parameter>
     const outgoingUrl = `${publicBase}/scheduled-outgoing?call_id=${encodeURIComponent(callId)}`
 
+    // statusCallback : Twilio nous notifie des changements de statut de l'appel
+    // (no-answer, busy, failed, completed). On l'utilise pour court-circuiter
+    // la passe B no-answer qui attendrait 120s par défaut.
+    const statusCallbackUrl = `${publicBase}/scheduled-status`
+
     const call = await twilioClient.calls.create({
-      to:      cleaned,
-      from:    TWILIO_NUMBER,
-      url:     outgoingUrl,
-      timeout: SCHEDULED_RING_TIMEOUT,  // sonneries max avant que Twilio raccroche
+      to:                   cleaned,
+      from:                 TWILIO_NUMBER,
+      url:                  outgoingUrl,
+      timeout:              SCHEDULED_RING_TIMEOUT,
+      statusCallback:       statusCallbackUrl,
+      statusCallbackEvent:  ['completed', 'no-answer', 'busy', 'failed', 'canceled'],
+      statusCallbackMethod: 'POST',
     })
 
     console.log(`📞 [scheduled] Appel sortant vers ${maskNumber(cleaned)} (callId: ${callId.slice(0, 8)}…, sid: ${call.sid})`)
@@ -263,6 +277,42 @@ app.post('/scheduled-call', async (req, res) => {
   } catch (err) {
     console.error('❌ /scheduled-call :', err)
     res.status(500).json({ error: err?.message || 'Erreur interne' })
+  }
+})
+
+// Webhook Twilio appelé à chaque transition de statut (no-answer, busy, failed,
+// canceled, completed). On marque le call Modect en conséquence — le bénéfice
+// principal est de détecter le no-answer en quelques secondes au lieu d'attendre
+// la passe B qui tourne toutes les minutes avec un délai par défaut de 120s.
+//
+// Sécurité : on ne vérifie pas la signature X-Twilio-Signature pour l'instant
+// (low-risk : impact = marquer un call missed/failed sans appel sortant) ;
+// à ajouter si l'observabilité montre des écrits parasites.
+app.post('/scheduled-status', async (req, res) => {
+  const sid    = req.body?.CallSid
+  const status = req.body?.CallStatus
+  if (!sid || !status) {
+    return res.status(400).end()
+  }
+
+  try {
+    const callId = await findCallIdByTwilioSid(sid)
+    const applied = await markCallByTwilioStatus(sid, status)
+    if (applied) {
+      console.log(`📞 [scheduled-status] sid=${sid.slice(0, 12)}… status=${status} → call marqué ${applied}`)
+      void logSystemEvent({
+        level:   applied === 'failed' ? 'warn' : 'info',
+        source:  'voice-bridge/twilio-status',
+        call_id: callId,
+        message: `Twilio status=${status} → call marqué ${applied}`,
+        payload: { twilio_sid: sid, twilio_status: status },
+      })
+    }
+    // Toujours 200 pour que Twilio n'insiste pas avec des retries
+    res.status(200).end()
+  } catch (err) {
+    console.error('❌ /scheduled-status :', err)
+    res.status(200).end()  // idem, on absorbe pour éviter les retries Twilio
   }
 })
 

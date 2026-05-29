@@ -8,6 +8,7 @@
     "build": "npm --prefix apps/web run build",
     "preview": "npm --prefix apps/web run preview",
     "typecheck": "npm --prefix apps/web run typecheck",
-    "install:all": "npm --prefix apps/web install"
+    "install:all": "npm --prefix apps/web install",
+    "test:email-report": "node scripts/test-email-report.mjs"
   }
 }

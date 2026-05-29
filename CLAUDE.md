@@ -46,6 +46,7 @@ Note : `apps/web/public/gemini-audio-worklet.js` (servi statique) — AudioWorkl
 - `calls` — historique des appels + transcript + rapport. Colonnes clés : `attempt_number` (1-4), `notified_at` (origine du timer no-answer), `alerts JSONB` (array d'objets `{category, severity, evidence}` — signaux faibles structurés), `twilio_call_sid` (sid Twilio de l'appel sortant pour idempotence + debug), `tokens_*` + `ai_cost_eur_real` (snapshot en fin d'appel, cf. Lot 1 chantier appels planifiés).
 - `conversation_memory` — mémoire long-terme par bénéficiaire
 - `demo_calls` — tracking des démos vitrine (séparé de `calls`), consultable via `/track_calls` (cf. ci-dessous). Colonne `engine` discrimine OpenAI vs Gemini ; les colonnes tokens et `openai_cost_eur_real` sont réutilisées pour les deux moteurs (sémantique "coût IA réel", quelle que soit l'origine).
+- `system_events` — log structuré (level / source / call_id / message / payload JSONB) écrit par `schedule-calls`, `initiate-call`, voice-bridge. Lu uniquement par les admins via `/admin/sante`. Sert d'historique d'observabilité sans toucher au reste.
 
 ## Architecture vocale
 
@@ -69,7 +70,7 @@ Utilisé pour les vrais appels vers le bénéficiaire, déclenchés par le worke
      - Ouvre WS OpenAI Realtime (µ-law direct, comme la démo vitrine), envoie `session.update` + `response.create`
      - Accumule transcript (events `response.output_audio_transcript.*` côté IA + `conversation.item.input_audio_transcription.completed` côté user) + tokens
 4. **Raccrochage** — `flushFinal()` appelle `save-transcript` (qui chaîne `generate-summary` en arrière-plan) puis `recordCallTokens` écrit `ai_cost_eur_real` + tokens directement dans `calls`.
-5. **No-answer** — si Twilio raccroche après 30 s sans réponse (ou si l'utilisateur ne décroche jamais), la WS `/scheduled-media-stream` n'est jamais ouverte → le call reste en `notified` → passe B de schedule-calls le marque `missed` après `no_answer_timeout_seconds` et déclenche le retry.
+5. **No-answer / busy / failed** — Twilio notifie le voice-bridge via `POST /scheduled-status` (déclaré comme `statusCallback`), qui marque le call `missed` (no-answer/busy) ou `failed` (failed/canceled) en quelques secondes. **Court-circuite** la passe B qui aurait attendu `no_answer_timeout_seconds` (120s par défaut). La passe B reste un filet de sécurité au cas où le webhook serait perdu.
 
 Modèle GA imposé : tout modèle Beta/legacy (`*-realtime-preview`) est ramené à `gpt-realtime-2` par `loadCallContext`. Voix par défaut `cedar`. Coupure serveur de sécurité côté voice-bridge à `MAX_SCHEDULED_CALL_SECONDS` (900 s = 15 min).
 
@@ -115,6 +116,14 @@ Visible uniquement si `profile.role = 'admin'`. Entrée dédiée dans la sidebar
 **Action « Relancer »** sur `/admin/appels` : INSERT direct via client supabase (RLS admin autorise) + `supabase.functions.invoke('initiate-call', { body: { call_id } })`. Pas d'Edge Fn dédiée.
 
 **Différé** (non inclus dans ce lot) : impersonate / vue « comme cet aidant », page emails séparée (l'info est déjà sur `calls.report_email_sent_at`).
+
+### Observabilité & robustesse (Lot 4)
+
+- **Table `system_events`** (cf. tables principales) écrite via `_shared/systemEvents.ts` (Edge) ou `persistence/system-events.js` (voice-bridge). Best-effort, jamais bloquant. Lue par la section « Événements système » de `/admin/sante`.
+- **Twilio statusCallback** : `POST /scheduled-status` sur le voice-bridge reçoit les transitions Twilio (`no-answer`, `busy`, `failed`, `canceled`, `completed`) et marque le call Modect via `markCallByTwilioStatus`. Permet de détecter un no-answer en quelques secondes au lieu d'attendre 120 s côté passe B.
+- **Vue coûts IA** sur `/admin` : barchart 30 jours + total mensuel, calculé sur `calls.ai_cost_eur_real` (snapshot écrit par le voice-bridge en fin d'appel).
+- **Test tronqué** : `npm run test:email-report` (cf. [scripts/test-email-report.mjs](scripts/test-email-report.mjs)) valide la chaîne `save-transcript → generate-summary → email Resend` sans Twilio ni OpenAI Realtime. 30 s, 0 €.
+- **Checklist pré-release** : [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) pour les vérifications manuelles qu'aucun test automatique ne couvre (vrai appel Twilio avec audio).
 
 ### Redirections legacy (dans [App.tsx](apps/web/src/App.tsx))
 `/sessions → /planning`, `/reports → /historique`, `/reports/:id → /historique/:id`, `/settings → /compte`, `/beneficiary → /contexte`, `/beneficiary/:id → /contexte` (avec sélection auto), `/memories → /dashboard`, `/setup → /compte`.

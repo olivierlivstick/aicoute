@@ -12,12 +12,23 @@ interface StuckCall {
   beneficiaries: { first_name: string; last_name: string } | null
 }
 
+interface SystemEvent {
+  id:         string
+  created_at: string
+  level:      'debug' | 'info' | 'warn' | 'error'
+  source:     string
+  call_id:    string | null
+  message:    string
+  payload:    Record<string, unknown> | null
+}
+
 interface HealthSnapshot {
   stuckNotified:   StuckCall[]    // status='notified' depuis > 5 min (passe B censée les détecter)
   stuckInProgress: StuckCall[]    // status='in_progress' depuis > 30 min (bridge crashé ?)
   stuckScheduled:  StuckCall[]    // status='scheduled' avec attempt > 1 et scheduled_at < now-5min (passe C bloquée)
   callsLastHour:   number
   lastCallEndedAt: string | null
+  events:          SystemEvent[]
 }
 
 export function AdminSantePage() {
@@ -35,12 +46,13 @@ export function AdminSantePage() {
 
     const benSelect = 'id, status, attempt_number, scheduled_at, notified_at, beneficiaries(first_name, last_name)'
 
-    const [stuckNot, stuckProg, stuckSched, hourCount, lastEnded] = await Promise.all([
+    const [stuckNot, stuckProg, stuckSched, hourCount, lastEnded, events] = await Promise.all([
       supabase.from('calls').select(benSelect).eq('status', 'notified').lt('notified_at', cutoff5min).order('notified_at', { ascending: true }).limit(50),
       supabase.from('calls').select(benSelect).eq('status', 'in_progress').lt('started_at', cutoff30min).order('started_at', { ascending: true }).limit(50),
       supabase.from('calls').select(benSelect).eq('status', 'scheduled').gt('attempt_number', 1).lt('scheduled_at', cutoff5min).lte('scheduled_at', nowIso).order('scheduled_at', { ascending: true }).limit(50),
       supabase.from('calls').select('id', { count: 'exact', head: true }).gte('created_at', cutoff1hour),
       supabase.from('calls').select('ended_at').eq('status', 'completed').order('ended_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('system_events').select('id, created_at, level, source, call_id, message, payload').order('created_at', { ascending: false }).limit(50),
     ])
 
     setSnap({
@@ -49,6 +61,7 @@ export function AdminSantePage() {
       stuckScheduled:  (stuckSched.data ?? []) as unknown as StuckCall[],
       callsLastHour:   hourCount.count ?? 0,
       lastCallEndedAt: (lastEnded.data as { ended_at: string } | null)?.ended_at ?? null,
+      events:          (events.data ?? []) as SystemEvent[],
     })
     setLoading(false)
     setRefreshing(false)
@@ -117,9 +130,83 @@ export function AdminSantePage() {
             rows={snap.stuckScheduled}
             timeField="scheduled_at"
           />
+
+          {/* Événements système — flux des 50 derniers logs structurés */}
+          <SystemEventsSection events={snap.events} />
         </>
       )}
     </div>
+  )
+}
+
+function SystemEventsSection({ events }: { events: SystemEvent[] }) {
+  if (events.length === 0) {
+    return (
+      <section className="mt-8">
+        <h2 className="font-serif text-lg font-semibold text-brun-900 mb-2">Événements système (50 derniers)</h2>
+        <p className="text-sm text-slate-400 italic">Aucun événement enregistré pour l'instant.</p>
+      </section>
+    )
+  }
+
+  const levelTone: Record<string, string> = {
+    debug: 'bg-slate-100 text-slate-500',
+    info:  'bg-sauge/15 text-sauge',
+    warn:  'bg-accent-50 text-accent-700',
+    error: 'bg-brique/15 text-brique',
+  }
+
+  return (
+    <section className="mt-8">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="font-serif text-lg font-semibold text-brun-900">Événements système (50 derniers)</h2>
+        <span className="text-xs text-slate-500">{events.length} entrée{events.length > 1 ? 's' : ''}</span>
+      </div>
+      <div className="bg-white rounded-xl border border-creme-sable overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-creme text-brun-700 text-left text-xs uppercase tracking-wider">
+            <tr>
+              <th className="px-4 py-2">Quand</th>
+              <th className="px-4 py-2">Niveau</th>
+              <th className="px-4 py-2">Source</th>
+              <th className="px-4 py-2">Message</th>
+              <th className="px-4 py-2"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-creme-sable">
+            {events.map((ev) => (
+              <tr key={ev.id} className="align-top">
+                <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">{formatRelative(ev.created_at)}</td>
+                <td className="px-4 py-2">
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${levelTone[ev.level] ?? 'bg-slate-100 text-slate-500'}`}>
+                    {ev.level}
+                  </span>
+                </td>
+                <td className="px-4 py-2 text-xs text-brun-700 font-mono whitespace-nowrap">{ev.source}</td>
+                <td className="px-4 py-2 text-brun-900 text-sm">
+                  {ev.message}
+                  {ev.payload && (
+                    <details className="mt-1">
+                      <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-600">payload</summary>
+                      <pre className="text-[10px] text-slate-500 bg-creme rounded p-2 mt-1 overflow-x-auto">
+                        {JSON.stringify(ev.payload, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </td>
+                <td className="px-4 py-2 text-right">
+                  {ev.call_id && (
+                    <Link to={`/historique/${ev.call_id}`} className="text-xs text-primary hover:underline">
+                      Call
+                    </Link>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }
 

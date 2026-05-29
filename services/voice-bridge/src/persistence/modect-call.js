@@ -83,3 +83,48 @@ export async function recordCallTokens(callId, tokens) {
   const { error } = await supabase.from('calls').update(update).eq('id', callId)
   if (error) console.error(`❌ [modect-call] recordTokens ${callId}:`, error.message)
 }
+
+/**
+ * Marque un call selon un statut Twilio reçu via statusCallback.
+ *   - no-answer / busy → 'missed' (court-circuite la passe B no-answer qui
+ *     attendrait 120s par défaut)
+ *   - failed / canceled → 'failed'
+ *   - completed → on NE MARQUE PAS depuis ici, save-transcript le fait avec
+ *     le transcript final. Le callback Twilio 'completed' arrive AVANT la WS
+ *     close → on laisse le bridge gérer le flush et le statut.
+ *
+ * Idempotent : ne touche pas un call déjà 'completed' ou 'failed'.
+ * Renvoie le nouveau statut effectif (ou null si on n'a pas écrit).
+ */
+export async function markCallByTwilioStatus(twilioSid, twilioStatus) {
+  if (!supabase || !twilioSid) return null
+
+  let nextStatus = null
+  if (twilioStatus === 'no-answer' || twilioStatus === 'busy') nextStatus = 'missed'
+  else if (twilioStatus === 'failed' || twilioStatus === 'canceled') nextStatus = 'failed'
+  else return null  // 'queued', 'ringing', 'in-progress', 'completed' → on ignore
+
+  const { data, error } = await supabase
+    .from('calls')
+    .update({ status: nextStatus, ended_at: new Date().toISOString() })
+    .eq('twilio_call_sid', twilioSid)
+    .in('status', ['notified', 'in_progress'])
+    .select('id')
+    .maybeSingle()
+  if (error) {
+    console.error(`❌ [modect-call] markByTwilio ${twilioSid}:`, error.message)
+    return null
+  }
+  return data ? nextStatus : null
+}
+
+/** Lookup pour le statusCallback : trouve l'id Modect à partir du SID Twilio. */
+export async function findCallIdByTwilioSid(twilioSid) {
+  if (!supabase || !twilioSid) return null
+  const { data } = await supabase
+    .from('calls')
+    .select('id')
+    .eq('twilio_call_sid', twilioSid)
+    .maybeSingle()
+  return data?.id ?? null
+}

@@ -18,6 +18,7 @@
 
 import { corsHeaders, handleCors } from '../_shared/cors.ts'
 import { getSupabaseAdmin } from '../_shared/supabaseAdmin.ts'
+import { logEvent } from '../_shared/systemEvents.ts'
 
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req)
@@ -71,6 +72,13 @@ Deno.serve(async (req: Request) => {
         .from('calls')
         .update({ status: 'failed', ended_at: new Date().toISOString() })
         .eq('id', call_id)
+      await logEvent(supabase, {
+        level:   'warn',
+        source:  'initiate-call',
+        call_id,
+        message: `Bénéficiaire ${beneficiary.first_name} sans numéro — call marqué failed`,
+        payload: { beneficiary_id: beneficiary.id },
+      })
       return jsonResponse(
         { error: `Bénéficiaire ${beneficiary.first_name} n'a pas de numéro de téléphone` },
         422,
@@ -96,6 +104,13 @@ Deno.serve(async (req: Request) => {
         .from('calls')
         .update({ status: 'failed', ended_at: new Date().toISOString() })
         .eq('id', call_id)
+      await logEvent(supabase, {
+        level:   'error',
+        source:  'initiate-call',
+        call_id,
+        message: `voice-bridge a refusé /scheduled-call (HTTP ${bridgeRes.status})`,
+        payload: { status: bridgeRes.status, detail: detail.slice(0, 500) },
+      })
       return jsonResponse(
         { error: 'voice-bridge a refusé la demande', status: bridgeRes.status, detail },
         502,
@@ -133,6 +148,12 @@ Deno.serve(async (req: Request) => {
           .from('calls')
           .update({ status: 'failed', ended_at: new Date().toISOString() })
           .eq('id', parsedCallId)
+        await logEvent(supabase, {
+          level:   'error',
+          source:  'initiate-call',
+          call_id: parsedCallId,
+          message: err instanceof Error ? err.message : 'Erreur interne',
+        })
       } catch (_) { /* ignore */ }
     }
     return jsonResponse(

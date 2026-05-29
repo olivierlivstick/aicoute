@@ -16,6 +16,7 @@
 //   }
 
 import { WebSocket } from 'ws'
+import { logEvent } from '../persistence/system-events.js'
 
 const MODEL_DEFAULT = 'gpt-realtime-2'
 const VOICE_DEFAULT = 'cedar'
@@ -197,6 +198,13 @@ export function createModectCallBridge(opts) {
       if (!res.ok) {
         const detail = await res.text().catch(() => '')
         console.error(`❌ [modect:${shortId(callId)}] get-call-context ${res.status}: ${detail}`)
+        void logEvent({
+          level:   'error',
+          source:  'voice-bridge/scheduled',
+          call_id: callId,
+          message: `get-call-context HTTP ${res.status}`,
+          payload: { detail: detail.slice(0, 500) },
+        })
         try { twilioWs.close() } catch { /* */ }
         return
       }
@@ -210,6 +218,12 @@ export function createModectCallBridge(opts) {
       maybeSetupSession()
     } catch (err) {
       console.error(`❌ [modect:${shortId(callId)}] fetch context:`, err?.message || err)
+      void logEvent({
+        level:   'error',
+        source:  'voice-bridge/scheduled',
+        call_id: callId,
+        message: `Exception fetch get-call-context: ${err?.message || 'inconnue'}`,
+      })
       try { twilioWs.close() } catch { /* */ }
     }
   })()
@@ -289,11 +303,24 @@ export function createModectCallBridge(opts) {
       if (!res.ok) {
         const detail = await res.text().catch(() => '')
         console.error(`❌ [modect:${shortId(callId)}] save-transcript ${res.status}: ${detail}`)
+        void logEvent({
+          level:   'error',
+          source:  'voice-bridge/scheduled',
+          call_id: callId,
+          message: `save-transcript HTTP ${res.status}`,
+          payload: { detail: detail.slice(0, 500), transcript_entries: transcript.length },
+        })
       } else {
         console.log(`✅ [modect:${shortId(callId)}] transcript persisté (${transcript.length} entrées, ${Math.round(durationSeconds)}s)`)
       }
     } catch (err) {
       console.error(`❌ [modect:${shortId(callId)}] save-transcript fetch:`, err?.message || err)
+      void logEvent({
+        level:   'error',
+        source:  'voice-bridge/scheduled',
+        call_id: callId,
+        message: `Exception save-transcript: ${err?.message || 'inconnue'}`,
+      })
     }
 
     onEnd?.({ tokens: { ...tokens }, transcript, durationSeconds })

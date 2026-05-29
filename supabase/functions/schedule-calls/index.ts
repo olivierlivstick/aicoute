@@ -23,6 +23,7 @@
 import { getSupabaseAdmin }              from '../_shared/supabaseAdmin.ts'
 import { calculateNextScheduledAt }      from '../_shared/scheduling.ts'
 import { sendEmail, noAnswerEmailHtml }  from '../_shared/email.ts'
+import { logEvent }                      from '../_shared/systemEvents.ts'
 
 type Supabase = ReturnType<typeof getSupabaseAdmin>
 
@@ -80,10 +81,28 @@ Deno.serve(async (_req: Request) => {
     await passC_retryFire(supabase, supabaseUrl, serviceKey, results)
 
     console.log(`[schedule-calls] A:${results.triggered} déclenchés · B:${results.retried} retry / ${results.noAnswer} no-answer · C:${results.retriesFired} retries lancés · ${results.errors.length} erreurs`)
+
+    // Trace système : un événement résumé par tick — utile pour suivre le pouls
+    // du worker dans /admin/sante. Niveau 'warn' s'il y a eu des erreurs.
+    if (results.triggered > 0 || results.retried > 0 || results.noAnswer > 0 || results.retriesFired > 0 || results.errors.length > 0) {
+      await logEvent(supabase, {
+        level:   results.errors.length > 0 ? 'warn' : 'info',
+        source:  'schedule-calls',
+        message: `tick: A=${results.triggered} B=${results.retried}/${results.noAnswer} C=${results.retriesFired}`,
+        payload: { ...results },
+      })
+    }
+
     return okResponse(results)
 
   } catch (err) {
     console.error('[schedule-calls] Erreur fatale:', err)
+    await logEvent(supabase, {
+      level:   'error',
+      source:  'schedule-calls',
+      message: `Erreur fatale: ${err instanceof Error ? err.message : 'inconnue'}`,
+      payload: { results },
+    })
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : 'Erreur interne', results }),
       { status: 500, headers: { 'Content-Type': 'application/json' } },
@@ -226,6 +245,13 @@ async function passB_noAnswer(
       } else {
         // Plus de retry possible → email aidant si demandé
         results.noAnswer++
+        await logEvent(supabase, {
+          level:   'warn',
+          source:  'schedule-calls/B',
+          call_id: call.id,
+          message: `No-answer définitif après ${call.attempt_number} tentatives`,
+          payload: { schedule_id: call.schedule_id, attempt_number: call.attempt_number },
+        })
         if (schedule.notify_on_no_answer) {
           // @ts-expect-error embedded select shape
           const beneficiary = schedule.beneficiaries
