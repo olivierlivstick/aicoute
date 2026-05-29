@@ -1,9 +1,12 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { RefreshCcw, ExternalLink, PhoneCall } from 'lucide-react'
+import { RefreshCcw, ExternalLink, PhoneCall, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 type CallStatus = 'scheduled' | 'notified' | 'in_progress' | 'completed' | 'missed' | 'failed'
+
+const PAST_STATUSES:     CallStatus[] = ['completed', 'missed', 'failed']
+const UPCOMING_STATUSES: CallStatus[] = ['scheduled', 'notified', 'in_progress']
 
 interface CallRow {
   id:               string
@@ -20,6 +23,12 @@ interface CallRow {
     last_name:  string
     profiles: { email: string; full_name: string } | null
   } | null
+}
+
+interface BeneficiaryOption {
+  id:         string
+  first_name: string
+  last_name:  string
 }
 
 const STATUS_LABEL: Record<CallStatus, string> = {
@@ -48,37 +57,65 @@ const PERIOD_LABEL = {
 } as const
 type Period = keyof typeof PERIOD_LABEL
 
+type Tab = 'past' | 'upcoming'
+
 export function AdminAppelsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const period   = (searchParams.get('period') as Period) ?? '7d'
-  const status   = searchParams.get('status') ?? 'all'
-  const severity = searchParams.get('severity') ?? 'all'   // 'all' | 'high'
+  const tab         = (searchParams.get('tab') as Tab) ?? 'past'
+  const period      = (searchParams.get('period') as Period) ?? '7d'
+  const severity    = searchParams.get('severity')    ?? 'all'   // 'all' | 'high'
+  const beneficiary = searchParams.get('beneficiary') ?? 'all'
 
   const [rows, setRows] = useState<CallRow[]>([])
+  const [beneficiariesList, setBeneficiariesList] = useState<BeneficiaryOption[]>([])
   const [loading, setLoading] = useState(true)
-  const [relaunching, setRelaunching] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  // Liste des bénéficiaires pour le dropdown (chargée une seule fois)
+  useEffect(() => {
+    supabase
+      .from('beneficiaries')
+      .select('id, first_name, last_name')
+      .eq('is_active', true)
+      .order('first_name', { ascending: true })
+      .then(({ data }) => setBeneficiariesList((data ?? []) as BeneficiaryOption[]))
+  }, [])
 
   useEffect(() => {
     load()
-  }, [period, status])
+  }, [tab, period, beneficiary])
 
   async function load() {
     setLoading(true)
+    const statuses = tab === 'past' ? PAST_STATUSES : UPCOMING_STATUSES
+
+    // Tri : passés desc (plus récents en haut), prévus asc (prochain en haut)
     let q = supabase
       .from('calls')
       .select('id, status, scheduled_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, alerts, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
-      .order('scheduled_at', { ascending: false })
+      .in('status', statuses)
+      .order('scheduled_at', { ascending: tab === 'upcoming' })
       .limit(200)
 
     if (period !== 'all') {
       const sinceMs = period === 'today' ? Date.now() - 24 * 3600 * 1000
                     : period === '7d'    ? Date.now() - 7  * 24 * 3600 * 1000
                     :                      Date.now() - 30 * 24 * 3600 * 1000
-      q = q.gte('scheduled_at', new Date(sinceMs).toISOString())
+      // Pour l'onglet « passés » : depuis cette date → maintenant
+      // Pour l'onglet « prévus » : on filtre dans la fenêtre future (today/7d/30d → jusque +X)
+      if (tab === 'past') {
+        q = q.gte('scheduled_at', new Date(sinceMs).toISOString())
+      } else {
+        const horizonMs = period === 'today' ? Date.now() + 24 * 3600 * 1000
+                        : period === '7d'    ? Date.now() + 7  * 24 * 3600 * 1000
+                        :                      Date.now() + 30 * 24 * 3600 * 1000
+        q = q.lte('scheduled_at', new Date(horizonMs).toISOString())
+      }
     }
-    if (status !== 'all') {
-      q = q.eq('status', status)
+
+    if (beneficiary !== 'all') {
+      q = q.eq('beneficiary_id', beneficiary)
     }
 
     const { data } = await q
@@ -86,6 +123,7 @@ export function AdminAppelsPage() {
     setLoading(false)
   }
 
+  // Filtre client-side sévérité (sur le subset déjà chargé)
   const visible = useMemo(() => {
     if (severity === 'high') {
       return rows.filter((r) => Array.isArray(r.alerts) && r.alerts.some((a) => a.severity === 'high'))
@@ -95,7 +133,7 @@ export function AdminAppelsPage() {
 
   function setParam(name: string, value: string) {
     const next = new URLSearchParams(searchParams)
-    if (value === 'all' || (name === 'period' && value === '7d')) {
+    if (value === 'all' || (name === 'period' && value === '7d') || (name === 'tab' && value === 'past')) {
       next.delete(name)
     } else {
       next.set(name, value)
@@ -103,11 +141,16 @@ export function AdminAppelsPage() {
     setSearchParams(next, { replace: true })
   }
 
+  /** Relance d'un appel passé en missed/failed → crée un nouveau call.
+   *  Cast `as any` localisé : les types Database générés sont incomplets pour
+   *  certaines colonnes de `calls` (cf. CLAUDE.md "Build Netlify : utiliser
+   *  vite build sans tsc"). Le runtime PostgREST fonctionne. */
   async function relaunch(callId: string, beneficiaryId: string) {
-    setRelaunching(callId)
+    setBusy(callId)
     try {
-      const { data: created, error } = await supabase
-        .from('calls')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const callsTable = supabase.from('calls') as any
+      const { data: created, error } = await callsTable
         .insert({
           beneficiary_id: beneficiaryId,
           status:         'scheduled',
@@ -119,7 +162,7 @@ export function AdminAppelsPage() {
       if (error || !created) throw new Error(error?.message ?? 'Insert failed')
 
       const { error: invokeErr } = await supabase.functions.invoke('initiate-call', {
-        body: { call_id: created.id },
+        body: { call_id: (created as { id: string }).id },
       })
       if (invokeErr) throw new Error(invokeErr.message)
 
@@ -127,7 +170,43 @@ export function AdminAppelsPage() {
     } catch (err) {
       alert(`Échec de la relance : ${err instanceof Error ? err.message : 'erreur inconnue'}`)
     } finally {
-      setRelaunching(null)
+      setBusy(null)
+    }
+  }
+
+  /**
+   * Anticipe un appel prévu (status='scheduled') → on UPDATE son scheduled_at
+   * à maintenant + reset attempt_number=1 puis on invoque initiate-call. Le call
+   * existant change d'horaire — pas de duplication, pas de status à inventer.
+   * Le planning récurrent (session_schedules.next_scheduled_at) reste inchangé,
+   * donc le prochain créneau récurrent passera normalement.
+   */
+  async function triggerNow(callId: string) {
+    if (!confirm('Déclencher cet appel maintenant ? L\'horaire prévu sera remplacé par maintenant.')) return
+    setBusy(callId)
+    try {
+      // Même cast que relaunch — cf. note ci-dessus.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const callsTable = supabase.from('calls') as any
+      const { error: updateErr } = await callsTable
+        .update({
+          scheduled_at:   new Date().toISOString(),
+          attempt_number: 1,
+        })
+        .eq('id', callId)
+        .eq('status', 'scheduled')   // safety : ne touche pas si statut a changé entre-temps
+      if (updateErr) throw new Error(updateErr.message)
+
+      const { error: invokeErr } = await supabase.functions.invoke('initiate-call', {
+        body: { call_id: callId },
+      })
+      if (invokeErr) throw new Error(invokeErr.message)
+
+      await load()
+    } catch (err) {
+      alert(`Échec du déclenchement : ${err instanceof Error ? err.message : 'erreur inconnue'}`)
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -136,35 +215,46 @@ export function AdminAppelsPage() {
       <header className="mb-6">
         <p className="text-xs uppercase tracking-widest text-accent-700 font-semibold mb-1">Administration</p>
         <h1 className="font-serif text-3xl font-semibold text-brun-900">Appels (tous comptes)</h1>
-        <p className="text-slate-500 mt-1">200 résultats max. Triés par date planifiée décroissante.</p>
+        <p className="text-slate-500 mt-1">200 résultats max. {tab === 'past' ? 'Plus récents en premier.' : 'Plus proches dans le temps en premier.'}</p>
       </header>
+
+      {/* Onglets */}
+      <div className="flex gap-1 mb-5 border-b border-creme-sable">
+        <TabButton active={tab === 'past'}     onClick={() => setParam('tab', 'past')}>Appels passés</TabButton>
+        <TabButton active={tab === 'upcoming'} onClick={() => setParam('tab', 'upcoming')}>Appels prévus</TabButton>
+      </div>
 
       {/* Filtres */}
       <div className="flex flex-wrap gap-3 mb-5">
+        <Filter
+          label="Bénéficiaire"
+          value={beneficiary}
+          options={[
+            { value: 'all', label: 'Tous les bénéficiaires' },
+            ...beneficiariesList.map((b) => ({
+              value: b.id,
+              label: `${b.first_name} ${b.last_name}`,
+            })),
+          ]}
+          onChange={(v) => setParam('beneficiary', v)}
+        />
         <Filter
           label="Période"
           value={period}
           options={Object.entries(PERIOD_LABEL).map(([v, l]) => ({ value: v, label: l }))}
           onChange={(v) => setParam('period', v)}
         />
-        <Filter
-          label="Statut"
-          value={status}
-          options={[
-            { value: 'all', label: 'Tous' },
-            ...Object.entries(STATUS_LABEL).map(([v, l]) => ({ value: v, label: l })),
-          ]}
-          onChange={(v) => setParam('status', v)}
-        />
-        <Filter
-          label="Sévérité"
-          value={severity}
-          options={[
-            { value: 'all',  label: 'Toutes alertes' },
-            { value: 'high', label: 'Avec alerte haute' },
-          ]}
-          onChange={(v) => setParam('severity', v)}
-        />
+        {tab === 'past' && (
+          <Filter
+            label="Sévérité"
+            value={severity}
+            options={[
+              { value: 'all',  label: 'Toutes alertes' },
+              { value: 'high', label: 'Avec alerte haute' },
+            ]}
+            onChange={(v) => setParam('severity', v)}
+          />
+        )}
       </div>
 
       {loading ? (
@@ -178,8 +268,8 @@ export function AdminAppelsPage() {
                 <th className="px-5 py-3">Bénéficiaire</th>
                 <th className="px-5 py-3">Aidant</th>
                 <th className="px-5 py-3">Statut</th>
-                <th className="px-5 py-3 text-center">Durée</th>
-                <th className="px-5 py-3 text-right">Coût IA</th>
+                {tab === 'past' && <th className="px-5 py-3 text-center">Durée</th>}
+                {tab === 'past' && <th className="px-5 py-3 text-right">Coût IA</th>}
                 <th className="px-5 py-3">Actions</th>
               </tr>
             </thead>
@@ -190,7 +280,8 @@ export function AdminAppelsPage() {
                 const dur = c.duration_seconds
                   ? `${Math.floor(c.duration_seconds / 60)}m${(c.duration_seconds % 60).toString().padStart(2, '0')}`
                   : '—'
-                const canRelaunch = (c.status === 'missed' || c.status === 'failed') && ben?.id
+                const canRelaunch  = tab === 'past'     && (c.status === 'missed' || c.status === 'failed') && ben?.id
+                const canTriggerNow = tab === 'upcoming' && c.status === 'scheduled'
                 const hasHighAlert = Array.isArray(c.alerts) && c.alerts.some((a) => a.severity === 'high')
                 return (
                   <tr key={c.id} className="hover:bg-creme/40 transition-colors">
@@ -219,12 +310,16 @@ export function AdminAppelsPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-5 py-3 text-center text-brun-700">{dur}</td>
-                    <td className="px-5 py-3 text-right text-brun-700 font-mono text-xs">
-                      {c.ai_cost_eur_real != null ? `€${c.ai_cost_eur_real.toFixed(4)}` : '—'}
-                    </td>
+                    {tab === 'past' && (
+                      <td className="px-5 py-3 text-center text-brun-700">{dur}</td>
+                    )}
+                    {tab === 'past' && (
+                      <td className="px-5 py-3 text-right text-brun-700 font-mono text-xs">
+                        {c.ai_cost_eur_real != null ? `€${c.ai_cost_eur_real.toFixed(4)}` : '—'}
+                      </td>
+                    )}
                     <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
                         <Link
                           to={`/historique/${c.id}`}
                           className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
@@ -234,11 +329,21 @@ export function AdminAppelsPage() {
                         {canRelaunch && (
                           <button
                             onClick={() => relaunch(c.id, ben!.id)}
-                            disabled={relaunching === c.id}
+                            disabled={busy === c.id}
                             className="inline-flex items-center gap-1 text-xs text-accent-700 hover:underline disabled:opacity-50"
                           >
-                            <RefreshCcw size={12} className={relaunching === c.id ? 'animate-spin' : ''} />
+                            <RefreshCcw size={12} className={busy === c.id ? 'animate-spin' : ''} />
                             Relancer
+                          </button>
+                        )}
+                        {canTriggerNow && (
+                          <button
+                            onClick={() => triggerNow(c.id)}
+                            disabled={busy === c.id}
+                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-50"
+                          >
+                            <Zap size={12} className={busy === c.id ? 'animate-pulse' : ''} />
+                            Déclencher maintenant
                           </button>
                         )}
                       </div>
@@ -248,9 +353,11 @@ export function AdminAppelsPage() {
               })}
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-slate-400 text-sm">
+                  <td colSpan={tab === 'past' ? 7 : 5} className="px-5 py-10 text-center text-slate-400 text-sm">
                     <PhoneCall size={24} className="mx-auto mb-2 text-slate-300" />
-                    Aucun appel ne correspond aux filtres.
+                    {tab === 'past'
+                      ? 'Aucun appel passé ne correspond aux filtres.'
+                      : 'Aucun appel prévu ne correspond aux filtres.'}
                   </td>
                 </tr>
               )}
@@ -262,10 +369,32 @@ export function AdminAppelsPage() {
   )
 }
 
+function TabButton({ active, onClick, children }: {
+  active:   boolean
+  onClick:  () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
+        active
+          ? 'text-primary'
+          : 'text-slate-500 hover:text-brun-700'
+      }`}
+    >
+      {children}
+      {active && (
+        <span className="absolute left-2 right-2 -bottom-px h-0.5 bg-primary rounded-full" />
+      )}
+    </button>
+  )
+}
+
 function Filter({ label, value, options, onChange }: {
-  label: string
-  value: string
-  options: Array<{ value: string; label: string }>
+  label:    string
+  value:    string
+  options:  Array<{ value: string; label: string }>
   onChange: (v: string) => void
 }) {
   return (
