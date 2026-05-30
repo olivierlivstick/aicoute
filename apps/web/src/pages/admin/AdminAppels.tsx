@@ -284,7 +284,7 @@ export function AdminAppelsPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
+    <div className="max-w-[1600px] mx-auto px-4 py-8">
       <header className="mb-6">
         <p className="text-xs uppercase tracking-widest text-accent-700 font-semibold mb-1">Administration</p>
         <h1 className="font-serif text-3xl font-semibold text-brun-900">Appels (tous comptes)</h1>
@@ -333,26 +333,26 @@ export function AdminAppelsPage() {
       {loading ? (
         <p className="text-slate-400 text-sm">Chargement…</p>
       ) : (
-        <div className="bg-white rounded-2xl border border-creme-sable overflow-hidden">
+        <div className="bg-white rounded-2xl border border-creme-sable overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-creme text-brun-700 text-left text-xs uppercase tracking-wider">
               <tr>
                 {tab === 'past' ? (
                   <>
-                    <th className="px-5 py-3">Planifié</th>
-                    <th className="px-5 py-3">Effectif</th>
+                    <th className="px-4 py-3">Planifié</th>
+                    <th className="px-4 py-3">Effectif</th>
                   </>
                 ) : (
-                  <th className="px-5 py-3">Date</th>
+                  <th className="px-4 py-3">Date</th>
                 )}
-                <th className="px-5 py-3">Bénéficiaire</th>
-                <th className="px-5 py-3">Aidant</th>
-                <th className="px-5 py-3">Statut</th>
-                {tab === 'past' && <th className="px-5 py-3 text-center">Moteur</th>}
-                {tab === 'past' && <th className="px-5 py-3 text-center">Durée</th>}
-                {tab === 'past' && <th className="px-5 py-3 text-right">Coût IA</th>}
-                {tab === 'past' && <th className="px-5 py-3 text-right">Coût Twilio</th>}
-                <th className="px-5 py-3">Actions</th>
+                <th className="px-4 py-3">Bénéficiaire</th>
+                <th className="px-4 py-3">Aidant</th>
+                <th className="px-4 py-3">Statut</th>
+                {tab === 'past' && <th className="px-4 py-3 text-center">Moteur</th>}
+                {tab === 'past' && <th className="px-4 py-3 text-center">Durée</th>}
+                {tab === 'past' && <th className="px-4 py-3 text-right">Coût IA</th>}
+                {tab === 'past' && <th className="px-4 py-3 text-right">Coût Twilio</th>}
+                <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-creme-sable">
@@ -381,7 +381,7 @@ export function AdminAppelsPage() {
                 const hasHighAlert = Array.isArray(c.alerts) && c.alerts.some((a) => a.severity === 'high')
                 return (
                   <tr key={c.id} className="hover:bg-creme/40 transition-colors">
-                    <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
+                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
                       {new Date(c.scheduled_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
                       {c.attempt_number > 1 && (
                         <span className="ml-2 inline-block bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px]">
@@ -390,20 +390,20 @@ export function AdminAppelsPage() {
                       )}
                     </td>
                     {tab === 'past' && (
-                      <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
+                      <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
                         {effective
                           ? new Date(effective).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
                           : '—'}
                       </td>
                     )}
-                    <td className="px-5 py-3 text-brun-900">
+                    <td className="px-4 py-3 text-brun-900">
                       {ben ? `${ben.first_name} ${ben.last_name}` : '—'}
                     </td>
-                    <td className="px-5 py-3 text-xs text-slate-500">
+                    <td className="px-4 py-3 text-xs text-slate-500">
                       <p className="text-brun-700">{aidant?.full_name ?? '—'}</p>
                       <p>{aidant?.email ?? ''}</p>
                     </td>
-                    <td className="px-5 py-3">
+                    <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${STATUS_TONE[c.status]}`}>
                         {STATUS_LABEL[c.status]}
                       </span>
@@ -414,7 +414,7 @@ export function AdminAppelsPage() {
                       )}
                     </td>
                     {tab === 'past' && (
-                      <td className="px-5 py-3 text-center">
+                      <td className="px-4 py-3 text-center">
                         {c.engine ? (
                           <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${ENGINE_LABEL[c.engine].tone}`}>
                             {ENGINE_LABEL[c.engine].label}
@@ -425,22 +425,22 @@ export function AdminAppelsPage() {
                       </td>
                     )}
                     {tab === 'past' && (
-                      <td className="px-5 py-3 text-center text-brun-700">{dur}</td>
+                      <td className="px-4 py-3 text-center text-brun-700">{dur}</td>
                     )}
                     {tab === 'past' && (
-                      <td className="px-5 py-3 text-right text-brun-700 font-mono text-xs">
+                      <td className="px-4 py-3 text-right text-brun-700 font-mono text-xs">
                         {c.ai_cost_eur_real != null ? `€${c.ai_cost_eur_real.toFixed(4)}` : '—'}
                       </td>
                     )}
                     {tab === 'past' && (
                       <td
-                        className={`px-5 py-3 text-right font-mono text-xs ${twilioReal ? 'text-brun-700' : 'text-slate-400'}`}
+                        className={`px-4 py-3 text-right font-mono text-xs ${twilioReal ? 'text-brun-700' : 'text-slate-400'}`}
                         title={twilioReal ? 'Coût réel facturé par Twilio' : 'Estimation à partir de la durée (≈ 0,0007 €/s) — coût réel pas encore remonté'}
                       >
                         {twilioCost}
                       </td>
                     )}
-                    <td className="px-5 py-3">
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <Link
                           to={`/historique/${c.id}`}
