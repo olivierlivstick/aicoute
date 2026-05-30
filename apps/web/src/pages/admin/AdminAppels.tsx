@@ -172,13 +172,35 @@ export function AdminAppelsPage() {
     setLoading(false)
   }
 
-  // Filtre client-side sévérité (sur le subset déjà chargé)
+  // Filtre client-side sévérité + tri (sur le subset déjà chargé)
   const visible = useMemo(() => {
-    if (severity === 'high') {
-      return rows.filter((r) => Array.isArray(r.alerts) && r.alerts.some((a) => a.severity === 'high'))
+    let list = severity === 'high'
+      ? rows.filter((r) => Array.isArray(r.alerts) && r.alerts.some((a) => a.severity === 'high'))
+      : rows
+
+    // Onglet passés : tri par date EFFECTIVE (décroché réel started_at, fallback
+    // notified_at) décroissante, puis par date planifiée décroissante. Évite que
+    // les échecs jamais connectés — surtout ceux datés dans le futur via
+    // scheduled_at — remontent en tête. Le tri DB par scheduled_at ne sert plus
+    // qu'à borner le limit(200) ; l'ordre d'affichage est décidé ici.
+    if (tab === 'past') {
+      const effTime = (r: CallRow): number | null => {
+        const d = r.started_at ?? r.notified_at
+        return d ? new Date(d).getTime() : null
+      }
+      list = [...list].sort((a, b) => {
+        const ea = effTime(a)
+        const eb = effTime(b)
+        if (ea !== eb) {
+          if (ea === null) return 1   // jamais connecté → en bas
+          if (eb === null) return -1
+          return eb - ea              // date effective décroissante
+        }
+        return new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime() // planifiée décroissante
+      })
     }
-    return rows
-  }, [rows, severity])
+    return list
+  }, [rows, severity, tab])
 
   function setParam(name: string, value: string) {
     const next = new URLSearchParams(searchParams)
@@ -246,9 +268,9 @@ export function AdminAppelsPage() {
     }
   }
 
-  /** Supprime définitivement un appel prévu (DELETE direct, RLS admin autorise). */
+  /** Supprime définitivement un appel (prévu ou en échec) — DELETE direct, RLS admin autorise. */
   async function deleteCall(callId: string) {
-    if (!confirm('Effacer définitivement cet appel prévu ? Cette action est irréversible.')) return
+    if (!confirm('Effacer définitivement cet appel ? Cette action est irréversible.')) return
     setBusy(callId)
     try {
       const { error } = await supabase.from('calls').delete().eq('id', callId)
@@ -353,7 +375,9 @@ export function AdminAppelsPage() {
                     : '—'
                 const canRelaunch  = tab === 'past'     && (c.status === 'missed' || c.status === 'failed') && ben?.id
                 const canTriggerNow = tab === 'upcoming' && c.status === 'scheduled'
-                const canDelete     = tab === 'upcoming'
+                // Suppression : appels prévus (résidus en base) + appels en échec
+                // (nettoyage des tentatives ratées qui polluent l'historique).
+                const canDelete     = tab === 'upcoming' || (tab === 'past' && c.status === 'failed')
                 const hasHighAlert = Array.isArray(c.alerts) && c.alerts.some((a) => a.severity === 'high')
                 return (
                   <tr key={c.id} className="hover:bg-creme/40 transition-colors">

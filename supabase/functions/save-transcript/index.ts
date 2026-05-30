@@ -17,6 +17,7 @@
 
 import { corsHeaders, handleCors } from '../_shared/cors.ts'
 import { getSupabaseAdmin } from '../_shared/supabaseAdmin.ts'
+import { logEvent } from '../_shared/systemEvents.ts'
 
 interface TranscriptEntry {
   role:      'user' | 'assistant'
@@ -87,9 +88,27 @@ Deno.serve(async (req: Request) => {
         if (!res.ok) {
           const detail = await res.text().catch(() => '')
           console.error(`[save-transcript] generate-summary HTTP ${res.status}: ${detail.slice(0, 500)}`)
+          // Trace visible dans /admin/sante : sans ça, un échec transitoire de
+          // generate-summary (ex: GPT-4o down) perd le compte-rendu + l'email en
+          // silence. La passe de rattrapage de schedule-calls le relancera.
+          await logEvent(supabase, {
+            level:   'error',
+            source:  'save-transcript',
+            call_id,
+            message: `generate-summary a échoué (HTTP ${res.status}) — compte-rendu non généré`,
+            payload: { status: res.status, detail: detail.slice(0, 500) },
+          })
         }
       } catch (err) {
-        console.error('[save-transcript] generate-summary fetch error:', err)
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error('[save-transcript] generate-summary fetch error:', msg)
+        await logEvent(supabase, {
+          level:   'error',
+          source:  'save-transcript',
+          call_id,
+          message: `Exception à l'appel de generate-summary — compte-rendu non généré`,
+          payload: { error: msg },
+        })
       }
     }
 

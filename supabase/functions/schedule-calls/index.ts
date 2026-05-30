@@ -16,6 +16,11 @@
  *   C — Déclenchement des retries : lire les calls 'scheduled' avec
  *       attempt_number > 1 et scheduled_at ≤ now → trigger initiate-call.
  *
+ *   D — Rattrapage des comptes-rendus : lire les calls 'completed' avec un
+ *       transcript mais summary IS NULL (depuis > 2 min, < 6 h) → relancer
+ *       generate-summary. Filet de sécurité contre les échecs transitoires de
+ *       generate-summary (cf. save-transcript qui avale la réponse non-OK).
+ *
  * Appelé par : Supabase Cron (pg_cron) — toutes les minutes
  * verify_jwt: false (appelé en interne)
  */
@@ -43,28 +48,30 @@ Deno.serve(async (_req: Request) => {
   const appUrl      = Deno.env.get('VITE_APP_URL') ?? 'https://app.modect.com'
 
   const results = {
-    triggered:    0,
-    retried:      0,
-    noAnswer:     0,
-    retriesFired: 0,
-    skipped:      0,
-    errors:       [] as string[],
+    triggered:      0,
+    retried:        0,
+    noAnswer:       0,
+    retriesFired:   0,
+    summaryRescued: 0,
+    skipped:        0,
+    errors:         [] as string[],
   }
 
   try {
     await passA_main(supabase, supabaseUrl, serviceKey, appUrl, results)
     await passB_noAnswer(supabase, appUrl, results)
     await passC_retryFire(supabase, supabaseUrl, serviceKey, results)
+    await passD_summaryRescue(supabase, supabaseUrl, serviceKey, results)
 
-    console.log(`[schedule-calls] A:${results.triggered} déclenchés · B:${results.retried} retry / ${results.noAnswer} no-answer · C:${results.retriesFired} retries lancés · ${results.errors.length} erreurs`)
+    console.log(`[schedule-calls] A:${results.triggered} déclenchés · B:${results.retried} retry / ${results.noAnswer} no-answer · C:${results.retriesFired} retries lancés · D:${results.summaryRescued} résumés rattrapés · ${results.errors.length} erreurs`)
 
     // Trace système : un événement résumé par tick — utile pour suivre le pouls
     // du worker dans /admin/sante. Niveau 'warn' s'il y a eu des erreurs.
-    if (results.triggered > 0 || results.retried > 0 || results.noAnswer > 0 || results.retriesFired > 0 || results.errors.length > 0) {
+    if (results.triggered > 0 || results.retried > 0 || results.noAnswer > 0 || results.retriesFired > 0 || results.summaryRescued > 0 || results.errors.length > 0) {
       await logEvent(supabase, {
         level:   results.errors.length > 0 ? 'warn' : 'info',
         source:  'schedule-calls',
-        message: `tick: A=${results.triggered} B=${results.retried}/${results.noAnswer} C=${results.retriesFired}`,
+        message: `tick: A=${results.triggered} B=${results.retried}/${results.noAnswer} C=${results.retriesFired} D=${results.summaryRescued}`,
         payload: { ...results },
       })
     }
@@ -266,8 +273,100 @@ async function passC_retryFire(
 }
 
 // ============================================================================
+// Pass D — Rattrapage des comptes-rendus manquants
+// ============================================================================
+// Filet de sécurité : generate-summary peut échouer de façon transitoire (ex:
+// GPT-4o momentanément indisponible) au moment de l'appel. save-transcript avale
+// cette réponse non-OK (renvoie quand même 200 au voice-bridge) → le compte-rendu
+// + l'email sont perdus en silence, sans retry. Cette passe repère ces calls et
+// relance generate-summary.
+//
+// Critère : status='completed', transcript présent, summary IS NULL.
+//   - summary IS NULL est le signal propre que generate-summary n'a pas abouti
+//     (au pire elle écrit un summary placeholder, donc non-null → plus repris).
+//   - ended_at > now-2min : on laisse la 1re tentative (save-transcript→summary,
+//     ~10s) se terminer avant de doublonner.
+//   - ended_at < now-6h : borne anti-acharnement (un call cassé n'est pas relancé
+//     indéfiniment ; au-delà, rattrapage manuel).
+// Plafonné à 5 par tick (await en parallèle) pour borner la latence + le coût.
+
+async function passD_summaryRescue(
+  supabase: Supabase,
+  supabaseUrl: string,
+  serviceKey: string,
+  results: { summaryRescued: number; errors: string[] },
+): Promise<void> {
+  const minAge = new Date(Date.now() - 2 * 60_000).toISOString()   // > 2 min
+  const maxAge = new Date(Date.now() - 6 * 3600_000).toISOString() // < 6 h
+
+  const { data: orphans, error } = await supabase
+    .from('calls')
+    .select('id')
+    .eq('status', 'completed')
+    .is('summary', null)
+    .not('transcript', 'is', null)
+    .lt('ended_at', minAge)
+    .gt('ended_at', maxAge)
+    .order('ended_at', { ascending: false })
+    .limit(5)
+
+  if (error) throw new Error(`Fetch summary-orphan calls: ${error.message}`)
+  if (!orphans || orphans.length === 0) return
+
+  // await en parallèle : generate-summary est invoquée pour de bon (pas de
+  // fire-and-forget, peu fiable côté runtime Edge — cf. CLAUDE.md). ~10-15s.
+  const outcomes = await Promise.all(
+    orphans.map((c) => triggerGenerateSummary(supabaseUrl, serviceKey, c.id)),
+  )
+
+  orphans.forEach((c, i) => {
+    if (outcomes[i].ok) {
+      results.summaryRescued++
+      console.log(`[schedule-calls/D] Compte-rendu rattrapé call=${c.id}`)
+    } else {
+      results.errors.push(`D:${c.id}: ${outcomes[i].error}`)
+      console.error(`[schedule-calls/D] Échec rattrapage call=${c.id}: ${outcomes[i].error}`)
+    }
+  })
+
+  if (results.summaryRescued > 0) {
+    await logEvent(supabase, {
+      level:   'warn',
+      source:  'schedule-calls/D',
+      message: `${results.summaryRescued} compte(s)-rendu(s) rattrapé(s) après échec transitoire de generate-summary`,
+      payload: { rescued: results.summaryRescued, candidates: orphans.length },
+    })
+  }
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
+
+/** Relance generate-summary en attendant la réponse (filet passe D). */
+async function triggerGenerateSummary(
+  supabaseUrl: string,
+  serviceKey: string,
+  callId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/generate-summary`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({ call_id: callId }),
+    })
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      return { ok: false, error: `HTTP ${res.status} ${detail.slice(0, 200)}` }
+    }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
 
 function triggerInitiateCall(supabaseUrl: string, serviceKey: string, callId: string): void {
   fetch(`${supabaseUrl}/functions/v1/initiate-call`, {

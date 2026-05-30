@@ -37,7 +37,7 @@ Deno.serve(async (req: Request) => {
 
     const supabase   = getSupabaseAdmin()
     const openAIKey  = Deno.env.get('OPENAI_API_KEY')!
-    const appUrl     = Deno.env.get('VITE_APP_URL') ?? 'https://app.modect.app'
+    const appUrl     = Deno.env.get('VITE_APP_URL') ?? 'https://app.modect.com'
 
     // 1. Récupérer le call avec le transcript
     const { data: call, error: callErr } = await supabase
