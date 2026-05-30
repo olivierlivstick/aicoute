@@ -49,15 +49,22 @@ const ENGINE_LABEL: Record<'openai' | 'gemini', { label: string; tone: string }>
 async function invokeErrorMessage(err: unknown): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ctx = (err as any)?.context
+  const httpStatus = ctx && typeof ctx.status === 'number' ? ` (HTTP ${ctx.status})` : ''
   if (ctx && typeof ctx.json === 'function') {
+    // Cas nominal : l'Edge Function renvoie son propre JSON { error, detail }.
     try {
       const body = await ctx.clone().json()
       const parts = [body?.error, body?.detail].filter(Boolean)
-      if (parts.length) {
-        const httpStatus = typeof ctx.status === 'number' ? ` (HTTP ${ctx.status})` : ''
-        return `${parts.join(' — ')}${httpStatus}`
-      }
-    } catch { /* corps non-JSON, on retombe sur le message générique */ }
+      if (parts.length) return `${parts.join(' — ')}${httpStatus}`
+    } catch { /* pas du JSON → on tente le texte brut ci-dessous */ }
+    // Erreur niveau plateforme (timeout/crash gateway) : corps non-JSON (HTML,
+    // texte ou vide). On remonte quand même le code HTTP + un extrait lisible
+    // plutôt que le message générique « non-2xx status code ».
+    try {
+      const text = (await ctx.clone().text())?.trim()
+      if (text) return `${text.slice(0, 200)}${httpStatus}`
+    } catch { /* corps illisible → on retombe sur le message générique */ }
+    if (httpStatus) return `Erreur Edge Function${httpStatus}`
   }
   return err instanceof Error ? err.message : 'erreur inconnue'
 }
