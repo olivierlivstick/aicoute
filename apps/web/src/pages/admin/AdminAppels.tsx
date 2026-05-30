@@ -38,6 +38,30 @@ const ENGINE_LABEL: Record<'openai' | 'gemini', { label: string; tone: string }>
   gemini: { label: 'Gemini', tone: 'bg-accent-50 text-accent-700' },
 }
 
+/**
+ * Extrait le vrai message d'erreur d'un échec `supabase.functions.invoke`.
+ * Quand l'Edge Function renvoie un non-2xx, supabase-js lève une
+ * FunctionsHttpError dont le `.message` est générique ("Edge Function returned
+ * a non-2xx status code") — le détail métier (ex: "voice-bridge a refusé la
+ * demande", "pas de numéro de téléphone") n'est que dans le corps de la
+ * réponse, accessible via `error.context` (un objet Response). On le lit ici.
+ */
+async function invokeErrorMessage(err: unknown): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ctx = (err as any)?.context
+  if (ctx && typeof ctx.json === 'function') {
+    try {
+      const body = await ctx.clone().json()
+      const parts = [body?.error, body?.detail].filter(Boolean)
+      if (parts.length) {
+        const httpStatus = typeof ctx.status === 'number' ? ` (HTTP ${ctx.status})` : ''
+        return `${parts.join(' — ')}${httpStatus}`
+      }
+    } catch { /* corps non-JSON, on retombe sur le message générique */ }
+  }
+  return err instanceof Error ? err.message : 'erreur inconnue'
+}
+
 interface BeneficiaryOption {
   id:         string
   first_name: string
@@ -182,11 +206,11 @@ export function AdminAppelsPage() {
       const { error: invokeErr } = await supabase.functions.invoke('initiate-call', {
         body: { call_id: (created as { id: string }).id },
       })
-      if (invokeErr) throw new Error(invokeErr.message)
+      if (invokeErr) throw invokeErr
 
       await load()
     } catch (err) {
-      alert(`Échec de la relance : ${err instanceof Error ? err.message : 'erreur inconnue'}`)
+      alert(`Échec de la relance : ${await invokeErrorMessage(err)}`)
     } finally {
       setBusy(null)
     }
@@ -205,11 +229,11 @@ export function AdminAppelsPage() {
       const { error: invokeErr } = await supabase.functions.invoke('initiate-call', {
         body: { call_id: callId },
       })
-      if (invokeErr) throw new Error(invokeErr.message)
+      if (invokeErr) throw invokeErr
 
       await load()
     } catch (err) {
-      alert(`Échec du déclenchement : ${err instanceof Error ? err.message : 'erreur inconnue'}`)
+      alert(`Échec du déclenchement : ${await invokeErrorMessage(err)}`)
     } finally {
       setBusy(null)
     }
