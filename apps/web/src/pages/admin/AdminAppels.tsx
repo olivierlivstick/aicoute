@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { RefreshCcw, ExternalLink, PhoneCall, Zap, Trash2 } from 'lucide-react'
+import { RefreshCcw, ExternalLink, PhoneCall, Zap, Trash2, Mail } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 type CallStatus = 'scheduled' | 'notified' | 'in_progress' | 'completed' | 'missed' | 'failed'
@@ -23,6 +23,7 @@ interface CallRow {
   attempt_number:   number
   ai_cost_eur_real: number | null
   twilio_cost_eur:  number | null
+  report_email_sent_at: string | null
   engine:           'openai' | 'gemini' | null
   alerts:           Array<{ severity: string }> | null
   beneficiaries: {
@@ -137,7 +138,7 @@ export function AdminAppelsPage() {
     // Tri : passés desc (plus récents en haut), prévus asc (prochain en haut)
     let q = supabase
       .from('calls')
-      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, engine, alerts, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
+      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, report_email_sent_at, engine, alerts, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
       .in('status', statuses)
       .order('scheduled_at', { ascending: tab === 'upcoming' })
       .limit(200)
@@ -268,6 +269,33 @@ export function AdminAppelsPage() {
     }
   }
 
+  /**
+   * Renvoie le mail de compte-rendu d'un appel complété à l'aidant.
+   * Délègue à l'Edge Function resend-report (requireAdmin) : si le compte-rendu
+   * n'existe pas encore, elle le génère via generate-summary ; sinon elle renvoie
+   * simplement l'email à partir du résumé stocké (sans re-générer ni dupliquer
+   * de mémoires). Idempotent.
+   */
+  async function resendReport(callId: string) {
+    if (!confirm("Renvoyer le compte-rendu par email à l'aidant ?")) return
+    setBusy(callId)
+    try {
+      const { data, error } = await supabase.functions.invoke('resend-report', {
+        body: { call_id: callId },
+      })
+      if (error) throw error
+      const mode = (data as { mode?: string })?.mode
+      alert(mode === 'generated'
+        ? 'Compte-rendu généré et email envoyé à l\'aidant.'
+        : 'Email de compte-rendu renvoyé à l\'aidant.')
+      await load()
+    } catch (err) {
+      alert(`Échec du renvoi : ${await invokeErrorMessage(err)}`)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   /** Supprime définitivement un appel (prévu ou en échec) — DELETE direct, RLS admin autorise. */
   async function deleteCall(callId: string) {
     if (!confirm('Effacer définitivement cet appel ? Cette action est irréversible.')) return
@@ -374,6 +402,8 @@ export function AdminAppelsPage() {
                     ? `~€${(c.duration_seconds * TWILIO_EUR_PER_SECOND).toFixed(4)}`
                     : '—'
                 const canRelaunch  = tab === 'past'     && (c.status === 'missed' || c.status === 'failed') && ben?.id
+                // Renvoi du mail : appels complétés avec un aidant joignable.
+                const canResend     = tab === 'past' && c.status === 'completed' && !!aidant?.email
                 const canTriggerNow = tab === 'upcoming' && c.status === 'scheduled'
                 // Suppression : appels prévus (résidus en base) + appels en échec
                 // (nettoyage des tentatives ratées qui polluent l'historique).
@@ -456,6 +486,17 @@ export function AdminAppelsPage() {
                           >
                             <RefreshCcw size={12} className={busy === c.id ? 'animate-spin' : ''} />
                             Relancer
+                          </button>
+                        )}
+                        {canResend && (
+                          <button
+                            onClick={() => resendReport(c.id)}
+                            disabled={busy === c.id}
+                            className="inline-flex items-center gap-1 text-xs text-sauge hover:underline disabled:opacity-50"
+                            title={c.report_email_sent_at ? 'Renvoyer le compte-rendu par email' : 'Compte-rendu non encore envoyé — envoyer maintenant'}
+                          >
+                            <Mail size={12} className={busy === c.id ? 'animate-pulse' : ''} />
+                            {c.report_email_sent_at ? 'Renvoyer le mail' : 'Envoyer le mail'}
                           </button>
                         )}
                         {canTriggerNow && (

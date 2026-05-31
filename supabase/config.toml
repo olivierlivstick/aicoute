@@ -64,3 +64,6 @@ verify_jwt = false   # auth interne via MODECT_INTERNAL_TOKEN (appelée par le v
 
 [functions.regenerate-future-calls]
 verify_jwt = false   # appelée par le trigger SQL session_schedules + par le client back-office
+
+[functions.resend-report]
+verify_jwt = false   # auth gérée en interne via requireAdmin (JWT appelant)
