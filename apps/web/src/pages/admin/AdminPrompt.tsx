@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Check, Info } from 'lucide-react'
+import { Check, Info, RotateCcw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { DEFAULT_PROMPT_TEMPLATE } from '@modect/shared'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
 
@@ -38,11 +39,11 @@ export function AdminPromptPage() {
         .eq('id', 1)
         .maybeSingle()
       if (err) setError(err.message)
-      else {
-        const t = (data as { template: string } | null)?.template ?? ''
-        setTemplate(t)
-        setOriginal(t)
-      }
+      const t = (data as { template: string } | null)?.template ?? ''
+      // Filet « jamais vide » : si la base ne renvoie rien, on pré-remplit avec le
+      // canonique pour que l'écran soit utilisable (et qu'un Save le re-persiste).
+      setTemplate(t.trim() ? t : DEFAULT_PROMPT_TEMPLATE)
+      setOriginal(t)
       setLoading(false)
     })()
   }, [])
@@ -64,6 +65,14 @@ export function AdminPromptPage() {
     setOriginal(template)
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
+  }
+
+  function resetToDefault() {
+    if (!window.confirm(
+      'Remplacer le contenu actuel par le prompt par défaut d\'origine ?\n' +
+      'Le changement n\'est appliqué qu\'après « Enregistrer ».'
+    )) return
+    setTemplate(DEFAULT_PROMPT_TEMPLATE)
   }
 
   const dirty = template !== original
@@ -121,9 +130,15 @@ export function AdminPromptPage() {
                 <p className="text-sm text-brique bg-brique/10 rounded-lg px-3 py-1.5">{error}</p>
               )}
             </div>
-            <Button onClick={save} loading={saving} disabled={!dirty || !template.trim()}>
-              Enregistrer
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="ghost" onClick={resetToDefault}>
+                <RotateCcw size={14} className="mr-1" />
+                Réinitialiser
+              </Button>
+              <Button onClick={save} loading={saving} disabled={!dirty || !template.trim()}>
+                Enregistrer
+              </Button>
+            </div>
           </div>
         </div>
       )}
