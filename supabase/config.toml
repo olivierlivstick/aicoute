@@ -45,7 +45,7 @@ verify_jwt = false   # auth gérée en interne via admin client
 verify_jwt = false   # auth gérée en interne via admin client
 
 [functions.generate-summary]
-verify_jwt = true
+verify_jwt = false   # appelée en interne (save-transcript, schedule-calls passe D, resend-report) avec la clé service-role. verify_jwt=true rejetait la service-role en 401 (la passerelle n'accepte que la clé anon / un JWT user) → compte-rendu + email perdus. Aucun appelant client direct.
 
 [functions.schedule-calls]
 verify_jwt = false   # appelé par le cron Supabase
