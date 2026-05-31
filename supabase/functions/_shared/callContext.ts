@@ -106,6 +106,7 @@ export async function loadCallContext(
     personality_notes: string | null
     health_notes: string | null
     conversation_style: string
+    custom_prompt: string | null
   }
 
   // 3. Mémoires long-terme (top 20)
@@ -162,6 +163,15 @@ export async function loadCallContext(
   const model            = normalizeModel(caregiverProfile?.agent_model)
   const agentExtraPrompt = caregiverProfile?.agent_extra_prompt ?? null
 
+  // 4.5 Template de prompt par défaut (éditable par l'admin). Le service role
+  //     bypass la RLS. Si absent → buildSystemPrompt retombe sur CODE_DEFAULT_TEMPLATE.
+  const tplRes = await supabase
+    .from('prompt_templates')
+    .select('template')
+    .eq('id', 1)
+    .maybeSingle()
+  const defaultTemplate = (tplRes.data as { template: string } | null)?.template ?? null
+
   // 5. Planning (sinon défauts)
   const schedule = call.session_schedules ?? {
     max_duration_minutes: 15,
@@ -169,8 +179,9 @@ export async function loadCallContext(
     special_instructions: null,
   }
 
-  // 6. Construction du prompt
-  const basePrompt   = buildSystemPrompt(beneficiary, memories, schedule, previousCall)
+  // 6. Construction du prompt : custom_prompt (concret, par bénéficiaire) prioritaire,
+  //    sinon le template par défaut interpolé.
+  const basePrompt   = buildSystemPrompt(beneficiary, memories, schedule, previousCall, defaultTemplate, beneficiary.custom_prompt)
   const instructions = agentExtraPrompt ? `${agentExtraPrompt}\n\n${basePrompt}` : basePrompt
 
   return {

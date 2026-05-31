@@ -41,6 +41,7 @@ export interface Beneficiary {
   ai_voice: AIVoice
   ai_persona_name: string
   conversation_style: ConversationStyle
+  custom_prompt: string | null
   is_active: boolean
   onboarding_completed: boolean
   created_at: string

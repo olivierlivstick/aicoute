@@ -5,15 +5,17 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   IdCard, BookOpen, Heart, Sparkles, Bot, Check, Brain,
-  Plus, Pencil, Trash2, Lightbulb, Star, CalendarHeart, SmilePlus, MessageCircle, Link2,
+  Plus, Pencil, Trash2, Lightbulb, Star, CalendarHeart, SmilePlus, MessageCircle, Link2, RotateCcw,
 } from 'lucide-react'
 import { useBeneficiary } from '@/hooks/useBeneficiary'
 import { useMemories } from '@/hooks/useMemories'
+import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Textarea } from '@/components/ui/Textarea'
 import { cn, formatDate } from '@/lib/utils'
+import { resolvePromptPlaceholders } from '@modect/shared'
 import type { Beneficiary, AIVoice, ConversationStyle, ConversationMemory, MemoryType } from '@modect/shared'
 
 type Tab = 'basics' | 'history' | 'tastes' | 'personality' | 'ai' | 'memory'
@@ -434,6 +436,7 @@ const aiSchema = z.object({
   conversation_style:  z.enum(['warm', 'playful', 'calm', 'formal']),
   language_preference: z.string().min(2),
   preferred_engine:    z.enum(['openai', 'gemini']),
+  custom_prompt:       z.string().optional(),
 })
 
 type AIForm = z.infer<typeof aiSchema>
@@ -482,6 +485,7 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
       // preferred_engine vient de la DB (cast pour contourner les types Database
       // incomplets cf. CLAUDE.md "Build Netlify : utiliser vite build sans tsc")
       preferred_engine:    ((beneficiary as unknown as { preferred_engine?: string }).preferred_engine === 'gemini' ? 'gemini' : 'openai'),
+      custom_prompt:       beneficiary.custom_prompt ?? '',
     },
   })
 
@@ -489,15 +493,42 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
   const selectedStyle  = watch('conversation_style')
   const selectedEngine = watch('preferred_engine')
 
+  const [resetting, setResetting] = useState(false)
+
   const onSubmit = async (values: AIForm) => {
+    const trimmed = values.custom_prompt?.trim()
     const ok = await save({
       ai_persona_name:     values.ai_persona_name,
       ai_voice:            values.ai_voice,
       conversation_style:  values.conversation_style,
       language_preference: values.language_preference,
       preferred_engine:    values.preferred_engine,
+      // vide → NULL : on retombe alors sur le prompt par défaut au moment de l'appel
+      custom_prompt:       trimmed ? trimmed : null,
     } as unknown as Partial<Beneficiary>)
     if (ok) onSaved()
+  }
+
+  // Réinitialise le prompt depuis le défaut admin, résolu (concret) pour ce bénéficiaire.
+  const resetFromDefault = async () => {
+    setResetting(true)
+    const { data: tpl } = await supabase
+      .from('prompt_templates')
+      .select('template')
+      .eq('id', 1)
+      .maybeSingle()
+    const tplText = (tpl as { template: string } | null)?.template
+    if (tplText) {
+      const resolved = resolvePromptPlaceholders(tplText, {
+        first_name:          beneficiary.first_name,
+        ai_persona_name:     watch('ai_persona_name'),
+        conversation_style:  watch('conversation_style'),
+        language_preference: watch('language_preference'),
+        gender:              beneficiary.gender ?? null,
+      })
+      setValue('custom_prompt', resolved, { shouldDirty: true })
+    }
+    setResetting(false)
   }
 
   return (
@@ -598,6 +629,32 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between gap-3 mb-1">
+            <Label htmlFor="custom_prompt">Prompt de personnalité</Label>
+            <button
+              type="button"
+              onClick={resetFromDefault}
+              disabled={resetting}
+              className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-primary transition-colors disabled:opacity-50"
+            >
+              <RotateCcw size={12} className={resetting ? 'animate-spin' : ''} />
+              Réinitialiser depuis le défaut
+            </button>
+          </div>
+          <p className="text-xs text-slate-400 mb-1">
+            Personnalité et règles propres à {beneficiary.first_name}. Le contexte (infos, mémoire,
+            dernière conversation, sujets) est ajouté automatiquement — inutile de l'écrire ici.
+            Laisser vide pour utiliser le prompt par défaut de la plateforme.
+          </p>
+          <Textarea
+            id="custom_prompt"
+            rows={14}
+            className="font-mono text-sm leading-relaxed"
+            {...register('custom_prompt')}
+          />
         </div>
       </div>
 

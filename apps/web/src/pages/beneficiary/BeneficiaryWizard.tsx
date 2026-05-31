@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { createBeneficiary } from '@/hooks/useBeneficiary'
 import { useSelectedBeneficiary } from '@/hooks/useSelectedBeneficiary'
+import { supabase } from '@/lib/supabase'
+import { resolvePromptPlaceholders } from '@modect/shared'
 import { Step1BasicInfo } from './steps/Step1BasicInfo'
 import { Step2History } from './steps/Step2History'
 import { Step3Tastes } from './steps/Step3Tastes'
@@ -54,6 +56,25 @@ export function BeneficiaryWizard() {
     setSaving(true)
     setError(null)
 
+    // Snapshot du prompt par défaut → copie CONCRÈTE (variables résolues) pour ce
+    // bénéficiaire. Si la lecture échoue, on laisse NULL → fallback sur le défaut au moment de l'appel.
+    let customPrompt: string | null = null
+    const { data: tpl } = await supabase
+      .from('prompt_templates')
+      .select('template')
+      .eq('id', 1)
+      .maybeSingle()
+    const tplText = (tpl as { template: string } | null)?.template
+    if (tplText) {
+      customPrompt = resolvePromptPlaceholders(tplText, {
+        first_name:          final.first_name ?? '',
+        ai_persona_name:     final.ai_persona_name ?? 'Marie',
+        conversation_style:  final.conversation_style ?? 'warm',
+        language_preference: final.language_preference ?? 'fr',
+        gender:              final.gender ?? null,
+      })
+    }
+
     const result = await createBeneficiary({
       caregiver_id: user.id,
       first_name: final.first_name ?? '',
@@ -73,6 +94,7 @@ export function BeneficiaryWizard() {
       ai_voice: final.ai_voice ?? 'marin',
       ai_persona_name: final.ai_persona_name ?? 'Marie',
       conversation_style: final.conversation_style ?? 'warm',
+      custom_prompt: customPrompt,
       is_active: true,
       onboarding_completed: true,
     })

@@ -38,6 +38,7 @@ import { AdminAppelsPage } from '@/pages/admin/AdminAppels'
 import { AdminBeneficiairesPage } from '@/pages/admin/AdminBeneficiaires'
 import { AdminBeneficiaireDetailPage } from '@/pages/admin/AdminBeneficiaireDetail'
 import { AdminSantePage } from '@/pages/admin/AdminSante'
+import { AdminPromptPage } from '@/pages/admin/AdminPrompt'
 
 export function App() {
   return (
@@ -91,6 +92,7 @@ export function App() {
           <Route path="/admin/beneficiaires/:id" element={<RequireAdmin><AdminBeneficiaireDetailPage /></RequireAdmin>} />
           <Route path="/admin/appels"        element={<RequireAdmin><AdminAppelsPage       /></RequireAdmin>} />
           <Route path="/admin/sante"         element={<RequireAdmin><AdminSantePage        /></RequireAdmin>} />
+          <Route path="/admin/prompt"        element={<RequireAdmin><AdminPromptPage       /></RequireAdmin>} />
 
           {/* --- Redirections legacy --- */}
           <Route path="/sessions"        element={<Navigate to="/planning"   replace />} />

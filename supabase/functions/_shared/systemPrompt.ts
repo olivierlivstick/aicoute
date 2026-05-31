@@ -1,6 +1,14 @@
 /**
- * Constructeur du system prompt pour l'agent IA MODECT
- * Injecté comme `instructions` dans OpenAI Realtime API via realtime-token
+ * Constructeur du system prompt pour l'agent IA MODECT.
+ *
+ * Le prompt final = [TEMPLATE éditable, interpolé] + [BLOC CONTEXTE assemblé ici].
+ *   - TEMPLATE   : personnalité + règles. Éditable (défaut admin en DB `prompt_templates`,
+ *                  ou copie concrète par bénéficiaire `beneficiaries.custom_prompt`).
+ *                  Variables : {{persona}} {{prenom}} {{langue}} {{style}} {{il_elle}}.
+ *   - BLOC CONTEXTE : infos bénéficiaire + dernière conversation + mémoire + sujets +
+ *                  durée cible. Toujours assemblé par le code (jamais éditable).
+ *
+ * Cascade de fallback : custom_prompt (concret) → defaultTemplate (DB) → CODE_DEFAULT (ci-dessous).
  */
 
 interface BeneficiaryContext {
@@ -57,6 +65,29 @@ const FR_MONTHS = [
 ]
 
 /**
+ * Template par défaut codé en dur — FILET DE SÉCURITÉ si la table `prompt_templates`
+ * est vide/inaccessible. La source de vérité est la DB (seedée par la migration
+ * 20260531000002). GARDER CES DEUX TEXTES EN PHASE.
+ */
+export const CODE_DEFAULT_TEMPLATE = `Tu es {{persona}}, un compagnon bienveillant et chaleureux qui appelle {{prenom}} pour bavarder.
+Tu parles en {{langue}}, avec un ton {{style}}.
+Tu t'adresses à {{prenom}} directement, de façon personnelle et chaleureuse.
+
+═══════════════════════════════════════
+TES INSTRUCTIONS
+═══════════════════════════════════════
+1. Commence par un bonjour chaleureux et personnel, par exemple : "Bonjour {{prenom}} ! C'est {{persona}}." puis demande naturellement comment {{il_elle}} va. Si tu te souviens d'une conversation précédente (voir le contexte plus bas), fais-y un clin d'œil spontané — par exemple en prenant des nouvelles d'un sujet évoqué la dernière fois. Reste naturel, ne récite jamais le résumé.
+2. Pose des questions ouvertes, laisse {{prenom}} parler, ne coupe jamais la parole.
+3. Évoque naturellement les souvenirs et le fil de la dernière conversation (voir le contexte plus bas) quand c'est pertinent, sans te répéter.
+4. Conclus naturellement et en douceur quand le temps de l'appel approche de sa fin (voir la durée cible dans le contexte).
+5. En cas de détresse manifeste (tristesse profonde, problème de santé urgent), rassure chaleureusement et suggère gentiment d'appeler un proche ou le 15.
+6. Tu es UN COMPAGNON DE CONVERSATION, pas un assistant généraliste. Ne réponds pas à des demandes techniques, de recherche ou hors-sujet.
+7. NE MENTIONNE JAMAIS que tu es une IA, sauf si {{prenom}} le demande EXPLICITEMENT et directement.
+8. Si {{prenom}} demande si tu es une IA, tu peux répondre honnêtement et simplement, sans t'étendre.
+9. Utilise le prénom "{{prenom}}" régulièrement pour personnaliser la conversation.
+10. Chaque appel doit laisser {{prenom}} avec le sourire ou un sentiment de réconfort.`
+
+/**
  * Date relative en français pour le rappel du dernier appel :
  * "aujourd'hui" / "hier" / "il y a N jours" (< 7 j) / "le 29 mai".
  * Comparaison par jour calendaire (un appel à 23h "hier" reste "hier").
@@ -77,28 +108,41 @@ export function frenchRelativeDate(iso: string | null, now: Date = new Date()): 
   return `le ${then.getDate()} ${FR_MONTHS[then.getMonth()]}`
 }
 
-export function buildSystemPrompt(
+/**
+ * Remplace les variables du template par les valeurs concrètes du bénéficiaire.
+ * Les variables inconnues sont laissées telles quelles (pas de crash).
+ * (Côté web, packages/shared/promptTemplate.ts a une copie pour le snapshot wizard.)
+ */
+export function resolvePromptPlaceholders(template: string, b: BeneficiaryContext): string {
+  const styleDesc = STYLE_DESCRIPTIONS[b.conversation_style] ?? 'chaleureux et bienveillant'
+  const langLabel = b.language_preference === 'fr' ? 'français' : b.language_preference
+  const pronoun   = GENDER_PRONOUN[b.gender ?? 'other']
+  return template
+    .replaceAll('{{persona}}', b.ai_persona_name)
+    .replaceAll('{{prenom}}',  b.first_name)
+    .replaceAll('{{langue}}',  langLabel)
+    .replaceAll('{{style}}',   styleDesc)
+    .replaceAll('{{il_elle}}', pronoun.subject)
+}
+
+/** BLOC CONTEXTE — toujours assemblé par le code, jamais éditable. */
+function buildContextBlock(
   beneficiary: BeneficiaryContext,
   memories: MemoryItem[],
   schedule: ScheduleContext,
-  previousCall: PreviousCallContext | null = null,
+  previousCall: PreviousCallContext | null,
 ): string {
   const {
     first_name, birth_year, gender,
     family_history, life_story, hobbies,
     favorite_topics, topics_to_avoid, personality_notes, health_notes,
-    language_preference, ai_persona_name, conversation_style,
   } = beneficiary
 
-  const styleDesc = STYLE_DESCRIPTIONS[conversation_style] ?? 'chaleureux et bienveillant'
-  const pronoun   = GENDER_PRONOUN[gender ?? 'other']
-  const langLabel = language_preference === 'fr' ? 'français' : language_preference
+  const pronoun = GENDER_PRONOUN[gender ?? 'other']
 
-  // Mémoires triées par importance décroissante
   const topMemories = [...memories]
     .sort((a, b) => b.importance - a.importance)
     .slice(0, 15)
-
   const memoriesText = topMemories.length > 0
     ? topMemories.map((m) => `- [${m.memory_type}] ${m.content}`).join('\n')
     : '(Aucun souvenir enregistré — c\'est peut-être un premier appel)'
@@ -107,7 +151,6 @@ export function buildSystemPrompt(
     ? schedule.suggested_topics.map((t) => `- ${t}`).join('\n')
     : '(Suivre les centres d\'intérêt habituels de ' + first_name + ')'
 
-  // Rappel du dernier appel terminé (null si premier appel / aucun historique)
   const previousCallText = previousCall
     ? [
         `Date : ${frenchRelativeDate(previousCall.ended_at)}`,
@@ -121,11 +164,7 @@ export function buildSystemPrompt(
       ].filter(Boolean).join('\n')
     : null
 
-  return `Tu es ${ai_persona_name}, un compagnon bienveillant et chaleureux qui appelle ${first_name} pour bavarder.
-Tu parles en ${langLabel}, avec un ton ${styleDesc}.
-Tu t'adresses à ${first_name} directement, de façon personnelle et chaleureuse.
-
-═══════════════════════════════════════
+  return `═══════════════════════════════════════
 INFORMATIONS SUR ${first_name.toUpperCase()}
 ═══════════════════════════════════════
 ${birth_year ? `- ${pronoun.adj} en ${birth_year} (${new Date().getFullYear() - birth_year} ans environ)` : ''}
@@ -153,17 +192,30 @@ SUJETS SUGGÉRÉS POUR CET APPEL
 ${suggestedTopicsText}
 ${schedule.special_instructions ? `\nInstruction spéciale : ${schedule.special_instructions}` : ''}
 
-═══════════════════════════════════════
-TES INSTRUCTIONS STRICTES
-═══════════════════════════════════════
-1. Commence par un bonjour chaleureux et personnel, par exemple : "Bonjour ${first_name} ! C'est ${ai_persona_name}." puis demande naturellement comment ${pronoun.subject} va.${previousCallText ? ` Ensuite, dès les premières phrases, fais un clin d'œil spontané à votre dernière conversation (cf. « VOTRE DERNIÈRE CONVERSATION ») — par exemple en prenant des nouvelles d'un sujet évoqué la dernière fois. Reste naturel, ne récite jamais le résumé.` : ''}
-2. Pose des questions ouvertes, laisse ${first_name} parler, ne coupe jamais la parole.
-3. Évoque naturellement les souvenirs (section « CE QUE TU TE RAPPELLES ») et le fil de la dernière conversation quand c'est pertinent, sans te répéter ni rabâcher le même rappel plusieurs fois.
-4. Durée cible : ${schedule.max_duration_minutes} minutes. Conclus naturellement en douceur quand le temps approche.
-5. En cas de détresse manifeste (tristesse profonde, problème de santé urgent), rassure chaleureusement et suggère gentiment d'appeler un proche ou le 15.
-6. Tu es UN COMPAGNON DE CONVERSATION, pas un assistant généraliste. Ne réponds pas à des demandes techniques, de recherche ou hors-sujet.
-7. NE MENTIONNE JAMAIS que tu es une IA, sauf si ${first_name} le demande EXPLICITEMENT et directement.
-8. Si ${first_name} demande si tu es une IA, tu peux répondre honnêtement et simplement, sans t'étendre.
-9. Utilise le prénom "${first_name}" régulièrement pour personnaliser la conversation.
-10. Chaque appel doit laisser ${first_name} avec le sourire ou un sentiment de réconfort.`
+Durée cible de cet appel : ${schedule.max_duration_minutes} minutes.`
+}
+
+/**
+ * Assemble le system prompt complet.
+ * @param defaultTemplate  template par défaut (DB `prompt_templates.template`), avec variables
+ * @param customPrompt     copie concrète par bénéficiaire (déjà sans variables) ; prioritaire
+ */
+export function buildSystemPrompt(
+  beneficiary: BeneficiaryContext,
+  memories: MemoryItem[],
+  schedule: ScheduleContext,
+  previousCall: PreviousCallContext | null = null,
+  defaultTemplate: string | null = null,
+  customPrompt: string | null = null,
+): string {
+  const effectiveTemplate = customPrompt && customPrompt.trim()
+    ? customPrompt                                    // déjà concret → tel quel
+    : resolvePromptPlaceholders(
+        (defaultTemplate && defaultTemplate.trim()) ? defaultTemplate : CODE_DEFAULT_TEMPLATE,
+        beneficiary,
+      )
+
+  const contextBlock = buildContextBlock(beneficiary, memories, schedule, previousCall)
+
+  return `${effectiveTemplate}\n\n${contextBlock}`
 }

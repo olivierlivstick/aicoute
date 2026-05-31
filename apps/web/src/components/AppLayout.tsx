@@ -97,6 +97,7 @@ export function AppLayout() {
                   { to: '/admin/comptes',       label: 'Aidants' },
                   { to: '/admin/beneficiaires', label: 'Bénéficiaires' },
                   { to: '/admin/appels',        label: 'Appels' },
+                  { to: '/admin/prompt',        label: 'Prompt système' },
                   { to: '/admin/sante',         label: 'Santé système' },
                 ].map(({ to, label }) => (
                   <NavLink
