@@ -12,6 +12,7 @@
  */
 
 import { buildSystemPrompt } from './systemPrompt.ts'
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const DEFAULT_GA_MODEL = 'gpt-realtime-2'
 const DEFAULT_VOICE    = 'cedar'
@@ -52,22 +53,8 @@ export interface CallContext {
   max_duration_minutes: number
 }
 
-// Shape minimal du client supabase-js (évite d'importer le type complet)
-interface SupabaseLike {
-  from(table: string): {
-    select(cols: string): {
-      eq(col: string, val: string): {
-        single(): Promise<{ data: unknown; error: { message: string } | null }>
-        order(col: string, opts: { ascending: boolean }): {
-          limit(n: number): Promise<{ data: unknown; error: { message: string } | null }>
-        }
-      }
-    }
-  }
-}
-
 export async function loadCallContext(
-  supabase: SupabaseLike,
+  supabase: SupabaseClient,
   callId: string,
 ): Promise<CallContext> {
   // 1. Call + schedule joint
@@ -130,6 +117,40 @@ export async function loadCallContext(
     .limit(20)
   const memories = (memRes.data as Array<{ memory_type: string; content: string; importance: number }> | null) ?? []
 
+  // 3.5 Dernier appel terminé (pour rappeler la dernière conversation au démarrage)
+  //     On exclut l'appel courant (.neq id) et la chaîne sentinelle écrite par
+  //     generate-summary quand le transcript est vide.
+  const SENTINEL_SUMMARY = "La conversation n'a pas pu être enregistrée."
+  const prevRes = await supabase
+    .from('calls')
+    .select('summary, key_topics, memorable_moments, ended_at, started_at')
+    .eq('beneficiary_id', beneficiary.id)
+    .eq('status', 'completed')
+    .neq('id', call.id)
+    .not('summary', 'is', null)
+    .neq('summary', SENTINEL_SUMMARY)
+    .order('ended_at',   { ascending: false, nullsFirst: false })
+    .order('started_at', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle()
+
+  const prev = (prevRes.data as {
+    summary: string
+    key_topics: string[] | null
+    memorable_moments: string[] | null
+    ended_at: string | null
+    started_at: string | null
+  } | null) ?? null
+
+  const previousCall = prev
+    ? {
+        ended_at:          prev.ended_at ?? prev.started_at,
+        summary:           prev.summary,
+        key_topics:        prev.key_topics,
+        memorable_moments: prev.memorable_moments,
+      }
+    : null
+
   // 4. Profil aidant (model + extra prompt)
   const profRes = await supabase
     .from('profiles')
@@ -149,7 +170,7 @@ export async function loadCallContext(
   }
 
   // 6. Construction du prompt
-  const basePrompt   = buildSystemPrompt(beneficiary, memories, schedule)
+  const basePrompt   = buildSystemPrompt(beneficiary, memories, schedule, previousCall)
   const instructions = agentExtraPrompt ? `${agentExtraPrompt}\n\n${basePrompt}` : basePrompt
 
   return {

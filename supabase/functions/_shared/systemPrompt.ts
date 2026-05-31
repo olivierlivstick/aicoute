@@ -31,6 +31,13 @@ interface ScheduleContext {
   special_instructions: string | null
 }
 
+interface PreviousCallContext {
+  ended_at: string | null            // ISO ; fallback sur started_at en amont
+  summary: string
+  key_topics: string[] | null
+  memorable_moments: string[] | null
+}
+
 const STYLE_DESCRIPTIONS: Record<string, string> = {
   warm:    'chaleureux, bienveillant et affectueux',
   playful: 'enjoué, léger et plein d\'humour doux',
@@ -44,10 +51,37 @@ const GENDER_PRONOUN: Record<string, { subject: string; object: string; adj: str
   other:  { subject: 'il/elle', object: 'le/la', adj: 'né(e)' },
 }
 
+const FR_MONTHS = [
+  'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
+]
+
+/**
+ * Date relative en français pour le rappel du dernier appel :
+ * "aujourd'hui" / "hier" / "il y a N jours" (< 7 j) / "le 29 mai".
+ * Comparaison par jour calendaire (un appel à 23h "hier" reste "hier").
+ * NB : les Edge Functions tournent en UTC — imprécision possible d'une heure
+ * autour de minuit, acceptable pour un label flou.
+ */
+export function frenchRelativeDate(iso: string | null, now: Date = new Date()): string {
+  if (!iso) return 'récemment'
+  const then = new Date(iso)
+  if (isNaN(then.getTime())) return 'récemment'
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const startOfThen  = new Date(then.getFullYear(), then.getMonth(), then.getDate())
+  const days = Math.round((startOfToday.getTime() - startOfThen.getTime()) / 86_400_000)
+
+  if (days <= 0)  return "aujourd'hui"
+  if (days === 1) return 'hier'
+  if (days < 7)   return `il y a ${days} jours`
+  return `le ${then.getDate()} ${FR_MONTHS[then.getMonth()]}`
+}
+
 export function buildSystemPrompt(
   beneficiary: BeneficiaryContext,
   memories: MemoryItem[],
   schedule: ScheduleContext,
+  previousCall: PreviousCallContext | null = null,
 ): string {
   const {
     first_name, birth_year, gender,
@@ -73,6 +107,20 @@ export function buildSystemPrompt(
     ? schedule.suggested_topics.map((t) => `- ${t}`).join('\n')
     : '(Suivre les centres d\'intérêt habituels de ' + first_name + ')'
 
+  // Rappel du dernier appel terminé (null si premier appel / aucun historique)
+  const previousCallText = previousCall
+    ? [
+        `Date : ${frenchRelativeDate(previousCall.ended_at)}`,
+        `Résumé : ${previousCall.summary}`,
+        previousCall.key_topics && previousCall.key_topics.length > 0
+          ? `Sujets abordés : ${previousCall.key_topics.join(', ')}`
+          : '',
+        previousCall.memorable_moments && previousCall.memorable_moments.length > 0
+          ? `Moments marquants : ${previousCall.memorable_moments.join(' • ')}`
+          : '',
+      ].filter(Boolean).join('\n')
+    : null
+
   return `Tu es ${ai_persona_name}, un compagnon bienveillant et chaleureux qui appelle ${first_name} pour bavarder.
 Tu parles en ${langLabel}, avec un ton ${styleDesc}.
 Tu t'adresses à ${first_name} directement, de façon personnelle et chaleureuse.
@@ -88,7 +136,12 @@ ${favorite_topics ? `- Sujets de conversation préférés : ${favorite_topics}` 
 ${topics_to_avoid ? `- À NE PAS aborder absolument : ${topics_to_avoid}` : ''}
 ${personality_notes ? `- Personnalité : ${personality_notes}` : ''}
 ${health_notes ? `- Notes utiles : ${health_notes}` : ''}
-
+${previousCallText ? `
+═══════════════════════════════════════
+VOTRE DERNIÈRE CONVERSATION
+═══════════════════════════════════════
+${previousCallText}
+` : ''}
 ═══════════════════════════════════════
 CE QUE TU TE RAPPELLES DES APPELS PRÉCÉDENTS
 ═══════════════════════════════════════
@@ -103,9 +156,9 @@ ${schedule.special_instructions ? `\nInstruction spéciale : ${schedule.special_
 ═══════════════════════════════════════
 TES INSTRUCTIONS STRICTES
 ═══════════════════════════════════════
-1. Commence TOUJOURS par : "Bonjour ${first_name} ! C'est ${ai_persona_name}. Comment allez-vous aujourd'hui ?" (ou équivalent chaleureux selon le style)
+1. Commence par un bonjour chaleureux et personnel, par exemple : "Bonjour ${first_name} ! C'est ${ai_persona_name}." puis demande naturellement comment ${pronoun.subject} va.${previousCallText ? ` Ensuite, dès les premières phrases, fais un clin d'œil spontané à votre dernière conversation (cf. « VOTRE DERNIÈRE CONVERSATION ») — par exemple en prenant des nouvelles d'un sujet évoqué la dernière fois. Reste naturel, ne récite jamais le résumé.` : ''}
 2. Pose des questions ouvertes, laisse ${first_name} parler, ne coupe jamais la parole.
-3. Évoque naturellement les souvenirs des appels précédents quand c'est pertinent.
+3. Évoque naturellement les souvenirs (section « CE QUE TU TE RAPPELLES ») et le fil de la dernière conversation quand c'est pertinent, sans te répéter ni rabâcher le même rappel plusieurs fois.
 4. Durée cible : ${schedule.max_duration_minutes} minutes. Conclus naturellement en douceur quand le temps approche.
 5. En cas de détresse manifeste (tristesse profonde, problème de santé urgent), rassure chaleureusement et suggère gentiment d'appeler un proche ou le 15.
 6. Tu es UN COMPAGNON DE CONVERSATION, pas un assistant généraliste. Ne réponds pas à des demandes techniques, de recherche ou hors-sujet.

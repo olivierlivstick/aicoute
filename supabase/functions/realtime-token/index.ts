@@ -16,30 +16,7 @@
 
 import { corsHeaders, handleCors } from '../_shared/cors.ts'
 import { getSupabaseAdmin } from '../_shared/supabaseAdmin.ts'
-import { buildSystemPrompt } from '../_shared/systemPrompt.ts'
-
-// --- Paramètres Realtime (point unique de configuration) ---------------------
-const DEFAULT_GA_MODEL = 'gpt-realtime-2'   // modèle GA par défaut
-const DEFAULT_VOICE    = 'cedar'            // voix par défaut (masculine)
-
-// Voix Realtime GA pilotées par le « genre » choisi côté dashboard :
-//   cedar = masculine, marin = féminine.
-// Tolérance aux anciennes valeurs (nova, shimmer…) ramenées au bon genre.
-const FEMININE_VOICES = ['marin', 'nova', 'shimmer', 'coral', 'sage']
-function resolveVoice(aiVoice: string | null | undefined): string {
-  if (aiVoice === 'cedar' || aiVoice === 'marin') return aiVoice
-  return FEMININE_VOICES.includes(aiVoice ?? '') ? 'marin' : DEFAULT_VOICE
-}
-
-/**
- * Le endpoint GA n'accepte que les modèles GA. Les anciens modèles Beta
- * (`gpt-4o-realtime-preview`, encore stockés en base) sont ramenés au défaut.
- */
-function normalizeModel(model: string | null | undefined): string {
-  if (!model) return DEFAULT_GA_MODEL
-  if (!model.includes('realtime') || model.includes('preview')) return DEFAULT_GA_MODEL
-  return model
-}
+import { loadCallContext } from '../_shared/callContext.ts'
 
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req)
@@ -57,57 +34,14 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'OPENAI_API_KEY manquant' }, 500)
     }
 
-    // 1. Récupérer le call (+ planification jointe)
-    const { data: call, error: callError } = await supabase
-      .from('calls')
-      .select('*, session_schedules(*)')
-      .eq('id', call_id)
-      .single()
+    // 1. Charger tout le contexte d'appel (prompt + modèle + voix) via le helper
+    //    partagé avec get-call-context : même prompt sur les deux canaux, et
+    //    inclut le rappel du dernier appel + agent_extra_prompt.
+    const ctx          = await loadCallContext(supabase, call_id)
+    const model        = ctx.model
+    const instructions = ctx.instructions
 
-    if (callError || !call) {
-      return jsonResponse({ error: 'Call introuvable', detail: callError?.message }, 404)
-    }
-
-    // 2. Bénéficiaire
-    const { data: beneficiary, error: benError } = await supabase
-      .from('beneficiaries')
-      .select('*')
-      .eq('id', call.beneficiary_id)
-      .single()
-
-    if (benError || !beneficiary) {
-      throw new Error(`Bénéficiaire introuvable: ${call.beneficiary_id}`)
-    }
-
-    // 3. Mémoires long-terme (20 plus importantes)
-    const { data: memories } = await supabase
-      .from('conversation_memory')
-      .select('memory_type, content, importance')
-      .eq('beneficiary_id', beneficiary.id)
-      .order('importance', { ascending: false })
-      .limit(20)
-
-    // 4. Paramètres agent du caregiver
-    const { data: caregiverProfile } = await supabase
-      .from('profiles')
-      .select('agent_model, agent_extra_prompt')
-      .eq('id', beneficiary.caregiver_id)
-      .single()
-
-    const model           = normalizeModel(caregiverProfile?.agent_model)
-    const agentExtraPrompt = caregiverProfile?.agent_extra_prompt ?? null
-
-    // 5. Construire le system prompt (instructions Realtime)
-    const schedule = call.session_schedules ?? {
-      max_duration_minutes: 15,
-      suggested_topics:     null,
-      special_instructions: null,
-    }
-
-    const basePrompt   = buildSystemPrompt(beneficiary, memories ?? [], schedule)
-    const instructions = agentExtraPrompt ? `${agentExtraPrompt}\n\n${basePrompt}` : basePrompt
-
-    // 6. Générer l'ephemeral token (format GA)
+    // 2. Générer l'ephemeral token (format GA)
     const tokenRes = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
       method: 'POST',
       headers: {
@@ -119,7 +53,7 @@ Deno.serve(async (req: Request) => {
           type:  'realtime',
           model,
           audio: {
-            output: { voice: resolveVoice(beneficiary.ai_voice) },
+            output: { voice: ctx.voice },
             // Tours de parole : la GA applique `server_vad` par défaut.
             // Pour tuner : audio.input.turn_detection (PAS au niveau racine = Beta).
           },
@@ -139,19 +73,19 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // 7. Marquer le call comme démarré
+    // 3. Marquer le call comme démarré
     await supabase
       .from('calls')
       .update({ status: 'in_progress', started_at: new Date().toISOString() })
       .eq('id', call_id)
       .in('status', ['scheduled', 'notified'])
 
-    // 8. Renvoyer le token + le modèle (le client doit réutiliser le MÊME modèle
+    // 4. Renvoyer le token + le modèle (le client doit réutiliser le MÊME modèle
     //    dans ?model= lors de la négociation SDP)
     return jsonResponse({
       value:        tokenData.value,
       model,
-      persona_name: beneficiary.ai_persona_name,
+      persona_name: ctx.beneficiary.ai_persona_name,
     })
 
   } catch (err) {
