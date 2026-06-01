@@ -26,7 +26,7 @@ services:
       - key: TWILIO_NUMBER
         sync: false
       - key: ALLOWED_ORIGINS
-        value: https://www.modect.com,https://modect.com
+        value: https://aicoute.fr,https://www.aicoute.fr,https://www.modect.com,https://modect.com
       - key: MAX_CALL_SECONDS
         value: "120"
       - key: MAX_SCHEDULED_CALL_SECONDS
