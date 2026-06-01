@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
     const { call_id } = await req.json() as { call_id: string }
     if (!call_id) return jsonResponse({ error: 'call_id requis' }, 400)
 
-    const appUrl = Deno.env.get('VITE_APP_URL') ?? 'https://app.modect.com'
+    const appUrl = Deno.env.get('VITE_APP_URL') ?? 'https://app.aicoute.fr'
 
     const { data: call, error: callErr } = await supabase
       .from('calls')

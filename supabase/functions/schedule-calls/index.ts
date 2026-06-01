@@ -45,7 +45,7 @@ Deno.serve(async (_req: Request) => {
   const supabase    = getSupabaseAdmin()
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
   const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  const appUrl      = Deno.env.get('VITE_APP_URL') ?? 'https://app.modect.com'
+  const appUrl      = Deno.env.get('VITE_APP_URL') ?? 'https://app.aicoute.fr'
 
   const results = {
     triggered:      0,
