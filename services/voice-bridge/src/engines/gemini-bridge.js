@@ -15,6 +15,7 @@
 import { WebSocket } from 'ws'
 import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
 import { mulawB64ToPcm16B64At16k, pcm24B64ToMulawB64At8k } from './audio.js'
+import { buildRealtimeInputConfig, vadSummary } from './vad.js'
 
 // Modèle et voix surchargeables par env pour itérer sans redéploiement de code.
 // Valeur par défaut validée en test réel le 2026-05-28 (Aoede sonne mieux en
@@ -115,7 +116,8 @@ export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey }
 
   function sendSetup() {
     const systemPrompt = buildSystemPrompt(opener)
-    console.log(`📤 [gemini] setup (modèle=${MODEL}, voix=${VOICE}, mode ${opener ? 'opener custom' : 'MODECT'})`)
+    const realtimeInputConfig = buildRealtimeInputConfig()
+    console.log(`📤 [gemini] setup (modèle=${MODEL}, voix=${VOICE}, VAD ${vadSummary()}, mode ${opener ? 'opener custom' : 'MODECT'})`)
     geminiWs.send(JSON.stringify({
       setup: {
         model: MODEL,
@@ -130,6 +132,8 @@ export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey }
         systemInstruction: {
           parts: [{ text: systemPrompt }],
         },
+        // Adoucit l'interruption (barge-in moins nerveux). Omis si kill-switch.
+        ...(realtimeInputConfig ? { realtimeInputConfig } : {}),
         // Active les transcriptions pour pouvoir les afficher dans le dashboard
         // plus tard. Champ vide = activation par défaut.
         outputAudioTranscription: {},

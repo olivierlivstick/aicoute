@@ -28,6 +28,7 @@
 
 import { WebSocket } from 'ws'
 import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
+import { buildRealtimeInputConfig, vadSummary } from './vad.js'
 
 const MODEL = process.env.GEMINI_MODEL || 'models/gemini-3.1-flash-live-preview'
 const VOICE = process.env.GEMINI_VOICE || 'Aoede'
@@ -202,7 +203,8 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
 
   function sendSetup() {
     const systemPrompt = buildSystemPrompt(opener)
-    console.log(`📤 [web/gemini] setup (modèle=${MODEL}, voix=${VOICE}, mode ${opener ? 'opener custom' : 'MODECT'})`)
+    const realtimeInputConfig = buildRealtimeInputConfig()
+    console.log(`📤 [web/gemini] setup (modèle=${MODEL}, voix=${VOICE}, VAD ${vadSummary()}, mode ${opener ? 'opener custom' : 'MODECT'})`)
     geminiWs.send(JSON.stringify({
       setup: {
         model: MODEL,
@@ -217,6 +219,8 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
         systemInstruction: {
           parts: [{ text: systemPrompt }],
         },
+        // Adoucit l'interruption (barge-in moins nerveux). Omis si kill-switch.
+        ...(realtimeInputConfig ? { realtimeInputConfig } : {}),
         outputAudioTranscription: {},
         inputAudioTranscription:  {},
       },

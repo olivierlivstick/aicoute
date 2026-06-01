@@ -47,6 +47,15 @@ export class GeminiLiveSession {
   private audioContext: AudioContext | null = null
   private workletNode: AudioWorkletNode | null = null
   private mediaStream: MediaStream | null = null
+  // Gain maître inséré entre les sources et la sortie : permet un fondu de
+  // sortie (fade-out) au lieu d'une coupure sèche quand l'utilisateur
+  // interrompt l'IA (barge-in) → transition plus humaine, moins robotique.
+  private masterGain: GainNode | null = null
+  // Timer du fondu en cours (pour couper les sources une fois le volume à 0).
+  private fadeTimer: ReturnType<typeof setTimeout> | null = null
+  // Durée du fondu de sortie. Assez court pour ne pas sentir de latence, assez
+  // doux pour supprimer l'effet « coupé au couteau ».
+  private readonly FADE_OUT_MS = 120
   // Queue de sources audio en cours de lecture, pour pouvoir tout couper d'un
   // coup en cas d'interruption (barge-in).
   private playbackSources: AudioBufferSourceNode[] = []
@@ -83,6 +92,12 @@ export class GeminiLiveSession {
       // donc OK, mais on resume() explicitement par sécurité.
       await this.audioContext.resume()
 
+      // Gain maître : toutes les voix de l'IA passent par lui → on peut faire
+      // un fondu de sortie au moment d'une interruption (cf. fadeOutAndStop).
+      this.masterGain = this.audioContext.createGain()
+      this.masterGain.gain.value = 1
+      this.masterGain.connect(this.audioContext.destination)
+
       // 2. Capture micro + AudioWorklet de downsampling vers PCM16 16k
       this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const workletUrl = this.cfg.workletUrl ?? DEFAULT_WORKLET_URL
@@ -117,12 +132,15 @@ export class GeminiLiveSession {
     try { this.ws?.close() } catch { /* */ }
     try { this.workletNode?.disconnect() } catch { /* */ }
     this.mediaStream?.getTracks().forEach((t) => { try { t.stop() } catch { /* */ } })
+    if (this.fadeTimer !== null) { clearTimeout(this.fadeTimer); this.fadeTimer = null }
     this.stopAllPlayback()
+    try { this.masterGain?.disconnect() } catch { /* */ }
     try { void this.audioContext?.close() } catch { /* */ }
     this.ws = null
     this.audioContext = null
     this.workletNode = null
     this.mediaStream = null
+    this.masterGain = null
     if (this.status !== 'error') this.setStatus('ended')
   }
 
@@ -151,7 +169,7 @@ export class GeminiLiveSession {
         if (this.status !== 'speaking') this.setStatus('speaking')
         break
       case 'interrupted':
-        this.stopAllPlayback()
+        this.fadeOutAndStop()
         this.setStatus('listening')
         break
       case 'turn_complete':
@@ -195,6 +213,19 @@ export class GeminiLiveSession {
   private playAudio(b64: string): void {
     if (!this.audioContext) return
 
+    // Nouveau chunk audio = nouveau tour de parole de l'IA. Si un fondu de
+    // sortie était programmé (interruption précédente), on l'annule et on
+    // remet le volume plein, sinon la nouvelle voix démarrerait à 0.
+    if (this.fadeTimer !== null) {
+      clearTimeout(this.fadeTimer)
+      this.fadeTimer = null
+    }
+    if (this.masterGain) {
+      const t = this.audioContext.currentTime
+      this.masterGain.gain.cancelScheduledValues(t)
+      this.masterGain.gain.setValueAtTime(1, t)
+    }
+
     const binary = atob(b64)
     const len = binary.length
     const bytes = new Uint8Array(len)
@@ -213,7 +244,7 @@ export class GeminiLiveSession {
 
     const source = this.audioContext.createBufferSource()
     source.buffer = buffer
-    source.connect(this.audioContext.destination)
+    source.connect(this.masterGain ?? this.audioContext.destination)
 
     // Planifie après le buffer précédent pour zéro gap audible. Si on a pris
     // du retard (chunks arrivés en rafale), nextStartTime peut être dans le
@@ -236,6 +267,40 @@ export class GeminiLiveSession {
     }
     this.playbackSources = []
     this.nextStartTime = this.audioContext?.currentTime ?? 0
+  }
+
+  /**
+   * Interruption « humaine » : on baisse le volume de 100 % à ~0 en FADE_OUT_MS
+   * (rampe linéaire) puis on coupe les sources, au lieu d'un stop() sec qui
+   * donne l'effet « coupé au couteau ». Le gain est remis à 1 au prochain
+   * chunk audio (cf. playAudio) ou à la fin du fondu si aucun tour ne suit.
+   */
+  private fadeOutAndStop(): void {
+    const ctx = this.audioContext
+    if (!ctx || !this.masterGain) {
+      this.stopAllPlayback()
+      return
+    }
+    const now = ctx.currentTime
+    const g   = this.masterGain.gain
+    // linearRampToValueAtTime ne peut pas viser exactement 0 proprement sur
+    // tous les navigateurs → on vise une valeur quasi-nulle, suivie du stop().
+    g.cancelScheduledValues(now)
+    g.setValueAtTime(g.value, now)
+    g.linearRampToValueAtTime(0.0001, now + this.FADE_OUT_MS / 1000)
+
+    if (this.fadeTimer !== null) clearTimeout(this.fadeTimer)
+    this.fadeTimer = setTimeout(() => {
+      this.stopAllPlayback()
+      // Remet le volume plein pour un éventuel tour suivant (si playAudio ne
+      // l'a pas déjà fait en recevant un nouveau chunk entre-temps).
+      if (this.masterGain && this.audioContext) {
+        const t = this.audioContext.currentTime
+        this.masterGain.gain.cancelScheduledValues(t)
+        this.masterGain.gain.setValueAtTime(1, t)
+      }
+      this.fadeTimer = null
+    }, this.FADE_OUT_MS + 20)
   }
 
   // --- Helpers -------------------------------------------------------------

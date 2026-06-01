@@ -17,6 +17,7 @@
 
 import { WebSocket } from 'ws'
 import { mulawB64ToPcm16B64At16k, pcm24B64ToMulawB64At8k } from './audio.js'
+import { buildRealtimeInputConfig, vadSummary } from './vad.js'
 import { logEvent } from '../persistence/system-events.js'
 
 const MODEL = process.env.GEMINI_MODEL || 'models/gemini-3.1-flash-live-preview'
@@ -222,7 +223,8 @@ export function createModectGeminiBridge(opts) {
   function maybeSendSetup() {
     if (setupSent || !geminiReady || !contextFetched) return
     setupSent = true
-    console.log(`📤 [modect-gemini:${shortId(callId)}] setup`)
+    const realtimeInputConfig = buildRealtimeInputConfig()
+    console.log(`📤 [modect-gemini:${shortId(callId)}] setup (VAD ${vadSummary()})`)
     geminiWs.send(JSON.stringify({
       setup: {
         model: MODEL,
@@ -237,6 +239,8 @@ export function createModectGeminiBridge(opts) {
         systemInstruction: {
           parts: [{ text: instructions }],
         },
+        // Adoucit l'interruption (barge-in moins nerveux). Omis si kill-switch.
+        ...(realtimeInputConfig ? { realtimeInputConfig } : {}),
         outputAudioTranscription: {},
         inputAudioTranscription:  {},
       },
