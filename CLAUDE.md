@@ -1,4 +1,4 @@
-# MODECT — Guide Claude Code
+# AICOUTE — Guide Claude Code
 
 ## Contexte
 SaaS de compagnon conversationnel IA pour personnes âgées/isolées.
@@ -21,14 +21,14 @@ SaaS de compagnon conversationnel IA pour personnes âgées/isolées.
 modect/
 ├── apps/
 │   ├── web/          # App web UNIQUE (React + Vite) : vitrine (src/marketing) + back-office (src/pages)
-│   │                 #   → www.modect.com (vitrine) + app.modect.com (back-office), routage par sous-domaine
+│   │                 #   → www.aicoute.fr (vitrine) + app.aicoute.fr (back-office), routage par sous-domaine
 │   └── mobile/       # App bénéficiaire (Expo) — couche vocale à migrer (phase 2)
 ├── services/
-│   └── voice-bridge/ # Service Node (Render) — pont multi-moteur démos vitrine + appels Modect.
+│   └── voice-bridge/ # Service Node (Render) — pont multi-moteur démos vitrine + appels AICOUTE.
 │       └── src/engines/  # openai-bridge.js, gemini-bridge.js (démo téléphone),
 │                         # gemini-bridge-web.js (démo navigateur), audio.js (µ-law ↔ PCM),
-│                         # modect-call-bridge.js (appels Modect OpenAI),
-│                         # modect-gemini-bridge.js (appels Modect Gemini)
+│                         # modect-call-bridge.js (appels AICOUTE OpenAI),
+│                         # modect-gemini-bridge.js (appels AICOUTE Gemini)
 ├── supabase/
 │   ├── migrations/   # migrations SQL
 │   └── functions/    # Edge Functions Deno
@@ -61,7 +61,7 @@ Deux canaux distincts selon le contexte d'appel — **les deux partagent le mêm
 - ⚠️ `resolvePromptPlaceholders` existe en DOUBLE : `packages/shared/promptTemplate.ts` (web : snapshot wizard + reset) et `systemPrompt.ts` (edge) car Deno n'importe pas `packages/shared`. Le texte du défaut existe en TRIPLE : seed migration `20260531000002` (source DB), `CODE_DEFAULT_TEMPLATE` (filet edge), `DEFAULT_PROMPT_TEMPLATE` (shared, reset/affichage). À garder en phase.
 
 ### Canal 1 — Back-office WebRTC direct (simulation aidant)
-Utilisé quand l'aidant simule un appel depuis `app.modect.com` (test du contexte / debug). WebRTC direct navigateur ↔ OpenAI.
+Utilisé quand l'aidant simule un appel depuis `app.aicoute.fr` (test du contexte / debug). WebRTC direct navigateur ↔ OpenAI.
 1. `realtime-token` (Edge Fn) — construit le system prompt via `loadCallContext`, génère un **ephemeral token** GA via `POST /v1/realtime/client_secrets` (token dans `response.value`), passe le call `in_progress`. Le prompt n'est jamais exposé au client.
 2. Client — `packages/shared/src/realtime.ts` (`RealtimeSession`) : `getUserMedia` → `RTCPeerConnection` → SDP offer vers `POST /v1/realtime/calls?model=gpt-realtime-2` → data channel `oai-events` (events GA + transcription `whisper-1`).
 3. `save-transcript` (Edge Fn) — à la fin, persiste `calls.transcript` puis **await** `generate-summary` (cf. Bugs connus : EdgeRuntime.waitUntil instable).
@@ -82,7 +82,22 @@ Utilisé pour les vrais appels vers le bénéficiaire, déclenchés par le worke
 
 Modèle GA imposé : tout modèle Beta/legacy (`*-realtime-preview`) est ramené à `gpt-realtime-2` par `loadCallContext`. Voix par défaut `cedar`. Coupure serveur de sécurité côté voice-bridge à `MAX_SCHEDULED_CALL_SECONDS` (900 s = 15 min).
 
-## Back-office aidant (app.modect.com)
+### Interruptions (barge-in) — adoucissement Gemini
+
+Par défaut, Gemini Live coupe la voix de l'IA « au couteau » dès qu'il détecte un son entrant (un souffle, un « hum » suffisent) → effet robotique, très différent d'une conversation humaine. Deux leviers adoucissent ça (**ciblés Gemini** ; OpenAI non concerné) :
+
+1. **VAD moins nerveuse** ([`engines/vad.js`](services/voice-bridge/src/engines/vad.js)) — helper partagé qui injecte `setup.realtimeInputConfig.automaticActivityDetection` dans les **3** bridges Gemini : `gemini-bridge.js` (démo tél), `gemini-bridge-web.js` (démo web), `modect-gemini-bridge.js` (appels planifiés prod). Défauts : `startOfSpeechSensitivity = START_SENSITIVITY_LOW` + `prefixPaddingMs = 200` → exige ~200 ms de vraie parole avant de valider l'interruption, ignore souffles/bruits brefs. La détection de **fin** de parole n'est PAS touchée par défaut (la durcir ralentirait la prise de parole de l'IA).
+2. **Fade-out web** ([`packages/shared/src/geminiLive.ts`](packages/shared/src/geminiLive.ts)) — à l'interruption, un `GainNode` maître fait une rampe 100 %→0 en ~120 ms avant de couper les sources, au lieu d'un `stop()` sec. **Démo navigateur uniquement** : le chemin téléphone coupe via `event:'clear'` Twilio (l'audio est déjà bufferisé chez Twilio, non « fondable ») → sur le tél, c'est la VAD seule qui porte l'amélioration.
+
+**Réglages env (voice-bridge / Render)** — surchargeables sans redéploiement de code :
+- `GEMINI_VAD_DISABLED=true` — **kill-switch** : n'injecte plus le bloc, Gemini reprend son comportement par défaut au prochain appel (rollback instantané).
+- `GEMINI_VAD_START_SENSITIVITY` (défaut `START_SENSITIVITY_LOW`)
+- `GEMINI_VAD_PREFIX_PADDING_MS` (défaut `200` ; ↑ = interruptions moins nerveuses, ↓ = plus réactives)
+- `GEMINI_VAD_END_SENSITIVITY` / `GEMINI_VAD_SILENCE_DURATION_MS` (optionnels — non envoyés par défaut, on laisse le défaut Gemini)
+
+⚠️ `realtimeInputConfig` est un champ **valide** du `setup` Gemini (vérifié sur la doc officielle) et le bloc reste optionnel (kill-switch) → aucun risque de `setup` malformé qui casserait les appels. Validé en prod le 2026-06-01 (nette amélioration web ET téléphone).
+
+## Back-office aidant (app.aicoute.fr)
 
 SPA React mono-utilisateur. Hypothèse : 95% des aidants n'ont qu'**un seul bénéficiaire**, donc l'architecture est centrée sur **un bénéficiaire sélectionné globalement** (pas de listes navigables).
 
@@ -135,7 +150,7 @@ Visible uniquement si `profile.role = 'admin'`. Entrée dédiée dans la sidebar
 ### Observabilité & robustesse (Lot 4)
 
 - **Table `system_events`** (cf. tables principales) écrite via `_shared/systemEvents.ts` (Edge) ou `persistence/system-events.js` (voice-bridge). Best-effort, jamais bloquant. Lue par la section « Événements système » de `/admin/sante`.
-- **Twilio statusCallback** : `POST /scheduled-status` sur le voice-bridge reçoit les transitions Twilio (`no-answer`, `busy`, `failed`, `canceled`, `completed`) et marque le call Modect via `markCallByTwilioStatus`. Permet de détecter un no-answer en quelques secondes au lieu d'attendre 120 s côté passe B. Sur chaque statut terminal, lance aussi `captureTwilioCost(sid)` (fire-and-forget) : le champ `price` d'un appel Twilio est renseigné de façon **asynchrone** (null au moment du `completed`), donc on poll l'API Twilio plusieurs fois avec délai croissant jusqu'à l'obtenir, on convertit en EUR (USD→EUR si besoin) et on écrit `calls.twilio_cost_eur`. Best-effort : si échec, l'UI garde l'estimation par la durée. Pour les appels **antérieurs** à cette capture, endpoint manuel `POST /backfill-twilio-costs` (auth `MODECT_INTERNAL_TOKEN`, body `{limit}`) qui parcourt les `completed` sans `twilio_cost_eur` et récupère leur prix (déjà finalisé → fetch unique sans polling).
+- **Twilio statusCallback** : `POST /scheduled-status` sur le voice-bridge reçoit les transitions Twilio (`no-answer`, `busy`, `failed`, `canceled`, `completed`) et marque le call AICOUTE via `markCallByTwilioStatus`. Permet de détecter un no-answer en quelques secondes au lieu d'attendre 120 s côté passe B. Sur chaque statut terminal, lance aussi `captureTwilioCost(sid)` (fire-and-forget) : le champ `price` d'un appel Twilio est renseigné de façon **asynchrone** (null au moment du `completed`), donc on poll l'API Twilio plusieurs fois avec délai croissant jusqu'à l'obtenir, on convertit en EUR (USD→EUR si besoin) et on écrit `calls.twilio_cost_eur`. Best-effort : si échec, l'UI garde l'estimation par la durée. Pour les appels **antérieurs** à cette capture, endpoint manuel `POST /backfill-twilio-costs` (auth `MODECT_INTERNAL_TOKEN`, body `{limit}`) qui parcourt les `completed` sans `twilio_cost_eur` et récupère leur prix (déjà finalisé → fetch unique sans polling).
 - **Vue coûts IA** sur `/admin` : barchart 30 jours + total mensuel, calculé sur `calls.ai_cost_eur_real` (snapshot écrit par le voice-bridge en fin d'appel).
 - **Test tronqué** : `npm run test:email-report` (cf. [scripts/test-email-report.mjs](scripts/test-email-report.mjs)) valide la chaîne `save-transcript → generate-summary → email Resend` sans Twilio ni OpenAI Realtime. 30 s, 0 €.
 - **Checklist pré-release** : [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) pour les vérifications manuelles qu'aucun test automatique ne couvre (vrai appel Twilio avec audio).
@@ -171,7 +186,7 @@ Conséquences :
 - **Listes/grilles** (Dashboard, Planning, Historique, Veille) : `max-w-7xl` (1280px)
 - **Wizard onboarding** : `max-w-4xl` (896px)
 
-## Démo vitrine (www.modect.com)
+## Démo vitrine (www.aicoute.fr)
 Deux modes (navigateur / téléphone) × deux moteurs (OpenAI / Gemini), accessibles depuis la home (section `#essai`, `apps/web/src/marketing/components/Demo.tsx`). Un toggle `EngineToggle` au-dessus des cartes choisit le moteur, propagé comme prop `engine` aux deux modals et persisté dans `demo_calls.engine`.
 
 L'architecture est **asymétrique** côté web entre les deux moteurs :
@@ -186,7 +201,7 @@ L'architecture est **asymétrique** côté web entre les deux moteurs :
 
 Numéro Twilio prod : `+33 9 39 03 52 69`. Modèle Gemini par défaut surchargeable via env `GEMINI_MODEL` / `GEMINI_VOICE`.
 
-**Tracking des démos** : chaque démo (web ou téléphone, OpenAI ou Gemini) crée une row dans `demo_calls`. Champs : mode, engine, started_at, ended_at, duration_seconds, phone_prefix (6 chars, mode téléphone uniquement), twilio_cost_eur (estim. durée), openai_cost_eur (estim. durée — nom historique, applicable aux deux moteurs), openai_cost_eur_real (coût IA réel par tokens — applicable aux deux moteurs, dispatch tarifs via `computeAiCostEur(engine, tokens)`), tokens_input_audio + tokens_input_audio_cached + tokens_output_audio + tokens_input_text + tokens_output_text (mutualisés ; `input_audio_cached` reste à 0 pour Gemini qui ne facture pas le cache audio). Côté web : `DemoWebModal` appelle l'Edge Function `log-demo` (actions `start`/`end`) → écrit ended_at + duration + estimation par durée. **Coût IA réel (tokens)** : pour le web **Gemini**, les tokens ne sont visibles que côté serveur (proxy `gemini-bridge-web.js`), donc le client propage le `demoId` en query (`/ws/gemini-web?demoId=…`) et le voice-bridge complète `openai_cost_eur_real` + `tokens_*` via `recordDemoRealCost` (colonnes disjointes de log-demo → pas de course). Le web **OpenAI** (WebRTC direct) n'a pas encore ce câblage → seule l'estimation par durée est remontée. Côté téléphone : `services/voice-bridge/src/tracking.js` écrit directement dans Supabase via service role, `demoCallId` propagé via TwiML `<Parameter>`, coût réel inclus. Tarifs : OpenAI ($32/$64 in/out par M tokens) et Gemini ($3/$12) hardcodés dans tracking.js, conversion USD→EUR à 0,92. Consultable via `https://www.modect.com/track_calls?key=<DEMO_TRACK_KEY>` (page `TrackCalls.tsx` + Edge Function `list-demos`, colonne "Moteur" badge OpenAI/Gemini).
+**Tracking des démos** : chaque démo (web ou téléphone, OpenAI ou Gemini) crée une row dans `demo_calls`. Champs : mode, engine, started_at, ended_at, duration_seconds, phone_prefix (6 chars, mode téléphone uniquement), twilio_cost_eur (estim. durée), openai_cost_eur (estim. durée — nom historique, applicable aux deux moteurs), openai_cost_eur_real (coût IA réel par tokens — applicable aux deux moteurs, dispatch tarifs via `computeAiCostEur(engine, tokens)`), tokens_input_audio + tokens_input_audio_cached + tokens_output_audio + tokens_input_text + tokens_output_text (mutualisés ; `input_audio_cached` reste à 0 pour Gemini qui ne facture pas le cache audio). Côté web : `DemoWebModal` appelle l'Edge Function `log-demo` (actions `start`/`end`) → écrit ended_at + duration + estimation par durée. **Coût IA réel (tokens)** : pour le web **Gemini**, les tokens ne sont visibles que côté serveur (proxy `gemini-bridge-web.js`), donc le client propage le `demoId` en query (`/ws/gemini-web?demoId=…`) et le voice-bridge complète `openai_cost_eur_real` + `tokens_*` via `recordDemoRealCost` (colonnes disjointes de log-demo → pas de course). Le web **OpenAI** (WebRTC direct) n'a pas encore ce câblage → seule l'estimation par durée est remontée. Côté téléphone : `services/voice-bridge/src/tracking.js` écrit directement dans Supabase via service role, `demoCallId` propagé via TwiML `<Parameter>`, coût réel inclus. Tarifs : OpenAI ($32/$64 in/out par M tokens) et Gemini ($3/$12) hardcodés dans tracking.js, conversion USD→EUR à 0,92. Consultable via `https://www.aicoute.fr/track_calls?key=<DEMO_TRACK_KEY>` (page `TrackCalls.tsx` + Edge Function `list-demos`, colonne "Moteur" badge OpenAI/Gemini).
 
 ## Variables d'environnement
 
@@ -194,9 +209,9 @@ Numéro Twilio prod : `+33 9 39 03 52 69`. Modèle Gemini par défaut surchargea
 ```
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=      # clé publique anon
-VITE_APP_URL=https://app.modect.com
-VITE_DASHBOARD_URL=          # https://app.modect.com (prod) / vide en local (liens relatifs)
-VITE_VOICE_BRIDGE_URL=       # https://voice.modect.com (prod) / vide en local (cache le bouton "Me faire appeler")
+VITE_APP_URL=https://app.aicoute.fr
+VITE_DASHBOARD_URL=          # https://app.aicoute.fr (prod) / vide en local (liens relatifs)
+VITE_VOICE_BRIDGE_URL=       # https://voice.aicoute.fr (prod) / vide en local (cache le bouton "Me faire appeler")
 ```
 
 ### Supabase Edge Functions Secrets
@@ -205,7 +220,7 @@ OPENAI_API_KEY=
 RESEND_API_KEY=
 FROM_EMAIL=
 DEMO_TRACK_KEY=              # secret pour accéder à /track_calls (générer une chaîne longue aléatoire)
-VOICE_BRIDGE_URL=            # URL du service Render (ex: https://voice.modect.com) — utilisé par initiate-call pour POST /scheduled-call
+VOICE_BRIDGE_URL=            # URL du service Render (ex: https://voice.aicoute.fr) — utilisé par initiate-call pour POST /scheduled-call
 MODECT_INTERNAL_TOKEN=       # secret partagé Supabase ↔ voice-bridge pour les appels planifiés (générer via `openssl rand -hex 32`)
 ```
 
@@ -215,9 +230,9 @@ OPENAI_API_KEY=
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_NUMBER=+33939035269
-ALLOWED_ORIGINS=https://www.modect.com,https://modect.com  # CRITIQUE : doit inclure les origines qui ouvriront /ws/gemini-web
+ALLOWED_ORIGINS=https://www.aicoute.fr,https://aicoute.fr  # CRITIQUE : doit inclure les origines qui ouvriront /ws/gemini-web
 MAX_CALL_SECONDS=120                # démo vitrine
-MAX_SCHEDULED_CALL_SECONDS=900      # appels Modect (15 min max)
+MAX_SCHEDULED_CALL_SECONDS=900      # appels AICOUTE (15 min max)
 SCHEDULED_RING_TIMEOUT=30           # sonnerie max Twilio avant raccrochage auto
 SUPABASE_URL=                # écriture demo_calls (tracking /track_calls) + calls (appels planifiés)
 SUPABASE_SERVICE_ROLE_KEY=   # idem ; si absents → persistance désactivée silencieusement
@@ -227,13 +242,20 @@ MODECT_INTERNAL_TOKEN=       # MÊME valeur que côté Supabase ; si absent → 
 GOOGLE_API_KEY=              # clé Google AI Studio (https://aistudio.google.com/apikey)
 GEMINI_MODEL=                # défaut : models/gemini-3.1-flash-live-preview ; override si Google publie un nouveau preview label
 GEMINI_VOICE=                # défaut : Aoede (validée meilleure que cedar OpenAI en français)
+
+# --- VAD / interruptions Gemini (optionnel — adoucit le barge-in, cf. « Interruptions » plus haut) ---
+GEMINI_VAD_DISABLED=         # true → kill-switch, retour au comportement Gemini par défaut
+GEMINI_VAD_START_SENSITIVITY=   # défaut : START_SENSITIVITY_LOW
+GEMINI_VAD_PREFIX_PADDING_MS=   # défaut : 200 (ms de vraie parole requis avant interruption)
+GEMINI_VAD_END_SENSITIVITY=     # optionnel (non envoyé par défaut)
+GEMINI_VAD_SILENCE_DURATION_MS= # optionnel (non envoyé par défaut)
 ```
 
 ## Déploiement
-- **Netlify** : **un seul site** (Base directory `apps/web`, `apps/web/netlify.toml`). Faire pointer **les deux domaines** `www.modect.com` + `app.modect.com` vers ce site. L'app route selon le sous-domaine (`src/App.tsx` : `app.*` → back-office, sinon vitrine). `Permissions-Policy: microphone=(self)` pour WebRTC. Penser à whitelister `app.modect.com` dans Supabase → Auth → URL Configuration.
+- **Netlify** : **un seul site** (Base directory `apps/web`, `apps/web/netlify.toml`). Faire pointer **les deux domaines** `www.aicoute.fr` + `app.aicoute.fr` vers ce site. L'app route selon le sous-domaine (`src/App.tsx` : `app.*` → back-office, sinon vitrine). `Permissions-Policy: microphone=(self)` pour WebRTC. Penser à whitelister `app.aicoute.fr` dans Supabase → Auth → URL Configuration.
 - **Analytics (Umami)** : snippet chargé **conditionnellement** depuis `apps/web/index.html` via un garde inline — uniquement sur la **vitrine** (exclut `app.*` + `localhost`/`127.0.0.1`), pour ne pas tracker le back-office ni le dev local. `data-website-id` Umami Cloud en dur dans `index.html`.
 - **Supabase** : `supabase link --project-ref XXX` puis `supabase functions deploy`
-- **Render** : Web Service Node pour `services/voice-bridge` (plan **Starter** minimum — le Free dort après 15 min et casse la démo). Région Frankfurt. Custom domain `voice.modect.com` (CNAME). Variables à renseigner dans l'UI Render. Blueprint disponible dans `services/voice-bridge/render.yaml`.
+- **Render** : Web Service Node pour `services/voice-bridge` (plan **Starter** minimum — le Free dort après 15 min et casse la démo). Région Frankfurt. Custom domain `voice.aicoute.fr` (CNAME). Variables à renseigner dans l'UI Render. Blueprint disponible dans `services/voice-bridge/render.yaml`.
 - **pg_cron** : cron toutes les minutes → appelle `schedule-calls` via `pg_net`. Les secrets nécessaires (`supabase_url`, `service_role_key`) sont stockés dans **Supabase Vault** et lus via `vault.decrypted_secrets` (cf. ci-dessous — Supabase managé interdit `ALTER DATABASE SET app.settings.*`).
 
 ## Bugs connus et fixes appliqués
