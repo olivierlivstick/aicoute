@@ -10,7 +10,7 @@ export type Engine = 'openai' | 'gemini'
 
 export function Demo() {
   const [mode,   setMode]   = useState<Mode>(null)
-  const [engine, setEngine] = useState<Engine>('openai')
+  const [engine, setEngine] = useState<Engine>('gemini')
 
   return (
     <section id="essai" className="bg-creme py-20 md:py-28">
@@ -129,17 +129,17 @@ function EngineToggle({ engine, onChange }: { engine: Engine; onChange: (e: Engi
       <div className="flex p-1 bg-white border border-creme-sable rounded-lg">
         <button
           type="button"
-          onClick={() => onChange('openai')}
-          className={`${base} ${engine === 'openai' ? active : passive}`}
-        >
-          OpenAI
-        </button>
-        <button
-          type="button"
           onClick={() => onChange('gemini')}
           className={`${base} ${engine === 'gemini' ? active : passive}`}
         >
           Gemini
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange('openai')}
+          className={`${base} ${engine === 'openai' ? active : passive}`}
+        >
+          OpenAI
         </button>
       </div>
     </div>
