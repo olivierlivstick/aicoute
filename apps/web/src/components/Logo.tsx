@@ -49,7 +49,7 @@ export function Logo({ variant = 'full', size = 28, className = '' }: LogoProps)
   return (
     <span className={`inline-flex items-center gap-2.5 ${className}`} aria-label="aicoute">
       {Mark}
-      <span className="font-serif text-2xl leading-none" style={{ fontWeight: 500 }}>
+      <span className="font-serif leading-none" style={{ fontWeight: 500, fontSize: size }}>
         {isMono ? (
           <span className="text-creme">aicoute</span>
         ) : (

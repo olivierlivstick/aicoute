@@ -29,7 +29,7 @@ export function Header() {
     >
       <div className="max-w-container mx-auto px-6 lg:px-8 h-[72px] flex items-center justify-between">
         <a href="#" className="flex items-center" aria-label="Accueil MODECT">
-          <Logo variant="full" size={24} />
+          <Logo variant="full" size={35} />
         </a>
 
         <nav className="hidden md:flex items-center gap-8" aria-label="Navigation principale">

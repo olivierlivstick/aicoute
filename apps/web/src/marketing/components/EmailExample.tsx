@@ -39,7 +39,7 @@ export function EmailExample() {
               {/* Expéditeur */}
               <div className="flex items-center gap-3 pb-5 border-b border-creme-sable">
                 <div className="w-10 h-10 rounded-full bg-creme-sable flex items-center justify-center">
-                  <Logo variant="mark" size={18} />
+                  <Logo variant="mark" size={26} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-brun-900">

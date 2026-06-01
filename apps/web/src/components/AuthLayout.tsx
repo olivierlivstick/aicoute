@@ -12,7 +12,7 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center">
-          <Logo variant="full" size={28} />
+          <Logo variant="full" size={41} />
           <p className="text-slate-500 text-sm mt-3">La présence qui réchauffe</p>
         </div>
 

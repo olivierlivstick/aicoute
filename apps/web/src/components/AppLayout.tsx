@@ -45,7 +45,7 @@ export function AppLayout() {
         <aside className="w-64 bg-white border-r border-slate-100 flex flex-col shadow-sm">
           {/* Logo */}
           <div className="px-6 py-5 border-b border-slate-100">
-            <Logo variant="full" size={22} />
+            <Logo variant="full" size={31} />
             <p className="text-[11px] uppercase tracking-widest text-slate-400 mt-2">
               {isAdmin ? 'Espace admin' : 'Espace aidant'}
             </p>

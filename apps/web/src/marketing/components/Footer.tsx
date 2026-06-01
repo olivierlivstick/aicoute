@@ -39,7 +39,7 @@ export function Footer() {
         <div className="grid md:grid-cols-4 gap-10 md:gap-8">
           {/* Col 1 — Logo + tagline + socials */}
           <div className="md:col-span-1">
-            <Logo variant="mono" size={28} />
+            <Logo variant="mono" size={41} />
             <p className="mt-5 text-creme/70 leading-relaxed max-w-xs">
               Une présence pour ceux que vous aimez.
             </p>

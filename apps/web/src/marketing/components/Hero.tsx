@@ -16,8 +16,8 @@ export function Hero() {
               Une présence régulière, par téléphone
             </span>
 
-            <h1 className="font-serif font-normal text-brun-900 text-5xl md:text-6xl leading-[1.05] text-balance">
-              Pour qu'ils ne passent jamais<br />
+            <h1 className="font-serif font-normal text-brun-900 text-4xl md:text-5xl leading-[1.1] text-balance">
+              Pour ne jamais passer<br />
               <span className="italic text-terracotta-dark">une journée sans parler.</span>
             </h1>
 
