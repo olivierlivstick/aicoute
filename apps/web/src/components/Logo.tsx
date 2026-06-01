@@ -1,4 +1,4 @@
-// Logo MODECT — pictogramme (deux arcs entrelacés) + wordmark Fraunces
+// Logo AICOUTE — pictogramme (bulle de parole + ondes sonores) + wordmark « aicoute »
 // `variant` : 'full' (picto + mot), 'mark' (picto seul), 'mono' (crème sur fond foncé)
 
 type LogoProps = {
@@ -9,39 +9,55 @@ type LogoProps = {
 
 export function Logo({ variant = 'full', size = 28, className = '' }: LogoProps) {
   const isMono = variant === 'mono'
-  const arc1 = isMono ? '#FBF5EE' : '#C75D3A'
-  const arc2 = isMono ? '#F5EBDC' : '#D9943E'
-  const dot = isMono ? '#FBF5EE' : '#8B4A2B'
-  const wordColor = isMono ? 'text-creme' : 'text-brun-900'
+  // Normal : bulle terracotta, ondes crème. Mono (fond foncé) : bulle crème, ondes terracotta.
+  const bubble = isMono ? '#FBF5EE' : '#C75D3A'
+  const waves = isMono ? '#C75D3A' : '#FBF5EE'
 
   const Mark = (
     <svg
-      viewBox="0 0 90 40"
-      width={size * (90 / 40)}
+      viewBox="-6 6 96 92"
       height={size}
+      width={size * (96 / 92)}
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
       className="shrink-0"
     >
-      <path d="M 0 20 Q 30 -20 60 20" fill="none" stroke={arc1} strokeWidth="8" strokeLinecap="round" />
-      <path d="M 30 20 Q 60 60 90 20" fill="none" stroke={arc2} strokeWidth="8" strokeLinecap="round" />
-      <circle cx="45" cy="20" r="6" fill={dot} />
+      <path
+        d="M10 10 H70 a14 14 0 0 1 14 14 V64 a14 14 0 0 1 -14 14 H30 l-12 14 v-14 H10 a14 14 0 0 1 -14 -14 V24 a14 14 0 0 1 14 -14 Z"
+        fill={bubble}
+        stroke={bubble}
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <line x1="20" y1="40" x2="20" y2="48" stroke={waves} strokeWidth="5" strokeLinecap="round" />
+      <line x1="30" y1="30" x2="30" y2="58" stroke={waves} strokeWidth="5" strokeLinecap="round" />
+      <line x1="40" y1="38" x2="40" y2="50" stroke={waves} strokeWidth="5" strokeLinecap="round" />
+      <line x1="52" y1="24" x2="52" y2="64" stroke={waves} strokeWidth="5" strokeLinecap="round" />
+      <line x1="62" y1="34" x2="62" y2="54" stroke={waves} strokeWidth="5" strokeLinecap="round" />
+      <line x1="72" y1="40" x2="72" y2="48" stroke={waves} strokeWidth="5" strokeLinecap="round" />
     </svg>
   )
 
   if (variant === 'mark') {
     return (
-      <span className={className} aria-label="MODECT">
+      <span className={className} aria-label="aicoute">
         {Mark}
       </span>
     )
   }
 
   return (
-    <span className={`inline-flex items-center gap-2.5 ${className}`} aria-label="MODECT">
+    <span className={`inline-flex items-center gap-2.5 ${className}`} aria-label="aicoute">
       {Mark}
-      <span className={`font-serif text-2xl leading-none ${wordColor}`} style={{ fontWeight: 400 }}>
-        modect
+      <span className="font-serif text-2xl leading-none" style={{ fontWeight: 500 }}>
+        {isMono ? (
+          <span className="text-creme">aicoute</span>
+        ) : (
+          <>
+            <span className="text-terracotta">ai</span>
+            <span className="text-brun-900">coute</span>
+          </>
+        )}
       </span>
     </span>
   )

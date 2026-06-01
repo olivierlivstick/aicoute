@@ -17,8 +17,8 @@ export function Hero() {
             </span>
 
             <h1 className="font-serif font-normal text-brun-900 text-5xl md:text-6xl leading-[1.05] text-balance">
-              Gardez le lien,<br />
-              <span className="italic text-terracotta-dark">même à distance.</span>
+              Pour qu'ils ne passent jamais<br />
+              <span className="italic text-terracotta-dark">une journée sans parler.</span>
             </h1>
 
             <p className="mt-6 text-xl text-brun-700 leading-relaxed max-w-xl text-pretty">
