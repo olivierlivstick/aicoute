@@ -6,7 +6,7 @@ export function FAQ() {
     {
       q: "Mon proche va-t-il comprendre qu'il parle à une IA ?",
       a:
-        "Oui, en toute transparence. Dès la première seconde du premier appel, MODECT se présente comme une IA mandatée par vous. Cette honnêteté est au cœur de notre démarche — et la plupart de nos utilisateurs trouvent cela rassurant plutôt que dérangeant.",
+        "Oui, en toute transparence. Dès la première seconde du premier appel, Aicoute se présente comme une IA mandatée par vous. Cette honnêteté est au cœur de notre démarche — et la plupart de nos utilisateurs trouvent cela rassurant plutôt que dérangeant.",
     },
     {
       q: "Que se passe-t-il si mon proche dit quelque chose d'inquiétant ?",
@@ -14,7 +14,7 @@ export function FAQ() {
         "Tout signal sensible — douleur physique, déprime, chute évoquée, sujet préoccupant — est remonté dans la section « Point d'attention » de votre résumé. Sur la formule Sérénité, vous recevez une alerte en temps réel.",
     },
     {
-      q: 'Comment MODECT se souvient-il des conversations précédentes ?',
+      q: 'Comment Aicoute se souvient-il des conversations précédentes ?',
       a:
         "Chaque conversation est résumée puis indexée dans la mémoire dédiée à votre proche : les sujets récurrents, les personnes mentionnées, les événements importants. L'IA peut ainsi reprendre le fil naturellement d'un appel à l'autre.",
     },
@@ -34,7 +34,7 @@ export function FAQ() {
         "L'enregistrement audio brut est supprimé dans les 24 heures. Seule la transcription textuelle est conservée pendant 12 mois glissants, le temps utile à la continuité de la conversation. Vous pouvez tout effacer à la demande.",
     },
     {
-      q: 'Peut-on tester MODECT avant de payer ?',
+      q: 'Peut-on tester Aicoute avant de payer ?',
       a:
         "Oui. Le premier appel est entièrement offert, sans carte bancaire, pour que vous et votre proche puissiez juger sur pièce avant tout engagement.",
     },

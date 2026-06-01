@@ -51,7 +51,7 @@ export function Step6Phone({ data, onPrev, onSubmit, saving }: Props) {
         <ol className="space-y-2 text-sm text-slate-600">
           <li className="flex gap-2">
             <span className="w-5 h-5 rounded-full bg-primary text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">1</span>
-            Téléchargez l'application <strong>MODECT</strong> sur l'App Store ou Google Play
+            Téléchargez l'application <strong>Aicoute</strong> sur l'App Store ou Google Play
           </li>
           <li className="flex gap-2">
             <span className="w-5 h-5 rounded-full bg-primary text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">2</span>

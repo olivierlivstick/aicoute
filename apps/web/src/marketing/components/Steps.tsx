@@ -13,7 +13,7 @@ export function Steps() {
     {
       num: '02',
       Icon: Icon.Phone,
-      title: 'MODECT appelle à la fréquence choisie',
+      title: 'Aicoute appelle à la fréquence choisie',
       text:
         "Une à plusieurs fois par semaine, à l'heure que vous avez définie, votre proche reçoit un appel chaleureux. Une voix douce, attentive, qui se souvient de la dernière conversation.",
     },

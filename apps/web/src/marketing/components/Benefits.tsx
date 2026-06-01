@@ -13,13 +13,13 @@ export function Benefits() {
       Icon: Icon.CalendarCheck,
       title: "La régularité qu'on n'arrive pas toujours à tenir",
       text:
-        "Vous ne pouvez pas appeler tous les jours, et c'est normal. MODECT le fait à votre place, sans jamais oublier, sans jamais se lasser, à l'heure qui convient le mieux.",
+        "Vous ne pouvez pas appeler tous les jours, et c'est normal. Aicoute le fait à votre place, sans jamais oublier, sans jamais se lasser, à l'heure qui convient le mieux.",
     },
     {
       Icon: Icon.Eye,
       title: 'Une vigilance bienveillante',
       text:
-        "Les résumés vous permettent de détecter un changement d'humeur, un sujet inquiétant, un événement à appeler vous-même. Vous gardez la main, MODECT vous éclaire.",
+        "Les résumés vous permettent de détecter un changement d'humeur, un sujet inquiétant, un événement à appeler vous-même. Vous gardez la main, Aicoute vous éclaire.",
     },
     {
       Icon: Icon.ShieldCheck,

@@ -42,7 +42,7 @@ export function Stats() {
           Et pourtant, beaucoup d'entre elles ont des enfants, des
           petits-enfants, qui aimeraient appeler plus souvent — mais le
           quotidien, la distance, la culpabilité parfois… rendent la
-          régularité difficile. MODECT a été pensé pour eux.
+          régularité difficile. Aicoute a été pensé pour eux.
         </p>
         <p className="mt-4 text-xs text-brun-700/60">
           Source : Petits Frères des Pauvres, Baromètre 2025

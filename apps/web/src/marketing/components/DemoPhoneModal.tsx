@@ -122,7 +122,7 @@ export function DemoPhoneModal({ onClose, engine }: Props) {
           ) : (
             <form onSubmit={handleCall} className="space-y-5">
               <p className="text-brun-700 leading-relaxed text-pretty">
-                Entrez votre numéro de téléphone. MODECT vous rappelle dans
+                Entrez votre numéro de téléphone. Aicoute vous rappelle dans
                 les secondes qui suivent. La conversation est gratuite et dure
                 quelques minutes.
               </p>
@@ -174,7 +174,7 @@ export function DemoPhoneModal({ onClose, engine }: Props) {
                   className="mt-0.5 accent-terracotta"
                 />
                 <span>
-                  J'accepte d'être rappelé par MODECT pour cette démonstration.
+                  J'accepte d'être rappelé par Aicoute pour cette démonstration.
                   Mon numéro est utilisé uniquement pour passer cet appel et
                   n'est pas conservé.
                 </span>
@@ -239,7 +239,7 @@ function Ringing({ phone, onClose }: { phone: string; onClose: () => void }) {
         <p className="font-serif text-xl text-brun-900">Votre téléphone sonne</p>
         <p className="mt-2 text-brun-700 text-sm">
           Nous appelons <span className="font-medium text-brun-900">{phone}</span> à l'instant.
-          Décrochez pour discuter avec MODECT.
+          Décrochez pour discuter avec Aicoute.
         </p>
       </div>
       <p className="text-xs text-brun-700/70 font-mono">

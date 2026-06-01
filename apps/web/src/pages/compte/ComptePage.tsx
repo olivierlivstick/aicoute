@@ -49,7 +49,7 @@ export function ComptePage() {
       </div>
 
       {tab === 'profil'     && <ProfilTab />}
-      {tab === 'abonnement' && <ComingSoon title="Mon abonnement" description="Gestion de votre formule MODECT, paiement et résiliation. Disponible prochainement." />}
+      {tab === 'abonnement' && <ComingSoon title="Mon abonnement" description="Gestion de votre formule Aicoute, paiement et résiliation. Disponible prochainement." />}
       {tab === 'factures'   && <ComingSoon title="Mes factures" description="Historique des paiements et téléchargement des factures. Disponible prochainement." />}
     </div>
   )

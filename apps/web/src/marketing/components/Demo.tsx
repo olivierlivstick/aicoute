@@ -1,5 +1,5 @@
 // SECTION — Essayez maintenant : deux cartes (web micro / téléphone)
-// Permet au visiteur de tester la voix MODECT directement depuis la home.
+// Permet au visiteur de tester la voix Aicoute directement depuis la home.
 import { useState } from 'react'
 import { Icon } from '@/marketing/components/icons'
 import { DemoWebModal } from '@/marketing/components/DemoWebModal'
@@ -17,11 +17,11 @@ export function Demo() {
       <div className="max-w-container mx-auto px-6 lg:px-8">
         <div className="text-center max-w-2xl mx-auto">
           <p className="text-xs uppercase tracking-[0.18em] text-terracotta-dark mb-5">
-            La voix de MODECT
+            La voix d'Aicoute
           </p>
           <h2 className="font-serif font-normal text-3xl md:text-4xl text-brun-900 leading-[1.15] text-balance">
             Essayez la conversation,<br className="hidden md:block" />
-            <span className="italic text-terracotta-dark">avant de parler de MODECT à vos parents.</span>
+            <span className="italic text-terracotta-dark">avant de parler d'Aicoute à vos parents.</span>
           </h2>
           <p className="mt-5 text-lg text-brun-700 leading-relaxed text-pretty">
             Découvrez vous-même comment l'IA parle, écoute et rebondit. Deux
@@ -42,7 +42,7 @@ export function Demo() {
             </h3>
             <p className="mt-3 text-brun-700 leading-relaxed text-pretty">
               Autorisez votre micro et discutez en direct avec l'assistant
-              MODECT. Idéal pour entendre la voix, le ton, le rythme — et
+              Aicoute. Idéal pour entendre la voix, le ton, le rythme — et
               comprendre ce que vos parents vivront.
             </p>
             <ul className="mt-4 space-y-1.5 text-sm text-brun-700">
@@ -75,7 +75,7 @@ export function Demo() {
               Recevez un appel sur votre téléphone
             </h3>
             <p className="mt-3 text-brun-700 leading-relaxed text-pretty">
-              Entrez votre numéro et MODECT vous rappelle dans les secondes
+              Entrez votre numéro et Aicoute vous rappelle dans les secondes
               qui suivent. C'est exactement ce que vivra votre proche, dans
               les conditions réelles d'un appel téléphonique.
             </p>

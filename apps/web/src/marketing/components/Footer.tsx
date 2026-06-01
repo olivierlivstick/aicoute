@@ -92,7 +92,7 @@ export function Footer() {
 
         <div className="mt-14 pt-6 border-t border-creme/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <p className="text-xs text-creme/60">
-            © 2026 MODECT · Une présence pour ceux que vous aimez
+            © 2026 Aicoute · Une présence pour ceux que vous aimez
           </p>
           <p className="text-xs text-creme/50">
             Conçu en France · Hébergé en Europe

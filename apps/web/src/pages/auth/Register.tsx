@@ -68,7 +68,7 @@ export function RegisterPage() {
   return (
     <AuthLayout
       title="Créer un compte"
-      subtitle="Rejoignez MODECT pour veiller sur vos proches"
+      subtitle="Rejoignez Aicoute pour veiller sur vos proches"
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <div>

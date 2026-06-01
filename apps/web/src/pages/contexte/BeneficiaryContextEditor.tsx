@@ -740,7 +740,7 @@ function MemorySection({ beneficiary }: { beneficiary: Beneficiary }) {
         )}
       </div>
       <p className="text-xs text-slate-400 mb-5">
-        Ce dont MODECT se souvient d'un appel à l'autre pour personnaliser ses conversations avec {beneficiary.first_name}.
+        Ce dont Aicoute se souvient d'un appel à l'autre pour personnaliser ses conversations avec {beneficiary.first_name}.
         Les souvenirs sont extraits automatiquement après chaque appel ; vous pouvez les corriger, en supprimer ou en ajouter.
       </p>
 

@@ -183,7 +183,7 @@ export function SimulateCallPage() {
         </svg>
       </button>
 
-      <p className="text-slate-600 text-xs">Simulation MODECT — mode test</p>
+      <p className="text-slate-600 text-xs">Simulation Aicoute — mode test</p>
     </div>
   )
 }

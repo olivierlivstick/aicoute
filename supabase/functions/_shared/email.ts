@@ -131,7 +131,7 @@ export function reportEmailHtml(params: {
 
     <!-- Header -->
     <div style="background:#C75D3A;padding:32px 32px 28px;text-align:center">
-      <h1 style="font-family:${fontSerif};color:white;margin:0;font-size:28px;font-weight:600;letter-spacing:0.5px">MODECT</h1>
+      <h1 style="font-family:${fontSerif};color:white;margin:0;font-size:28px;font-weight:600;letter-spacing:0.5px">Aicoute</h1>
       <p style="color:rgba(255,255,255,0.92);margin:6px 0 0;font-size:14px;font-style:italic">La présence qui réchauffe</p>
     </div>
 
@@ -179,7 +179,7 @@ export function reportEmailHtml(params: {
     <!-- Footer -->
     <div style="background:#FBF5EE;padding:20px 32px;text-align:center;border-top:1px solid #E8DCC4">
       <p style="color:#6B4423;font-size:13px;margin:0;line-height:1.6">
-        © 2026 MODECT · <a href="${app_url}/compte" style="color:#6B4423;text-decoration:underline">Gérer les notifications</a>
+        © 2026 Aicoute · <a href="${app_url}/compte" style="color:#6B4423;text-decoration:underline">Gérer les notifications</a>
       </p>
     </div>
   </div>
@@ -201,7 +201,7 @@ export function noAnswerEmailHtml(params: {
 <body style="margin:0;padding:0;background:#F8FAFC;font-family:'Source Sans Pro',Arial,sans-serif">
   <div style="max-width:600px;margin:32px auto;background:white;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08)">
     <div style="background:#C75D3A;padding:28px 32px;text-align:center">
-      <h1 style="color:white;margin:0;font-size:24px;font-weight:700">MODECT</h1>
+      <h1 style="color:white;margin:0;font-size:24px;font-weight:700">Aicoute</h1>
       <p style="color:rgba(255,255,255,0.9);margin:6px 0 0;font-size:14px">⚠️ Appel sans réponse</p>
     </div>
     <div style="padding:32px">
@@ -223,7 +223,7 @@ export function noAnswerEmailHtml(params: {
     </div>
     <div style="background:#F8FAFC;padding:20px 32px;text-align:center;border-top:1px solid #E2E8F0">
       <p style="color:#94A3B8;font-size:13px;margin:0">
-        © 2026 MODECT · <a href="${app_url}/compte" style="color:#94A3B8">Gérer les notifications</a>
+        © 2026 Aicoute · <a href="${app_url}/compte" style="color:#94A3B8">Gérer les notifications</a>
       </p>
     </div>
   </div>

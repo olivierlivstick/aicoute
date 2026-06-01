@@ -4,9 +4,9 @@ import { Logo } from '@/components/Logo'
 
 export function EmailExample() {
   const transcript = [
-    { who: 'MODECT', text: "Bonjour Yvette, c'est MODECT. Comment allez-vous ce matin ?" },
+    { who: 'Aicoute', text: "Bonjour Yvette, c'est Aicoute. Comment allez-vous ce matin ?" },
     { who: 'Yvette', text: "Oh très bien, je viens de me servir un café. Vous savez, mes rosiers commencent à fleurir !" },
-    { who: 'MODECT', text: "Quelle joie ! La dernière fois vous m'aviez dit que vous attendiez de voir les premières roses. Quelle couleur sont-elles ?" },
+    { who: 'Aicoute', text: "Quelle joie ! La dernière fois vous m'aviez dit que vous attendiez de voir les premières roses. Quelle couleur sont-elles ?" },
     { who: 'Yvette', text: "Roses pâles, comme celles que ma mère cultivait. Cela me rappelle des souvenirs…" },
   ]
 
@@ -32,7 +32,7 @@ export function EmailExample() {
                 <span className="w-3 h-3 rounded-full bg-ocre/50" />
                 <span className="w-3 h-3 rounded-full bg-sauge/50" />
               </div>
-              <p className="text-xs text-brun-700 ml-2">Boîte de réception — MODECT</p>
+              <p className="text-xs text-brun-700 ml-2">Boîte de réception — Aicoute</p>
             </div>
 
             <div className="p-7 md:p-9">
@@ -43,8 +43,8 @@ export function EmailExample() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-brun-900">
-                    <span className="font-medium">MODECT</span>{' '}
-                    <span className="text-brun-700">&lt;nouvelles@modect.fr&gt;</span>
+                    <span className="font-medium">Aicoute</span>{' '}
+                    <span className="text-brun-700">&lt;bonjour@aicoute.fr&gt;</span>
                   </p>
                   <p className="text-xs text-brun-700">à sophie.lemaire@gmail.com — mardi 14 mai, 10 : 42</p>
                 </div>
@@ -88,7 +88,7 @@ export function EmailExample() {
 
                 <p className="text-brun-700">
                   À mardi prochain,<br />
-                  L'équipe MODECT
+                  L'équipe Aicoute
                 </p>
               </div>
 
@@ -115,7 +115,7 @@ export function EmailExample() {
 
             <ul className="space-y-4">
               {transcript.map((line, i) => {
-                const isModect = line.who === 'MODECT'
+                const isModect = line.who === 'Aicoute'
                 return (
                   <li key={i} className="flex gap-3">
                     <div className="shrink-0 w-8 flex flex-col items-center">
@@ -127,7 +127,7 @@ export function EmailExample() {
                         }`}
                         aria-hidden="true"
                       >
-                        {isModect ? 'M' : 'Y'}
+                        {isModect ? 'A' : 'Y'}
                       </div>
                       {i < transcript.length - 1 && (
                         <span className="flex-1 w-px bg-creme-sable mt-1 min-h-[12px]" />

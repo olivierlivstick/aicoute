@@ -194,7 +194,7 @@ export function DemoWebModal({ onClose, engine }: Props) {
             <p className="text-xs text-brun-700/70 mt-0.5">
               {live
                 ? `${formatTime(elapsed)} / ${formatTime(MAX_DURATION_SECONDS)}`
-                : 'L\'assistant MODECT vous parle directement.'}
+                : 'L\'assistant Aicoute vous parle directement.'}
             </p>
           </div>
           <button
@@ -239,7 +239,7 @@ export function DemoWebModal({ onClose, engine }: Props) {
                         : 'text-xs uppercase tracking-widest text-terracotta-dark font-medium'
                     }
                   >
-                    {m.role === 'user' ? 'Vous' : 'MODECT'}
+                    {m.role === 'user' ? 'Vous' : 'Aicoute'}
                   </span>
                   <p className={`mt-1 ${m.done ? 'text-brun-900' : 'text-brun-700 italic'}`}>
                     {m.text || (m.done ? '…' : '…')}

@@ -22,7 +22,7 @@ export function Hero() {
             </h1>
 
             <p className="mt-6 text-xl text-brun-700 leading-relaxed max-w-xl text-pretty">
-              MODECT appelle régulièrement vos parents, prend de leurs
+              Aicoute appelle régulièrement vos parents, prend de leurs
               nouvelles, et vous envoie un résumé chaleureux après chaque
               échange. Pour que la distance n'efface jamais la présence.
             </p>
