@@ -99,7 +99,7 @@ export function AdminBeneficiaireDetailPage() {
         </p>
       </header>
 
-      <BeneficiaryContextEditor beneficiary={beneficiary} onSaved={load} />
+      <BeneficiaryContextEditor beneficiary={beneficiary} onSaved={load} withSchedule />
 
       {/* Zone danger */}
       <section className="mt-10 rounded-2xl border border-brique/30 bg-brique/5 p-6">

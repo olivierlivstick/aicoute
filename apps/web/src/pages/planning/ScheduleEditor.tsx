@@ -28,6 +28,12 @@ interface Props {
   beneficiary: Beneficiary
   schedule:    SessionSchedule | null
   onSaved:     () => void
+  /**
+   * Aidant propriétaire du planning. Par défaut l'utilisateur courant (cas aidant
+   * qui édite SON bénéficiaire). En admin, on passe `beneficiary.caregiver_id`
+   * pour ne pas réattribuer le planning à l'admin lors d'un update/create.
+   */
+  caregiverId?: string
 }
 
 const DAY_LABELS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
@@ -40,8 +46,9 @@ const TIMEZONES = [
 const DURATIONS = [5, 10, 15, 20, 30, 45, 60]
 const RETRY_INTERVALS = [2, 5, 10, 15]
 
-export function ScheduleEditor({ beneficiary, schedule, onSaved }: Props) {
+export function ScheduleEditor({ beneficiary, schedule, onSaved, caregiverId }: Props) {
   const { user } = useAuth()
+  const ownerId = caregiverId ?? beneficiary.caregiver_id ?? user?.id
   const [selectedDays, setSelectedDays] = useState<number[]>(schedule?.days_of_week ?? [1, 3, 5])
   const [isActive, setIsActive] = useState<boolean>(schedule?.is_active ?? true)
   const [togglingActive, setTogglingActive] = useState(false)
@@ -110,7 +117,7 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved }: Props) {
       setError(`Sélectionnez exactement ${values.calls_per_week} jour${values.calls_per_week > 1 ? 's' : ''} (${selectedDays.length} sélectionné${selectedDays.length > 1 ? 's' : ''}).`)
       return
     }
-    if (!user) return
+    if (!ownerId) return
 
     setSaving(true)
     setError(null)
@@ -118,7 +125,7 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved }: Props) {
 
     const payload = {
       beneficiary_id:            beneficiary.id,
-      caregiver_id:              user.id,
+      caregiver_id:              ownerId,
       days_of_week:              selectedDays,
       time_of_day:               values.time_of_day + ':00',
       timezone:                  values.timezone,

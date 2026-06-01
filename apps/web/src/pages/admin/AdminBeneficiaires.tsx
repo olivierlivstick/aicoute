@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Phone, ChevronRight } from 'lucide-react'
+import { Search, Phone, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface BeneficiaryRow {
@@ -17,11 +17,30 @@ interface BeneficiaryRow {
   lastCallEnded:         string | null
 }
 
+type SortKey = 'name' | 'caregiver' | 'calls' | 'lastCall'
+type SortDir = 'asc' | 'desc'
+
+const collator = new Intl.Collator('fr', { sensitivity: 'base' })
+
+const nameOf      = (b: BeneficiaryRow) => `${b.last_name} ${b.first_name}`.trim()
+const caregiverOf = (b: BeneficiaryRow) => b.profiles?.full_name || b.profiles?.email || ''
+
 export function AdminBeneficiairesPage() {
   const [rows, setRows] = useState<BeneficiaryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const [activeOnly, setActiveOnly] = useState(true)
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
 
   useEffect(() => {
     load()
@@ -57,13 +76,34 @@ export function AdminBeneficiairesPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter((r) =>
-      `${r.first_name} ${r.last_name}`.toLowerCase().includes(q) ||
-      r.profiles?.email?.toLowerCase().includes(q) ||
-      (r.phone ?? '').toLowerCase().includes(q),
-    )
-  }, [rows, query])
+    const base = !q
+      ? rows
+      : rows.filter((r) =>
+          `${r.first_name} ${r.last_name}`.toLowerCase().includes(q) ||
+          r.profiles?.email?.toLowerCase().includes(q) ||
+          (r.phone ?? '').toLowerCase().includes(q),
+        )
+
+    const dir = sortDir === 'asc' ? 1 : -1
+    return [...base].sort((a, b) => {
+      if (sortKey === 'lastCall') {
+        // jamais appelé (null) toujours en bas, quelle que soit la direction
+        const ta = a.lastCallEnded ? Date.parse(a.lastCallEnded) : null
+        const tb = b.lastCallEnded ? Date.parse(b.lastCallEnded) : null
+        if (ta === null && tb === null) return collator.compare(nameOf(a), nameOf(b))
+        if (ta === null) return 1
+        if (tb === null) return -1
+        return (ta - tb) * dir
+      }
+      let c = 0
+      if (sortKey === 'name')      c = collator.compare(nameOf(a), nameOf(b))
+      if (sortKey === 'caregiver') c = collator.compare(caregiverOf(a), caregiverOf(b))
+      if (sortKey === 'calls')     c = a.callsTotal - b.callsTotal
+      // départage stable par nom pour les ex æquo
+      if (c === 0) return collator.compare(nameOf(a), nameOf(b))
+      return c * dir
+    })
+  }, [rows, query, sortKey, sortDir])
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8">
@@ -102,11 +142,11 @@ export function AdminBeneficiairesPage() {
           <table className="w-full text-sm">
             <thead className="bg-creme text-brun-700 text-left text-xs uppercase tracking-wider">
               <tr>
-                <th className="px-5 py-3">Bénéficiaire</th>
-                <th className="px-5 py-3">Aidant</th>
+                <SortHeader label="Bénéficiaire" col="name"      sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortHeader label="Aidant"       col="caregiver" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <th className="px-5 py-3">Téléphone</th>
-                <th className="px-5 py-3 text-center">Appels</th>
-                <th className="px-5 py-3">Dernier appel</th>
+                <SortHeader label="Appels"       col="calls"     sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="center" />
+                <SortHeader label="Dernier appel" col="lastCall" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <th className="px-5 py-3">État</th>
                 <th className="px-5 py-3 text-right">Gérer</th>
               </tr>
@@ -116,7 +156,6 @@ export function AdminBeneficiairesPage() {
                 <tr key={b.id} className="hover:bg-creme/40 transition-colors group">
                   <td className="px-5 py-3">
                     <p className="font-medium text-brun-900">{b.first_name} {b.last_name}</p>
-                    <p className="text-xs text-slate-500">{b.language_preference}</p>
                   </td>
                   <td className="px-5 py-3 text-xs text-slate-500">
                     <p className="text-brun-700">{b.profiles?.full_name ?? '—'}</p>
@@ -170,5 +209,30 @@ export function AdminBeneficiairesPage() {
         </div>
       )}
     </div>
+  )
+}
+
+function SortHeader({ label, col, sortKey, sortDir, onSort, align = 'left' }: {
+  label: string
+  col: SortKey
+  sortKey: SortKey
+  sortDir: SortDir
+  onSort: (key: SortKey) => void
+  align?: 'left' | 'center' | 'right'
+}) {
+  const active = sortKey === col
+  const justify = align === 'center' ? 'justify-center' : align === 'right' ? 'justify-end' : 'justify-start'
+  return (
+    <th className={`px-5 py-3 ${align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : ''}`}>
+      <button
+        onClick={() => onSort(col)}
+        className={`inline-flex items-center gap-1 w-full ${justify} uppercase tracking-wider transition-colors hover:text-brun-900 ${active ? 'text-brun-900' : ''}`}
+      >
+        {label}
+        {active
+          ? (sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)
+          : <ArrowUpDown size={12} className="text-slate-300" />}
+      </button>
+    </th>
   )
 }

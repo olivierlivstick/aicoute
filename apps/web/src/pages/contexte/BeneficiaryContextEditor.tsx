@@ -6,21 +6,24 @@ import { z } from 'zod'
 import {
   IdCard, BookOpen, Heart, Sparkles, Bot, Check, Brain,
   Plus, Pencil, Trash2, Lightbulb, Star, CalendarHeart, SmilePlus, MessageCircle, Link2, RotateCcw,
+  CalendarClock, AlertTriangle, Clock, Phone,
 } from 'lucide-react'
 import { useBeneficiary } from '@/hooks/useBeneficiary'
 import { useMemories } from '@/hooks/useMemories'
+import { useSessionSchedules } from '@/hooks/useSessionSchedule'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Textarea } from '@/components/ui/Textarea'
 import { cn, formatDate } from '@/lib/utils'
+import { ScheduleEditor } from '@/pages/planning/ScheduleEditor'
 import { resolvePromptPlaceholders } from '@modect/shared'
-import type { Beneficiary, AIVoice, ConversationStyle, ConversationMemory, MemoryType } from '@modect/shared'
+import type { Beneficiary, AIVoice, ConversationStyle, ConversationMemory, MemoryType, SessionSchedule } from '@modect/shared'
 
-type Tab = 'basics' | 'history' | 'tastes' | 'personality' | 'ai' | 'memory'
+type Tab = 'basics' | 'history' | 'tastes' | 'personality' | 'ai' | 'memory' | 'schedule'
 
-const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
+const BASE_TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: 'basics',      label: 'Infos de base',       icon: IdCard },
   { id: 'history',     label: 'Son histoire',         icon: BookOpen },
   { id: 'tastes',      label: 'Goûts et intérêts',    icon: Heart },
@@ -28,6 +31,10 @@ const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: 'ai',          label: 'Configuration IA',     icon: Bot },
   { id: 'memory',      label: 'Mémoire',              icon: Brain },
 ]
+
+const SCHEDULE_TAB: { id: Tab; label: string; icon: React.ElementType } = {
+  id: 'schedule', label: 'Planning', icon: CalendarClock,
+}
 
 /**
  * Éditeur 5-onglets du profil d'un bénéficiaire, partagé entre :
@@ -40,22 +47,26 @@ const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
 export function BeneficiaryContextEditor({
   beneficiary,
   onSaved,
+  withSchedule = false,
 }: {
   beneficiary: Beneficiary
   onSaved: () => void
+  /** Ajoute un onglet « Planning » (édition gardée par confirmation). Réservé à l'admin. */
+  withSchedule?: boolean
 }) {
   const [tab, setTab] = useState<Tab>('basics')
+  const tabs = withSchedule ? [...BASE_TABS, SCHEDULE_TAB] : BASE_TABS
 
   return (
     <div>
       {/* Onglets */}
       <div className="flex gap-1 mb-6 border-b border-slate-200 overflow-x-auto">
-        {TABS.map(({ id, label, icon: Icon }) => (
+        {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
             className={cn(
-              'flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative whitespace-nowrap',
+              'flex items-center gap-1.5 px-3 py-3 text-sm font-medium transition-colors relative whitespace-nowrap',
               tab === id ? 'text-primary' : 'text-slate-500 hover:text-slate-700'
             )}
           >
@@ -68,14 +79,149 @@ export function BeneficiaryContextEditor({
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-        {tab === 'basics'      && <BasicsSection beneficiary={beneficiary} onSaved={onSaved} />}
-        {tab === 'history'     && <HistorySection beneficiary={beneficiary} onSaved={onSaved} />}
-        {tab === 'tastes'      && <TastesSection beneficiary={beneficiary} onSaved={onSaved} />}
-        {tab === 'personality' && <PersonalitySection beneficiary={beneficiary} onSaved={onSaved} />}
-        {tab === 'ai'          && <AIConfigSection beneficiary={beneficiary} onSaved={onSaved} />}
-        {tab === 'memory'      && <MemorySection beneficiary={beneficiary} />}
+      {tab === 'schedule' ? (
+        <ScheduleSection beneficiary={beneficiary} onSaved={onSaved} />
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+          {tab === 'basics'      && <BasicsSection beneficiary={beneficiary} onSaved={onSaved} />}
+          {tab === 'history'     && <HistorySection beneficiary={beneficiary} onSaved={onSaved} />}
+          {tab === 'tastes'      && <TastesSection beneficiary={beneficiary} onSaved={onSaved} />}
+          {tab === 'personality' && <PersonalitySection beneficiary={beneficiary} onSaved={onSaved} />}
+          {tab === 'ai'          && <AIConfigSection beneficiary={beneficiary} onSaved={onSaved} />}
+          {tab === 'memory'      && <MemorySection beneficiary={beneficiary} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// Onglet Planning (admin) — lecture seule + édition gardée par confirmation
+// ============================================================================
+
+const SCHEDULE_DAY_LABELS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
+
+function ScheduleSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; onSaved: () => void }) {
+  const { schedules, loading, refetch } = useSessionSchedules(beneficiary.id)
+  const [confirming, setConfirming] = useState(false)
+  const [editing, setEditing] = useState(false)
+
+  const schedule: SessionSchedule | null = schedules[0] ?? null
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
+    )
+  }
+
+  // Mode édition déverrouillé (après confirmation) : on réutilise l'éditeur aidant,
+  // en lui passant le caregiver_id du bénéficiaire pour ne pas réattribuer le planning à l'admin.
+  if (editing) {
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brun-700 mb-3"
+        >
+          ← Quitter l'édition
+        </button>
+        <ScheduleEditor
+          beneficiary={beneficiary}
+          schedule={schedule}
+          caregiverId={beneficiary.caregiver_id}
+          onSaved={() => { refetch(); onSaved() }}
+        />
+      </div>
+    )
+  }
+
+  // Mode lecture seule (par défaut)
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h2 className="font-title text-lg font-semibold text-slate-800">Planning d'appels</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Les appels récurrents passés à {beneficiary.first_name}. Cœur de l'application — édition protégée.
+          </p>
+        </div>
+        {schedule && (
+          <span className={cn(
+            'shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full',
+            schedule.is_active ? 'bg-sauge/10 text-sauge' : 'bg-slate-100 text-slate-400',
+          )}>
+            {schedule.is_active ? '● Actif' : '○ En pause'}
+          </span>
+        )}
+      </div>
+
+      {schedule ? (
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
+          <ScheduleField icon={Phone} label="Fréquence" value={`${schedule.calls_per_week} appel${schedule.calls_per_week > 1 ? 's' : ''} / semaine`} />
+          <ScheduleField icon={Clock} label="Heure" value={`${schedule.time_of_day?.slice(0, 5)} (${schedule.timezone})`} />
+          <ScheduleField
+            icon={CalendarClock}
+            label="Jours"
+            value={[...(schedule.days_of_week ?? [])].sort().map((d) => SCHEDULE_DAY_LABELS[d]).join(' · ') || '—'}
+          />
+          <ScheduleField icon={Clock} label="Durée max" value={`${schedule.max_duration_minutes} min`} />
+          <ScheduleField
+            icon={Phone}
+            label="Relances si pas de réponse"
+            value={schedule.retry_count > 0 ? `${schedule.retry_count}× toutes les ${schedule.retry_interval_minutes} min` : 'Aucune'}
+          />
+          <ScheduleField
+            icon={AlertTriangle}
+            label="Email à l'aidant si non-réponse"
+            value={schedule.notify_on_no_answer ? 'Oui' : 'Non'}
+          />
+        </dl>
+      ) : (
+        <div className="bg-slate-50 rounded-xl border border-slate-100 p-6 text-center">
+          <p className="text-sm text-slate-500">Aucun planning configuré pour ce bénéficiaire.</p>
+        </div>
+      )}
+
+      {/* Garde-fou : confirmation avant de déverrouiller l'édition */}
+      <div className="mt-6 pt-5 border-t border-slate-100">
+        {confirming ? (
+          <div className="rounded-xl border border-accent-200 bg-accent-50 p-4">
+            <p className="flex items-center gap-2 text-sm font-semibold text-accent-700 mb-1">
+              <AlertTriangle size={16} /> Modifier le planning de {beneficiary.first_name} ?
+            </p>
+            <p className="text-xs text-brun-700 mb-4">
+              Toute modification reconfigure ses <strong>appels réels</strong> (création/suppression des
+              prochains appels planifiés). Ne le faites que si vous savez ce que vous changez.
+            </p>
+            <div className="flex items-center gap-2">
+              <Button type="button" size="sm" onClick={() => { setConfirming(false); setEditing(true) }}>
+                Oui, modifier le planning
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                Annuler
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button type="button" variant="ghost" onClick={() => setConfirming(true)}>
+            <Pencil size={15} /> {schedule ? 'Modifier le planning' : 'Configurer un planning'}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ScheduleField({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
+  return (
+    <div>
+      <dt className="flex items-center gap-1.5 text-xs text-slate-400 mb-0.5">
+        <Icon size={13} /> {label}
+      </dt>
+      <dd className="text-slate-800 font-medium">{value}</dd>
     </div>
   )
 }
