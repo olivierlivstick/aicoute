@@ -94,6 +94,9 @@ const STATUS_TONE: Record<CallStatus, string> = {
   failed:      'bg-brique/15 text-brique',
 }
 
+// Libellés du filtre période — dépendent de l'onglet : les appels passés se
+// regardent vers l'arrière (« derniers jours »), les prévus vers l'avant
+// (« prochains jours »). La logique de bornage est dans load() (now-X vs now+X).
 const PERIOD_LABEL = {
   today: 'Aujourd\'hui',
   '7d':  '7 derniers jours',
@@ -101,6 +104,13 @@ const PERIOD_LABEL = {
   all:   'Tout',
 } as const
 type Period = keyof typeof PERIOD_LABEL
+
+const PERIOD_LABEL_UPCOMING: Record<Period, string> = {
+  today: 'Prochaines 24 h',
+  '7d':  '7 prochains jours',
+  '30d': '30 prochains jours',
+  all:   'Tout',
+}
 
 type Tab = 'past' | 'upcoming'
 
@@ -342,7 +352,10 @@ export function AdminAppelsPage() {
         <Filter
           label="Période"
           value={period}
-          options={Object.entries(PERIOD_LABEL).map(([v, l]) => ({ value: v, label: l }))}
+          options={(Object.keys(PERIOD_LABEL) as Period[]).map((v) => ({
+            value: v,
+            label: (tab === 'upcoming' ? PERIOD_LABEL_UPCOMING : PERIOD_LABEL)[v],
+          }))}
           onChange={(v) => setParam('period', v)}
         />
         {tab === 'past' && (

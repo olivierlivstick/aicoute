@@ -9,6 +9,12 @@
  *   - { schedule_id: string } → régénère uniquement pour ce schedule.
  *       Si le schedule est inactif ou n'existe plus, les futurs calls
  *       scheduled de ce schedule sont supprimés.
+ *
+ * Auto-correction : pour un schedule actif, on ÉLAGUE d'abord les futurs calls
+ * status='scheduled' de ce schedule dont le scheduled_at ne fait plus partie de
+ * la projection courante (créneaux orphelins après un changement d'heure ou de
+ * jours), PUIS on upsert les bons créneaux. On ne touche jamais aux statuts
+ * notified / in_progress / completed (historique + appels en cours préservés).
  *   - {} ou {schedule_id: null} → boucle sur tous les schedules actifs
  *       (utilisé par le cron quotidien pour étendre l'horizon).
  *
@@ -79,7 +85,8 @@ Deno.serve(async (req: Request) => {
 
     let inserted = 0
     let skipped  = 0
-    const debug: Array<{ schedule_id: string; days_of_week: number[]; time_of_day: string; timezone: string; days_of_week_is_array: boolean; days_of_week_type: string; slots: number; first_slot: string | null; error: string | null }> = []
+    let pruned   = 0
+    const debug: Array<{ schedule_id: string; days_of_week: number[]; time_of_day: string; timezone: string; days_of_week_is_array: boolean; days_of_week_type: string; slots: number; first_slot: string | null; pruned: number; error: string | null }> = []
 
     for (const s of schedules) {
       const slots = projectSlots(s, HORIZON_DAYS)
@@ -92,6 +99,7 @@ Deno.serve(async (req: Request) => {
         days_of_week_type:     typeof s.days_of_week,
         slots:                 slots.length,
         first_slot:            slots[0]?.toISOString() ?? null,
+        pruned:                0,
         error:                 null as string | null,
       }
 
@@ -99,6 +107,27 @@ Deno.serve(async (req: Request) => {
         debug.push(dbg)
         continue
       }
+
+      // Élagage : supprime les futurs 'scheduled' de ce schedule qui ne sont plus
+      // dans la projection (orphelins d'un ancien horaire/jour). Jamais les autres
+      // statuts. NB : un 'completed' sur un créneau futur (appel déclenché en avance)
+      // bloquera toujours la recréation de ce créneau — c'est voulu (slot consommé).
+      const keepIso = slots.map((at) => at.toISOString())
+      const { count: prunedCount, error: pruneError } = await supabase
+        .from('calls')
+        .delete({ count: 'exact' })
+        .eq('schedule_id', s.id)
+        .eq('status', 'scheduled')
+        .gte('scheduled_at', new Date().toISOString())
+        .not('scheduled_at', 'in', `(${keepIso.map((v) => `"${v}"`).join(',')})`)
+      if (pruneError) {
+        dbg.error = `prune: ${pruneError.message}`
+        console.error(`[regenerate-future-calls] prune schedule=${s.id}: ${pruneError.message}`)
+        debug.push(dbg)
+        continue
+      }
+      dbg.pruned = prunedCount ?? 0
+      pruned += prunedCount ?? 0
 
       const rows = slots.map((at) => ({
         beneficiary_id: s.beneficiary_id,
@@ -126,7 +155,7 @@ Deno.serve(async (req: Request) => {
       debug.push(dbg)
     }
 
-    return jsonResponse({ success: true, schedules: schedules.length, inserted, skipped, debug })
+    return jsonResponse({ success: true, schedules: schedules.length, inserted, skipped, pruned, debug })
 
   } catch (err) {
     console.error('[regenerate-future-calls] erreur:', err)
