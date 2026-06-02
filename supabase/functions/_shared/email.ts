@@ -4,10 +4,11 @@
  */
 
 export interface SendEmailOptions {
-  to:      string | string[]
-  subject: string
-  html:    string
-  text?:   string
+  to:        string | string[]
+  subject:   string
+  html:      string
+  text?:     string
+  reply_to?: string | string[]
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -58,6 +59,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
       subject: options.subject,
       html:    options.html,
       text:    options.text,
+      ...(options.reply_to ? { reply_to: options.reply_to } : {}),
     }),
   })
 

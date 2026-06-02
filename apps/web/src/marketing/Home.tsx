@@ -10,6 +10,7 @@ import { Security } from '@/marketing/components/Security'
 import { Pricing } from '@/marketing/components/Pricing'
 import { Experts } from '@/marketing/components/Experts'
 import { FAQ } from '@/marketing/components/FAQ'
+import { Contact } from '@/marketing/components/Contact'
 import { FinalCTA } from '@/marketing/components/FinalCTA'
 import { Footer } from '@/marketing/components/Footer'
 
@@ -28,6 +29,7 @@ export function Home() {
         <Pricing />
         <Experts />
         <FAQ />
+        <Contact />
         <FinalCTA />
       </main>
       <Footer />

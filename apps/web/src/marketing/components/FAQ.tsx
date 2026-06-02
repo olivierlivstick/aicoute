@@ -58,7 +58,7 @@ export function FAQ() {
             </h2>
             <p className="mt-5 text-brun-700 leading-relaxed">
               Tout ce qu'on nous demande le plus souvent. Une autre question ?{' '}
-              <a href="#" className="text-terracotta-dark link-underline font-medium">
+              <a href="#contact" className="text-terracotta-dark link-underline font-medium">
                 Écrivez-nous.
               </a>
             </p>

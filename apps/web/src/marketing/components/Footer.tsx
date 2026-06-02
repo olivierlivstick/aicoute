@@ -18,7 +18,7 @@ export function Footer() {
       links: [
         { label: 'À propos', href: '#' },
         { label: 'Blog', href: '#' },
-        { label: 'Contact', href: '#' },
+        { label: 'Contact', href: '#contact' },
         { label: 'Presse', href: '#' },
       ],
     },
@@ -52,7 +52,9 @@ export function Footer() {
                 <Icon.Instagram size={16} />
               </a>
               <a
-                href="#"
+                href="https://www.linkedin.com/company/aicoute/"
+                target="_blank"
+                rel="noopener noreferrer"
                 aria-label="LinkedIn"
                 className="w-9 h-9 rounded-full border border-creme/15 flex items-center justify-center hover:border-creme/40 hover:text-creme transition-colors"
               >
