@@ -69,7 +69,9 @@ export function useBeneficiary(id: string | undefined) {
 }
 
 export async function createBeneficiary(
-  data: Omit<Beneficiary, 'id' | 'created_at' | 'updated_at'>
+  // report_recipients est optionnel à la création (défaut DB '{}') — il se gère
+  // ensuite dans l'onglet « Infos de base ».
+  data: Omit<Beneficiary, 'id' | 'created_at' | 'updated_at' | 'report_recipients'>
 ): Promise<{ id: string } | null> {
   const { data: result, error } = await supabase
     .from('beneficiaries')

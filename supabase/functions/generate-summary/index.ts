@@ -15,7 +15,8 @@
 
 import { corsHeaders, handleCors } from '../_shared/cors.ts'
 import { getSupabaseAdmin } from '../_shared/supabaseAdmin.ts'
-import { sendEmail, reportEmailHtml } from '../_shared/email.ts'
+import { sendEmail, reportEmailHtml, normalizeRecipients } from '../_shared/email.ts'
+import { issueReportToken } from '../_shared/reportToken.ts'
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
 
@@ -210,7 +211,14 @@ RÈGLES GÉNÉRALES :
     const notifyOptIn     = beneficiary.notify_call_report !== false  // default TRUE
     let   reportEmailSent = false
 
-    if (notifyOptIn && caregiver?.email && !alreadySent) {
+    // Destinataires : aidant (en premier) + proches déclarés sur le bénéficiaire
+    // (beneficiaries.report_recipients). Validés + dédoublonnés.
+    const recipients = normalizeRecipients([
+      caregiver?.email,
+      ...(Array.isArray(beneficiary.report_recipients) ? beneficiary.report_recipients : []),
+    ])
+
+    if (notifyOptIn && recipients.length > 0 && !alreadySent) {
       const callDate = new Date(call.ended_at ?? call.scheduled_at)
       const durationMin = call.duration_seconds
         ? Math.round(call.duration_seconds / 60)
@@ -221,8 +229,12 @@ RÈGLES GÉNÉRALES :
         hour: '2-digit', minute: '2-digit',
       })
 
+      // Jeton de partage public (page /r/:token, valable 48h) — émis juste
+      // avant l'envoi pour que la fenêtre court à partir de l'email reçu.
+      const { url: reportUrl } = await issueReportToken(supabase, call_id)
+
       const ok = await sendEmail({
-        to:      caregiver.email,
+        to:      recipients,
         subject: `Compte-rendu de l'appel de ${beneficiary.first_name} — ${mood_detected === 'concerned' ? '⚠️ ' : ''}${MOOD_LABELS[mood_detected]}`,
         html: reportEmailHtml({
           caregiver_name:   caregiver.full_name ?? 'Aidant',
@@ -234,7 +246,7 @@ RÈGLES GÉNÉRALES :
           key_topics,
           alerts,
           app_url:          appUrl,
-          call_id,
+          report_url:       reportUrl,
         }),
       })
 

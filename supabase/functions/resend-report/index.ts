@@ -21,8 +21,9 @@
 import { corsHeaders, handleCors }      from '../_shared/cors.ts'
 import { getSupabaseAdmin }             from '../_shared/supabaseAdmin.ts'
 import { requireAdmin }                 from '../_shared/requireAdmin.ts'
-import { sendEmail, reportEmailHtml }   from '../_shared/email.ts'
+import { sendEmail, reportEmailHtml, normalizeRecipients } from '../_shared/email.ts'
 import type { EmailAlert }              from '../_shared/email.ts'
+import { issueReportToken }             from '../_shared/reportToken.ts'
 
 const MOOD_LABELS: Record<string, string> = {
   positive:  'Positif 😊',
@@ -57,8 +58,13 @@ Deno.serve(async (req: Request) => {
     const beneficiary = call.beneficiaries
     const caregiver   = beneficiary?.profiles
 
-    if (!caregiver?.email) {
-      return jsonResponse({ error: "L'aidant n'a pas d'adresse email renseignée." }, 422)
+    // Destinataires : aidant + proches déclarés (beneficiaries.report_recipients).
+    const recipients = normalizeRecipients([
+      caregiver?.email,
+      ...(Array.isArray(beneficiary?.report_recipients) ? beneficiary.report_recipients : []),
+    ])
+    if (recipients.length === 0) {
+      return jsonResponse({ error: "Aucune adresse email valide (aidant ni destinataires)." }, 422)
     }
 
     // ── Cas 1 : compte-rendu jamais généré → on délègue à generate-summary.
@@ -89,8 +95,12 @@ Deno.serve(async (req: Request) => {
       weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
     })
 
+    // Renvoi → jeton de partage frais (la fenêtre 48h repart de ce renvoi,
+    // l'éventuel ancien lien devient invalide).
+    const { url: reportUrl } = await issueReportToken(supabase, call_id)
+
     const ok = await sendEmail({
-      to:      caregiver.email,
+      to:      recipients,
       subject: `Compte-rendu de l'appel de ${beneficiary.first_name} — ${mood === 'concerned' ? '⚠️ ' : ''}${MOOD_LABELS[mood]}`,
       html: reportEmailHtml({
         caregiver_name:   caregiver.full_name ?? 'Aidant',
@@ -102,7 +112,7 @@ Deno.serve(async (req: Request) => {
         key_topics:       Array.isArray(call.key_topics) ? call.key_topics : [],
         alerts:           (Array.isArray(call.alerts) ? call.alerts : []) as EmailAlert[],
         app_url:          appUrl,
-        call_id,
+        report_url:       reportUrl,
       }),
     })
 

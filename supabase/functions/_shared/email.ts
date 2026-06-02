@@ -10,6 +10,27 @@ export interface SendEmailOptions {
   text?:   string
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/**
+ * Assemble la liste de destinataires d'un email de compte-rendu :
+ * valide chaque adresse, retire les doublons (insensible à la casse) en
+ * conservant l'ordre (l'aidant en premier). Renvoie [] si rien de valide.
+ */
+export function normalizeRecipients(list: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of list) {
+    const email = (raw ?? '').trim()
+    if (!email || !EMAIL_RE.test(email)) continue
+    const key = email.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(email)
+  }
+  return out
+}
+
 export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
   const apiKey  = Deno.env.get('RESEND_API_KEY')
   // FROM_EMAIL est le nom standard du projet (cf. CLAUDE.md). RESEND_FROM_EMAIL
@@ -85,11 +106,11 @@ export function reportEmailHtml(params: {
   key_topics:       string[]
   alerts:           EmailAlert[]
   app_url:          string
-  call_id:          string
+  report_url:       string
 }): string {
   const {
     caregiver_name, beneficiary_name, call_date, duration_min,
-    mood_label, summary, key_topics, alerts, app_url, call_id,
+    mood_label, summary, key_topics, alerts, app_url, report_url,
   } = params
 
   // Fraunces pour les titres (fallback Georgia/serif), Inter pour le corps (fallback system).
@@ -169,11 +190,14 @@ export function reportEmailHtml(params: {
 
       <!-- CTA -->
       <div style="text-align:center;margin:32px 0 8px">
-        <a href="${app_url}/historique/${call_id}"
+        <a href="${report_url}"
            style="display:inline-block;background:#C75D3A;color:white;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600;text-decoration:none;letter-spacing:0.3px">
           Voir le compte-rendu complet →
         </a>
       </div>
+      <p style="color:#9A8467;font-size:12px;text-align:center;margin:14px 0 0;line-height:1.5">
+        Ce lien est valable 48&nbsp;heures et peut être partagé avec un proche, sans création de compte.
+      </p>
     </div>
 
     <!-- Footer -->

@@ -6,6 +6,7 @@ import { AidantOnly } from '@/components/AidantOnly'
 import { useIsAdmin } from '@/hooks/useIsAdmin'
 import { Home } from '@/marketing/Home'
 import { TrackCallsPage } from '@/marketing/TrackCalls'
+import { PublicReportPage } from '@/pages/public/PublicReport'
 
 // Mono-site : la vitrine et le back-office sont la même app, servie sur deux
 // sous-domaines. Sur app.modect.com on entre dans le back-office ; ailleurs
@@ -59,6 +60,10 @@ export function App() {
 
         {/* Tracking admin des démos vitrine — protégé par ?key=<DEMO_TRACK_KEY> */}
         <Route path="/track_calls" element={<TrackCallsPage />} />
+
+        {/* Compte-rendu partageable (public, sans login) — jeton 48h dans l'URL.
+            Servi sur les deux hôtes (www + app) ; data via Edge Fn get-report. */}
+        <Route path="/r/:token" element={<PublicReportPage />} />
 
         {/* App (protégée) */}
         <Route

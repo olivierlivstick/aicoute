@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -6,7 +6,7 @@ import { z } from 'zod'
 import {
   IdCard, BookOpen, Heart, Sparkles, Bot, Check, Brain,
   Plus, Pencil, Trash2, Lightbulb, Star, CalendarHeart, SmilePlus, MessageCircle, Link2, RotateCcw,
-  CalendarClock, AlertTriangle, Clock, Phone,
+  CalendarClock, AlertTriangle, Clock, Phone, Mail, X,
 } from 'lucide-react'
 import { useBeneficiary } from '@/hooks/useBeneficiary'
 import { useMemories } from '@/hooks/useMemories'
@@ -292,6 +292,8 @@ const GENDERS: Array<{ value: 'male' | 'female' | 'other'; label: string }> = [
   { value: 'other',  label: 'Autre' },
 ]
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 function BasicsSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; onSaved: () => void }) {
   const { save, saving, saved, error } = useSection(beneficiary)
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<BasicsForm>({
@@ -307,6 +309,34 @@ function BasicsSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; onS
 
   const selectedGender = watch('gender')
 
+  // Destinataires supplémentaires des emails de compte-rendu (proches).
+  const [recipients, setRecipients] = useState<string[]>(beneficiary.report_recipients ?? [])
+  const [draft, setDraft] = useState('')
+  const [recipientError, setRecipientError] = useState<string | null>(null)
+
+  // Re-synchronise si on change de bénéficiaire sans remonter le composant.
+  useEffect(() => {
+    setRecipients(beneficiary.report_recipients ?? [])
+    setDraft('')
+    setRecipientError(null)
+  }, [beneficiary.id])
+
+  const addRecipient = () => {
+    const email = draft.trim()
+    if (!email) return
+    if (!EMAIL_RE.test(email)) { setRecipientError('Adresse email invalide.'); return }
+    if (recipients.some((r) => r.toLowerCase() === email.toLowerCase())) {
+      setRecipientError('Cette adresse est déjà dans la liste.'); return
+    }
+    setRecipients([...recipients, email])
+    setDraft('')
+    setRecipientError(null)
+  }
+
+  const removeRecipient = (email: string) => {
+    setRecipients(recipients.filter((r) => r !== email))
+  }
+
   const onSubmit = async (values: BasicsForm) => {
     const ok = await save({
       first_name: values.first_name,
@@ -314,6 +344,7 @@ function BasicsSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; onS
       birth_year: values.birth_year ? Number(values.birth_year) : null,
       gender:     values.gender ?? null,
       phone:      values.phone || null,
+      report_recipients: recipients,
     })
     if (ok) onSaved()
   }
@@ -371,6 +402,53 @@ function BasicsSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; onS
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Destinataires des emails de compte-rendu */}
+        <div className="pt-2 border-t border-slate-100">
+          <Label>Destinataires des comptes-rendus</Label>
+          <p className="text-xs text-slate-500 mt-0.5 mb-2 leading-relaxed">
+            Vous recevez déjà les comptes-rendus. Ajoutez ici les adresses des proches
+            (frères, sœurs…) qui doivent aussi les recevoir après chaque appel.
+          </p>
+
+          {recipients.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {recipients.map((email) => (
+                <span
+                  key={email}
+                  className="inline-flex items-center gap-1.5 bg-primary-50 text-primary border border-primary-100 rounded-full pl-3 pr-1.5 py-1 text-sm font-medium"
+                >
+                  <Mail size={13} />
+                  {email}
+                  <button
+                    type="button"
+                    onClick={() => removeRecipient(email)}
+                    className="ml-0.5 rounded-full p-0.5 hover:bg-primary-100 transition-colors"
+                    aria-label={`Retirer ${email}`}
+                  >
+                    <X size={14} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Input
+              type="email"
+              placeholder="frere@exemple.fr"
+              value={draft}
+              onChange={(e) => { setDraft(e.target.value); setRecipientError(null) }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); addRecipient() }
+              }}
+            />
+            <Button type="button" variant="secondary" onClick={addRecipient} className="shrink-0">
+              <Plus size={16} className="mr-1" /> Ajouter
+            </Button>
+          </div>
+          {recipientError && <p className="text-xs text-red-600 mt-1">{recipientError}</p>}
         </div>
       </div>
 
