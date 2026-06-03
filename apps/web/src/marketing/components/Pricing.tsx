@@ -20,7 +20,6 @@ export function Pricing() {
       features: [
         '1 appel par semaine',
         'Résumé email après chaque appel',
-        '1 profil de proche',
         'Support par email',
       ],
       cta: 'Choisir Découverte',
@@ -33,7 +32,6 @@ export function Pricing() {
       features: [
         '3 appels par semaine',
         'Résumé + transcription complète',
-        "Jusqu'à 2 profils de proches",
         'Personnalisation avancée',
         'Support prioritaire',
       ],
@@ -47,7 +45,6 @@ export function Pricing() {
       features: [
         '1 appel par jour',
         "Alertes en temps réel si point d'attention",
-        "Jusqu'à 4 profils de proches",
         'Rapport mensuel détaillé',
         'Accompagnement humain dédié',
       ],
@@ -76,7 +73,16 @@ export function Pricing() {
 
         <p className="mt-10 text-sm text-center text-brun-700 max-w-2xl mx-auto">
           Tous les tarifs incluent l'accès à l'espace personnel et la mémoire
-          des conversations sur 12 mois glissants.
+          des conversations sur 12 mois glissants. Si vous souhaitez offrir ce
+          service à plusieurs proches, des tarifs dégressifs sont possibles —
+          contactez-nous à{' '}
+          <a
+            href="mailto:contact@aicoute.fr"
+            className="text-terracotta-dark link-underline font-medium"
+          >
+            contact@aicoute.fr
+          </a>
+          .
         </p>
       </div>
     </section>
