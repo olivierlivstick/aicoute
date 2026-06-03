@@ -92,12 +92,10 @@ export function DashboardPage() {
             {formatDate(new Date().toISOString(), { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
         </div>
-        <Link to="/beneficiary/new">
-          <Button>
-            <Plus size={18} />
-            Ajouter un proche
-          </Button>
-        </Link>
+        <Button disabled title="Bientôt disponible — un bénéficiaire par compte pour le moment">
+          <Plus size={18} />
+          Ajouter un bénéficiaire
+        </Button>
       </div>
 
       {/* Contenu */}
@@ -109,15 +107,15 @@ export function DashboardPage() {
         <div className="text-center py-20 bg-white rounded-2xl border border-slate-100 shadow-sm">
           <div className="text-5xl mb-4">💛</div>
           <h2 className="font-title text-xl font-semibold text-slate-700 mb-2">
-            Aucun proche configuré
+            Aucun bénéficiaire configuré
           </h2>
           <p className="text-slate-500 mb-6">
-            Ajoutez un proche pour commencer à planifier des appels IA.
+            Ajoutez un bénéficiaire pour commencer à planifier des appels IA.
           </p>
           <Link to="/beneficiary/new">
             <Button>
               <Plus size={18} />
-              Ajouter mon premier proche
+              Créer le profil de mon bénéficiaire
             </Button>
           </Link>
         </div>

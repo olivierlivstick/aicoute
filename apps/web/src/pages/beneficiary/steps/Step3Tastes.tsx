@@ -30,7 +30,7 @@ export function Step3Tastes({ data, onNext, onPrev }: Props) {
   return (
     <StepLayout
       title="Ses goûts et centres d'intérêt"
-      subtitle="Guidez l'IA pour des échanges qui plaisent vraiment à votre proche"
+      subtitle="Guidez l'IA pour des échanges qui plaisent vraiment à votre bénéficiaire"
       onPrev={onPrev}
       onNext={handleSubmit(onSubmit)}
     >

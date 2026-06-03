@@ -73,7 +73,7 @@ export function Step5AIConfig({ data, onNext, onPrev }: Props) {
       <div>
         <Label htmlFor="ai_persona_name">Prénom du compagnon IA</Label>
         <p className="text-xs text-slate-400 mb-1">
-          Quel prénom votre proche entendra-t-il pour ce compagnon ?
+          Quel prénom votre bénéficiaire entendra-t-il pour ce compagnon ?
         </p>
         <Input
           id="ai_persona_name"
@@ -87,7 +87,7 @@ export function Step5AIConfig({ data, onNext, onPrev }: Props) {
       <div>
         <Label>Genre de la voix</Label>
         <p className="text-xs text-slate-400 mb-1">
-          Voix masculine ou féminine pour les appels de votre proche.
+          Voix masculine ou féminine pour les appels de votre bénéficiaire.
         </p>
         <div className="grid grid-cols-2 gap-2 mt-1">
           {VOICES.map(({ value, label, description }) => (

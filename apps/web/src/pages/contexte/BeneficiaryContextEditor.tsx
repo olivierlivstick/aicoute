@@ -766,7 +766,7 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
         <div>
           <Label htmlFor="ai_persona_name">Prénom du compagnon IA</Label>
           <p className="text-xs text-slate-400 mb-1">
-            Quel prénom votre proche entendra-t-il pour ce compagnon ?
+            Quel prénom votre bénéficiaire entendra-t-il pour ce compagnon ?
           </p>
           <Input
             id="ai_persona_name"

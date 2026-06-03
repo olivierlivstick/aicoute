@@ -31,14 +31,14 @@ function EmptyState() {
       <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
         <div className="text-5xl mb-4">👋</div>
         <h2 className="font-title text-xl font-semibold text-slate-700 mb-2">
-          Aucun proche configuré
+          Aucun bénéficiaire configuré
         </h2>
         <p className="text-slate-500 mb-6 max-w-md mx-auto">
-          Commencez par créer un profil pour votre proche : ces informations alimentent la conversation et la planification.
+          Commencez par créer un profil pour votre bénéficiaire : ces informations alimentent la conversation et la planification.
         </p>
         <Link to="/beneficiary/new">
           <Button>
-            <UserPlus size={16} /> Créer un proche
+            <UserPlus size={16} /> Créer un bénéficiaire
           </Button>
         </Link>
       </div>

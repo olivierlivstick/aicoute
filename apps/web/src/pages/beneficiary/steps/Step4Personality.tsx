@@ -28,7 +28,7 @@ export function Step4Personality({ data, onNext, onPrev }: Props) {
   return (
     <StepLayout
       title="Personnalité et bien-être"
-      subtitle="Aidez l'IA à adapter son comportement à votre proche"
+      subtitle="Aidez l'IA à adapter son comportement à votre bénéficiaire"
       onPrev={onPrev}
       onNext={handleSubmit(onSubmit)}
     >

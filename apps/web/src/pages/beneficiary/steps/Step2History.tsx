@@ -28,7 +28,7 @@ export function Step2History({ data, onNext, onPrev }: Props) {
   return (
     <StepLayout
       title="Son histoire"
-      subtitle="Ces informations permettent à l'IA d'évoquer naturellement la vie de votre proche"
+      subtitle="Ces informations permettent à l'IA d'évoquer naturellement la vie de votre bénéficiaire"
       onPrev={onPrev}
       onNext={handleSubmit(onSubmit)}
     >

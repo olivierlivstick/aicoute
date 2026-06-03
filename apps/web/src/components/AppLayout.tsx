@@ -164,7 +164,7 @@ export function AppLayout() {
         </aside>
 
         {/* Colonne droite : header sticky + contenu.
-            Le header (dropdown bénéficiaire + bouton « Nouveau proche ») n'a
+            Le header (dropdown bénéficiaire + bouton « Nouveau bénéficiaire ») n'a
             pas de sens pour un admin → masqué. */}
         <div className="flex-1 flex flex-col min-w-0">
           {!isAdmin && <AppHeader />}

@@ -31,7 +31,7 @@ export function Step6Phone({ data, onPrev, onSubmit, saving }: Props) {
       isLast
     >
       <div>
-        <Label htmlFor="phone">Numéro de téléphone du proche</Label>
+        <Label htmlFor="phone">Numéro de téléphone du bénéficiaire</Label>
         <p className="text-xs text-slate-400 mb-1">
           Utilisé pour envoyer la notification d'appel entrant
         </p>
@@ -63,7 +63,7 @@ export function Step6Phone({ data, onPrev, onSubmit, saving }: Props) {
           </li>
           <li className="flex gap-2">
             <span className="w-5 h-5 rounded-full bg-primary text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">4</span>
-            C'est tout ! Votre proche recevra ses premiers appels selon la planification configurée
+            C'est tout ! Votre bénéficiaire recevra ses premiers appels selon la planification configurée
           </li>
         </ol>
       </div>

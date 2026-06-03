@@ -118,7 +118,7 @@ export function BeneficiaryWizard() {
     <div className="p-8 max-w-4xl mx-auto">
       {/* Titre */}
       <div className="mb-8">
-        <h1 className="font-title text-3xl font-bold text-slate-800">Ajouter un proche</h1>
+        <h1 className="font-title text-3xl font-bold text-slate-800">Ajouter un bénéficiaire</h1>
         <p className="text-slate-500 mt-1">Remplissez le profil pour personnaliser les conversations IA</p>
       </div>
 

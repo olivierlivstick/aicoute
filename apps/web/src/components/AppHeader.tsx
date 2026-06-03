@@ -44,7 +44,7 @@ export function AppHeader() {
           <div className="h-10 w-full rounded-xl bg-slate-100 animate-pulse" />
         ) : beneficiaries.length === 0 ? (
           <div className="text-sm text-slate-400 italic">
-            Aucun proche configuré
+            Aucun bénéficiaire configuré
           </div>
         ) : (
           <>
@@ -59,7 +59,7 @@ export function AppHeader() {
                 </div>
                 <div className="min-w-0 text-left">
                   <p className="text-sm font-semibold text-slate-800 truncate">
-                    {selected ? `${selected.first_name} ${selected.last_name}` : 'Sélectionner un proche'}
+                    {selected ? `${selected.first_name} ${selected.last_name}` : 'Sélectionner un bénéficiaire'}
                   </p>
                   {selected?.is_active === false && (
                     <p className="text-[11px] text-slate-400">Profil désactivé</p>
@@ -96,11 +96,18 @@ export function AppHeader() {
         )}
       </div>
 
-      {/* Bouton nouveau bénéficiaire */}
+      {/* Bouton nouveau bénéficiaire — désactivé pour l'instant (un seul
+          bénéficiaire par compte ; la création initiale passe par l'écran d'accueil). */}
       {!isWizard && (
-        <Button onClick={handleNew} variant="ghost" size="sm">
+        <Button
+          onClick={handleNew}
+          variant="ghost"
+          size="sm"
+          disabled
+          title="Bientôt disponible — un bénéficiaire par compte pour le moment"
+        >
           <UserPlus size={16} />
-          Nouveau proche
+          Nouveau bénéficiaire
         </Button>
       )}
     </header>

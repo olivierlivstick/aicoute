@@ -36,7 +36,7 @@ export function HistoriquePage() {
       <div className="p-8 max-w-7xl mx-auto">
         <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
           <FileText size={40} className="mx-auto text-slate-200 mb-3" />
-          <p className="text-slate-400">Sélectionnez un proche pour voir son historique.</p>
+          <p className="text-slate-400">Sélectionnez un bénéficiaire pour voir son historique.</p>
         </div>
       </div>
     )
@@ -242,7 +242,7 @@ function UpcomingCallsTab({ schedules, loading }: { schedules: SessionSchedule[]
     return (
       <div className="text-center py-16 bg-white rounded-2xl border border-slate-100">
         <CalendarClock size={40} className="mx-auto text-slate-200 mb-3" />
-        <p className="text-slate-400 mb-2">Aucun planning enregistré pour ce proche.</p>
+        <p className="text-slate-400 mb-2">Aucun planning enregistré pour ce bénéficiaire.</p>
         <Link to="/planning" className="text-primary text-sm font-medium hover:underline">
           Créer le planning →
         </Link>

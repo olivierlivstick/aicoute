@@ -58,7 +58,7 @@ export function Step1BasicInfo({ data, onNext, onPrev }: Props) {
   return (
     <StepLayout
       title="Informations de base"
-      subtitle="Les informations essentielles sur votre proche"
+      subtitle="Les informations essentielles sur votre bénéficiaire"
       onPrev={onPrev}
       onNext={handleSubmit(onSubmit)}
       isFirst
@@ -110,7 +110,7 @@ export function Step1BasicInfo({ data, onNext, onPrev }: Props) {
 
       <div className="bg-primary-50 rounded-xl px-4 py-3">
         <p className="text-sm text-primary-700">
-          💡 Ces informations aident l'IA à s'adresser naturellement à votre proche.
+          💡 Ces informations aident l'IA à s'adresser naturellement à votre bénéficiaire.
         </p>
       </div>
     </StepLayout>
