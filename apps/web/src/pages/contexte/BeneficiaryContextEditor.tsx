@@ -659,6 +659,7 @@ const aiSchema = z.object({
   ai_voice:            z.enum(['cedar', 'marin']),
   conversation_style:  z.enum(['warm', 'playful', 'calm', 'formal']),
   language_preference: z.string().min(2),
+  report_language:     z.string().min(2),
   preferred_engine:    z.enum(['openai', 'gemini']),
   custom_prompt:       z.string().optional(),
 })
@@ -706,6 +707,7 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
       ai_voice:            voiceToGenderValue(beneficiary.ai_voice),
       conversation_style:  beneficiary.conversation_style ?? 'warm',
       language_preference: beneficiary.language_preference ?? 'fr',
+      report_language:     (beneficiary as unknown as { report_language?: string }).report_language ?? 'fr',
       // preferred_engine vient de la DB (cast pour contourner les types Database
       // incomplets cf. CLAUDE.md "Build Netlify : utiliser vite build sans tsc")
       preferred_engine:    ((beneficiary as unknown as { preferred_engine?: string }).preferred_engine === 'gemini' ? 'gemini' : 'openai'),
@@ -726,6 +728,7 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
       ai_voice:            values.ai_voice,
       conversation_style:  values.conversation_style,
       language_preference: values.language_preference,
+      report_language:     values.report_language,
       preferred_engine:    values.preferred_engine,
       // vide → NULL : on retombe alors sur le prompt par défaut au moment de l'appel
       custom_prompt:       trimmed ? trimmed : null,
@@ -817,17 +820,34 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
           </div>
         </div>
 
-        <div>
-          <Label htmlFor="language_preference">Langue des conversations</Label>
-          <select
-            id="language_preference"
-            className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-4 font-body text-base text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            {...register('language_preference')}
-          >
-            {LANGUAGES.map(({ value, label }) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="language_preference">Langue des conversations</Label>
+            <p className="text-xs text-slate-400 mb-1">La langue parlée pendant l'appel.</p>
+            <select
+              id="language_preference"
+              className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-4 font-body text-base text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              {...register('language_preference')}
+            >
+              {LANGUAGES.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <Label htmlFor="report_language">Langue des retours</Label>
+            <p className="text-xs text-slate-400 mb-1">Résumé, alertes et email envoyés à l'aidant.</p>
+            <select
+              id="report_language"
+              className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-4 font-body text-base text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              {...register('report_language')}
+            >
+              {LANGUAGES.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div>

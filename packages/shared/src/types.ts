@@ -38,6 +38,7 @@ export interface Beneficiary {
   personality_notes: string | null
   health_notes: string | null
   language_preference: string
+  report_language: string
   ai_voice: AIVoice
   ai_persona_name: string
   conversation_style: ConversationStyle

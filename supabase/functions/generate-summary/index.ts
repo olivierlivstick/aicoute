@@ -17,14 +17,9 @@ import { corsHeaders, handleCors } from '../_shared/cors.ts'
 import { getSupabaseAdmin } from '../_shared/supabaseAdmin.ts'
 import { sendEmail, reportEmailHtml, normalizeRecipients } from '../_shared/email.ts'
 import { issueReportToken } from '../_shared/reportToken.ts'
+import { normalizeReportLang, LANG_NAME_FR, MOOD_LABELS, DATE_LOCALE, EMAIL_STRINGS } from '../_shared/reportI18n.ts'
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
-
-const MOOD_LABELS: Record<string, string> = {
-  positive:  'Positif 😊',
-  neutral:   'Neutre 😐',
-  concerned: 'Préoccupant 😟',
-}
 
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req)
@@ -63,6 +58,14 @@ Deno.serve(async (req: Request) => {
     const beneficiary = call.beneficiaries
     const caregiver   = beneficiary?.profiles
 
+    // Langue des RETOURS (résumé/alertes/email, lus par l'aidant) vs langue de
+    // CONVERSATION (mémoire long-terme, réinjectée dans les appels → on la garde
+    // dans la langue parlée pour que l'IA reste naturelle).
+    const reportLang     = normalizeReportLang(beneficiary?.report_language)
+    const convLang       = normalizeReportLang(beneficiary?.language_preference)
+    const reportLangName = LANG_NAME_FR[reportLang]
+    const convLangName   = LANG_NAME_FR[convLang]
+
     // 2. Formater le transcript pour GPT-4o
     const transcriptText = (call.transcript as Array<{ role: string; text: string; timestamp: string }>)
       .map((t) => `[${t.role === 'user' ? beneficiary.first_name : beneficiary.ai_persona_name}] ${t.text}`)
@@ -71,25 +74,30 @@ Deno.serve(async (req: Request) => {
     // 3. Construire le prompt d'analyse
     const analysisPrompt = `Tu es un assistant bienveillant qui analyse des conversations entre un compagnon IA et une personne âgée pour en extraire un compte-rendu utile à l'aidant familial.
 
+LANGUE DES CHAMPS (IMPÉRATIF) :
+- "summary", "key_topics", "memorable_moments" et le champ "evidence" des alertes : rédige-les en ${reportLangName} (langue du compte-rendu destiné à l'aidant).
+- "new_memories" (champ "content") : rédige-les en ${convLangName} (langue parlée par la personne, car ces mémoires seront réutilisées lors des prochains appels).
+- Les valeurs d'énumération ("mood_detected", "category", "severity", "type") restent dans les codes anglais ci-dessous, ne les traduis PAS.
+
 CONVERSATION À ANALYSER :
 ${transcriptText}
 
 INSTRUCTIONS :
 Génère un JSON structuré avec EXACTEMENT ces champs (aucun autre) :
 {
-  "summary": "Résumé narratif de 3 à 5 phrases, ton bienveillant et chaleureux, en français, destiné à l'aidant",
+  "summary": "Résumé narratif de 3 à 5 phrases, ton bienveillant et chaleureux, en ${reportLangName}, destiné à l'aidant",
   "mood_detected": "positive" | "neutral" | "concerned",
-  "key_topics": ["thème1", "thème2", ...] (max 6 thèmes courts),
-  "memorable_moments": ["moment1", "moment2", ...] (max 3 moments touchants ou importants),
+  "key_topics": ["thème1", "thème2", ...] (max 6 thèmes courts, en ${reportLangName}),
+  "memorable_moments": ["moment1", "moment2", ...] (max 3 moments touchants ou importants, en ${reportLangName}),
   "alerts": [
     {
       "category": "health" | "mood" | "cognition" | "social" | "autonomy" | "other",
       "severity": "low" | "medium" | "high",
-      "evidence": "Citation ou paraphrase courte du transcript justifiant le signal"
+      "evidence": "Citation ou paraphrase courte du transcript justifiant le signal, en ${reportLangName}"
     }
   ] (signaux faibles UNIQUEMENT — laisser [] si rien d'inquiétant, max 5),
   "new_memories": [
-    { "type": "fact"|"preference"|"event"|"mood"|"topic", "content": "phrase courte à mémoriser", "importance": 1-10 }
+    { "type": "fact"|"preference"|"event"|"mood"|"topic", "content": "phrase courte à mémoriser, en ${convLangName}", "importance": 1-10 }
   ] (max 8 mémoires utiles pour les prochains appels)
 }
 
@@ -177,6 +185,7 @@ RÈGLES GÉNÉRALES :
         memorable_moments,
         alerts,
         report_available: true,
+        report_language:  reportLang,   // snapshot pour figer la langue du rapport
       })
       .eq('id', call_id)
 
@@ -224,10 +233,12 @@ RÈGLES GÉNÉRALES :
         ? Math.round(call.duration_seconds / 60)
         : 0
 
-      const dateFormatted = callDate.toLocaleDateString('fr-FR', {
+      const dateFormatted = callDate.toLocaleDateString(DATE_LOCALE[reportLang], {
         weekday: 'long', day: 'numeric', month: 'long',
         hour: '2-digit', minute: '2-digit',
       })
+
+      const moodLabel = MOOD_LABELS[reportLang][mood_detected]
 
       // Jeton de partage public (page /r/:token, valable 48h) — émis juste
       // avant l'envoi pour que la fenêtre court à partir de l'email reçu.
@@ -235,18 +246,19 @@ RÈGLES GÉNÉRALES :
 
       const ok = await sendEmail({
         to:      recipients,
-        subject: `Compte-rendu de l'appel de ${beneficiary.first_name} — ${mood_detected === 'concerned' ? '⚠️ ' : ''}${MOOD_LABELS[mood_detected]}`,
+        subject: EMAIL_STRINGS[reportLang].subject(beneficiary.first_name, moodLabel, mood_detected === 'concerned'),
         html: reportEmailHtml({
           caregiver_name:   caregiver.full_name ?? 'Aidant',
           beneficiary_name: `${beneficiary.first_name} ${beneficiary.last_name}`,
           call_date:        dateFormatted,
           duration_min:     durationMin,
-          mood_label:       MOOD_LABELS[mood_detected],
+          mood_label:       moodLabel,
           summary,
           key_topics,
           alerts,
           app_url:          appUrl,
           report_url:       reportUrl,
+          lang:             reportLang,
         }),
       })
 

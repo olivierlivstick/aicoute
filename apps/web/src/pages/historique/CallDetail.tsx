@@ -7,26 +7,32 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { markReportRead } from '@/hooks/useCalls'
-import { formatDate, formatDuration, MOOD_LABELS } from '@/lib/utils'
+import { formatDate, formatDuration } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import {
+  normalizeReportLang, CATEGORY_LABELS, SEVERITY_LABELS, REPORT_TEXT, moodMeta,
+} from '@/lib/reportI18n'
 import type { Call, TranscriptEntry, CallAlert, AlertCategory, AlertSeverity } from '@modect/shared'
 
-const CATEGORY_META: Record<AlertCategory, { label: string; icon: React.ReactNode }> = {
-  health:    { label: 'Santé',       icon: <Stethoscope size={14} /> },
-  mood:      { label: 'Humeur',      icon: <Smile       size={14} /> },
-  cognition: { label: 'Cognition',   icon: <Brain       size={14} /> },
-  social:    { label: 'Lien social', icon: <Users       size={14} /> },
-  autonomy:  { label: 'Autonomie',   icon: <HandHeart   size={14} /> },
-  other:     { label: 'Autre',       icon: <Info        size={14} /> },
+// Icônes par catégorie (indépendantes de la langue ; les libellés viennent de reportI18n).
+const CATEGORY_ICON: Record<AlertCategory, React.ReactNode> = {
+  health:    <Stethoscope size={14} />,
+  mood:      <Smile       size={14} />,
+  cognition: <Brain       size={14} />,
+  social:    <Users       size={14} />,
+  autonomy:  <HandHeart   size={14} />,
+  other:     <Info        size={14} />,
 }
 
-const SEVERITY_META: Record<AlertSeverity, { label: string; cls: string; barCls: string }> = {
-  low:    { label: 'Faible',  cls: 'bg-amber-50  text-amber-700  border-amber-100',  barCls: 'bg-amber-300' },
-  medium: { label: 'Modérée', cls: 'bg-orange-50 text-orange-700 border-orange-100', barCls: 'bg-orange-400' },
-  high:   { label: 'Élevée',  cls: 'bg-red-50    text-red-700    border-red-100',    barCls: 'bg-red-500' },
+// Styles par sévérité (couleurs indépendantes de la langue).
+const SEVERITY_STYLE: Record<AlertSeverity, { cls: string; barCls: string }> = {
+  low:    { cls: 'bg-amber-50  text-amber-700  border-amber-100',  barCls: 'bg-amber-300' },
+  medium: { cls: 'bg-orange-50 text-orange-700 border-orange-100', barCls: 'bg-orange-400' },
+  high:   { cls: 'bg-red-50    text-red-700    border-red-100',    barCls: 'bg-red-500' },
 }
 
 interface CallWithBeneficiary extends Call {
+  report_language?: string | null
   beneficiaries: {
     first_name:    string
     last_name:     string
@@ -73,7 +79,9 @@ export function CallDetailPage() {
   }
 
   const beneficiary = call.beneficiaries
-  const mood        = call.mood_detected ? MOOD_LABELS[call.mood_detected] : null
+  const lang        = normalizeReportLang(call.report_language)
+  const t           = REPORT_TEXT[lang]
+  const mood        = call.mood_detected ? moodMeta(lang, call.mood_detected) : null
   const transcript  = (call.transcript ?? []) as TranscriptEntry[]
 
   return (
@@ -85,7 +93,7 @@ export function CallDetailPage() {
         </Link>
         <div>
           <h1 className="font-title text-2xl font-bold text-slate-800">
-            Compte-rendu — {beneficiary?.first_name} {beneficiary?.last_name}
+            {t.headerPrefix} {beneficiary?.first_name} {beneficiary?.last_name}
           </h1>
           <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
             <span className="flex items-center gap-1">
@@ -113,7 +121,7 @@ export function CallDetailPage() {
           )}>
             <span className="text-5xl">{mood.emoji}</span>
             <div>
-              <p className="font-semibold text-slate-700 text-lg">Humeur générale</p>
+              <p className="font-semibold text-slate-700 text-lg">{t.moodTitle}</p>
               <p className={cn('text-base font-bold', mood.color)}>{mood.label}</p>
             </div>
           </div>
@@ -124,15 +132,17 @@ export function CallDetailPage() {
           <div className="bg-white border border-orange-100 rounded-2xl p-5 shadow-sm">
             <h2 className="flex items-center gap-2 font-semibold text-orange-800 mb-4">
               <AlertTriangle size={18} />
-              Signaux faibles détectés
+              {t.alertsTitle}
               <span className="text-xs text-slate-400 font-normal ml-1">
                 ({call.alerts.length})
               </span>
             </h2>
             <div className="space-y-3">
               {call.alerts.map((alert: CallAlert, i) => {
-                const cat = CATEGORY_META[alert.category] ?? CATEGORY_META.other
-                const sev = SEVERITY_META[alert.severity] ?? SEVERITY_META.low
+                const catLabel = CATEGORY_LABELS[lang][alert.category] ?? CATEGORY_LABELS[lang].other
+                const catIcon  = CATEGORY_ICON[alert.category] ?? CATEGORY_ICON.other
+                const sevLabel = SEVERITY_LABELS[lang][alert.severity] ?? SEVERITY_LABELS[lang].low
+                const sev      = SEVERITY_STYLE[alert.severity] ?? SEVERITY_STYLE.low
                 return (
                   <div
                     key={i}
@@ -142,14 +152,14 @@ export function CallDetailPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
                         <span className="flex items-center gap-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded-full">
-                          {cat.icon}
-                          {cat.label}
+                          {catIcon}
+                          {catLabel}
                         </span>
                         <span className={cn(
                           'text-xs font-semibold px-2 py-0.5 rounded-full border',
                           sev.cls,
                         )}>
-                          {sev.label}
+                          {sevLabel}
                         </span>
                       </div>
                       <p className="text-sm text-slate-600 leading-relaxed italic">
@@ -165,14 +175,14 @@ export function CallDetailPage() {
 
         {/* Résumé narratif */}
         {call.summary && (
-          <Section icon={<Sparkles size={18} className="text-primary" />} title="Résumé de la conversation">
+          <Section icon={<Sparkles size={18} className="text-primary" />} title={t.summary}>
             <p className="text-slate-600 leading-relaxed text-base">{call.summary}</p>
           </Section>
         )}
 
         {/* Thèmes abordés */}
         {call.key_topics && call.key_topics.length > 0 && (
-          <Section title="Thèmes abordés">
+          <Section title={t.topics}>
             <div className="flex flex-wrap gap-2">
               {call.key_topics.map((topic, i) => (
                 <span key={i} className="bg-primary-50 text-primary px-3 py-1 rounded-full text-sm font-medium">
@@ -185,7 +195,7 @@ export function CallDetailPage() {
 
         {/* Moments mémorables */}
         {call.memorable_moments && call.memorable_moments.length > 0 && (
-          <Section icon={<Heart size={18} className="text-accent" />} title="Moments mémorables">
+          <Section icon={<Heart size={18} className="text-accent" />} title={t.memorableMoments}>
             <ul className="space-y-2">
               {call.memorable_moments.map((moment, i) => (
                 <li key={i} className="flex items-start gap-2 text-slate-600 text-sm">
@@ -199,7 +209,7 @@ export function CallDetailPage() {
 
         {/* Transcript complet */}
         {transcript.length > 0 && (
-          <Section title={`Transcript complet (${transcript.length} échanges)`}>
+          <Section title={t.transcript(transcript.length)}>
             <button
               onClick={() => setShowTranscript(!showTranscript)}
               className="flex items-center gap-2 text-sm text-primary hover:text-primary-600 font-medium mb-3 transition-colors"
@@ -261,7 +271,7 @@ export function CallDetailPage() {
         {!call.report_available && call.status === 'completed' && (
           <div className="bg-slate-50 rounded-2xl border border-slate-100 p-6 text-center">
             <p className="text-slate-400 text-sm">
-              Le compte-rendu est en cours de génération…
+              {t.generating}
             </p>
           </div>
         )}

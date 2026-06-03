@@ -13,6 +13,7 @@ const schema = z.object({
   ai_voice:           z.enum(['cedar', 'marin']),
   conversation_style: z.enum(['warm', 'playful', 'calm', 'formal']),
   language_preference: z.string().min(2),
+  report_language:     z.string().min(2),
 })
 
 type FormData = z.infer<typeof schema>
@@ -52,6 +53,7 @@ export function Step5AIConfig({ data, onNext, onPrev }: Props) {
       ai_voice:           data.ai_voice ?? 'marin',
       conversation_style: data.conversation_style ?? 'warm',
       language_preference: data.language_preference ?? 'fr',
+      report_language:     data.report_language ?? 'fr',
     },
   })
 
@@ -130,18 +132,35 @@ export function Step5AIConfig({ data, onNext, onPrev }: Props) {
         </div>
       </div>
 
-      {/* Langue */}
-      <div>
-        <Label htmlFor="language_preference">Langue des conversations</Label>
-        <select
-          id="language_preference"
-          className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-4 font-body text-base text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          {...register('language_preference')}
-        >
-          {LANGUAGES.map(({ value, label }) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
+      {/* Langues : conversation + retours */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="language_preference">Langue des conversations</Label>
+          <p className="text-xs text-slate-400 mb-1">La langue parlée pendant l'appel.</p>
+          <select
+            id="language_preference"
+            className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-4 font-body text-base text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            {...register('language_preference')}
+          >
+            {LANGUAGES.map(({ value, label }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <Label htmlFor="report_language">Langue des retours</Label>
+          <p className="text-xs text-slate-400 mb-1">Résumé et email envoyés à l'aidant.</p>
+          <select
+            id="report_language"
+            className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-4 font-body text-base text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            {...register('report_language')}
+          >
+            {LANGUAGES.map(({ value, label }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </div>
       </div>
     </StepLayout>
   )

@@ -54,6 +54,7 @@ Deno.serve(async (req: Request) => {
       alerts:                  unknown
       transcript:              unknown
       report_available:        boolean | null
+      report_language:         string | null
       beneficiaries: { first_name: string; last_name: string; ai_persona_name: string } | null
     }
 
@@ -62,7 +63,7 @@ Deno.serve(async (req: Request) => {
       .select(
         'report_token_expires_at, scheduled_at, ended_at, duration_seconds, ' +
         'summary, mood_detected, key_topics, memorable_moments, alerts, transcript, ' +
-        'report_available, beneficiaries(first_name, last_name, ai_persona_name)',
+        'report_available, report_language, beneficiaries(first_name, last_name, ai_persona_name)',
       )
       .eq('report_token', token)
       .maybeSingle()
@@ -104,6 +105,7 @@ Deno.serve(async (req: Request) => {
         alerts:                 Array.isArray(call.alerts) ? call.alerts : [],
         transcript:             Array.isArray(call.transcript) ? call.transcript : [],
         report_available:       call.report_available ?? false,
+        report_language:        call.report_language ?? 'fr',
         expires_at:             call.report_token_expires_at,
       },
     })

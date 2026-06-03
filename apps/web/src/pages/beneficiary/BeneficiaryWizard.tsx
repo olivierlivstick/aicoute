@@ -32,6 +32,7 @@ export function BeneficiaryWizard() {
   const [step, setStep] = useState(0)
   const [data, setData] = useState<WizardData>({
     language_preference: 'fr',
+    report_language: 'fr',
     ai_voice: 'marin',
     ai_persona_name: 'Marie',
     conversation_style: 'warm',
@@ -91,6 +92,7 @@ export function BeneficiaryWizard() {
       personality_notes: final.personality_notes ?? null,
       health_notes: final.health_notes ?? null,
       language_preference: final.language_preference ?? 'fr',
+      report_language: final.report_language ?? 'fr',
       ai_voice: final.ai_voice ?? 'marin',
       ai_persona_name: final.ai_persona_name ?? 'Marie',
       conversation_style: final.conversation_style ?? 'warm',

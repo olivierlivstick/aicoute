@@ -3,6 +3,14 @@
  * Doc : https://resend.com/docs/api-reference/emails/send-email
  */
 
+import {
+  type ReportLang,
+  normalizeReportLang,
+  CATEGORY_LABELS,
+  SEVERITY_LABELS,
+  EMAIL_STRINGS,
+} from './reportI18n.ts'
+
 export interface SendEmailOptions {
   to:        string | string[]
   subject:   string
@@ -82,20 +90,13 @@ export interface EmailAlert {
   evidence: string
 }
 
-const CATEGORY_LABELS: Record<EmailAlertCategory, string> = {
-  health:    'Santé',
-  mood:      'Humeur',
-  cognition: 'Cognition',
-  social:    'Lien social',
-  autonomy:  'Autonomie',
-  other:     'Autre',
-}
-
-// Palette charte « cocon familial » (alignée avec apps/web/tailwind.config.js)
-const SEVERITY_STYLE: Record<EmailAlertSeverity, { bg: string; fg: string; label: string }> = {
-  low:    { bg: '#FBF5EE', fg: '#6B4423', label: 'Faible' },   // crème + brun moyen
-  medium: { bg: '#F5DCB0', fg: '#8B5A1F', label: 'Modérée' },  // ocre pâle + ocre foncé
-  high:   { bg: '#F0C5C5', fg: '#7C1F26', label: 'Élevée' },   // brique pâle + brique
+// Palette charte « cocon familial » (alignée avec apps/web/tailwind.config.js).
+// Les LIBELLÉS (Faible/Modérée/Élevée…) viennent de reportI18n selon la langue
+// des retours ; ici on ne garde que les couleurs (indépendantes de la langue).
+const SEVERITY_STYLE: Record<EmailAlertSeverity, { bg: string; fg: string }> = {
+  low:    { bg: '#FBF5EE', fg: '#6B4423' },   // crème + brun moyen
+  medium: { bg: '#F5DCB0', fg: '#8B5A1F' },   // ocre pâle + ocre foncé
+  high:   { bg: '#F0C5C5', fg: '#7C1F26' },   // brique pâle + brique
 }
 
 export function reportEmailHtml(params: {
@@ -109,11 +110,14 @@ export function reportEmailHtml(params: {
   alerts:           EmailAlert[]
   app_url:          string
   report_url:       string
+  lang?:            ReportLang
 }): string {
   const {
     caregiver_name, beneficiary_name, call_date, duration_min,
     mood_label, summary, key_topics, alerts, app_url, report_url,
   } = params
+  const lang = normalizeReportLang(params.lang)
+  const s    = EMAIL_STRINGS[lang]
 
   // Fraunces pour les titres (fallback Georgia/serif), Inter pour le corps (fallback system).
   const fontSerif = `'Fraunces', Georgia, 'Times New Roman', serif`
@@ -121,14 +125,15 @@ export function reportEmailHtml(params: {
 
   const alertsHtml = alerts.length > 0
     ? `<div style="background:#F5EBDC;border-left:4px solid #C75D3A;padding:18px 20px;border-radius:12px;margin:24px 0">
-        <strong style="font-family:${fontSerif};color:#7C1F26;display:block;margin-bottom:12px;font-size:16px">⚠️ Signaux faibles détectés</strong>
+        <strong style="font-family:${fontSerif};color:#7C1F26;display:block;margin-bottom:12px;font-size:16px">${s.alertsTitle}</strong>
         ${alerts.map((a) => {
           const sty = SEVERITY_STYLE[a.severity] ?? SEVERITY_STYLE.low
-          const cat = CATEGORY_LABELS[a.category] ?? CATEGORY_LABELS.other
+          const cat = CATEGORY_LABELS[lang][a.category] ?? CATEGORY_LABELS[lang].other
+          const sev = SEVERITY_LABELS[lang][a.severity] ?? SEVERITY_LABELS[lang].low
           return `<div style="background:white;border-radius:10px;padding:12px 14px;margin-bottom:10px;border:1px solid #E8DCC4">
             <div style="margin-bottom:6px">
               <span style="background:#F5EBDC;color:#3D2817;font-size:11px;padding:3px 10px;border-radius:12px;font-weight:600;margin-right:6px">${cat}</span>
-              <span style="background:${sty.bg};color:${sty.fg};font-size:11px;padding:3px 10px;border-radius:12px;font-weight:600">${sty.label}</span>
+              <span style="background:${sty.bg};color:${sty.fg};font-size:11px;padding:3px 10px;border-radius:12px;font-weight:600">${sev}</span>
             </div>
             <p style="color:#6B4423;font-size:14px;margin:0;line-height:1.55">${escapeHtml(a.evidence)}</p>
           </div>`
@@ -143,7 +148,7 @@ export function reportEmailHtml(params: {
     : ''
 
   return `<!DOCTYPE html>
-<html lang="fr">
+<html lang="${lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -155,16 +160,16 @@ export function reportEmailHtml(params: {
     <!-- Header -->
     <div style="background:#C75D3A;padding:32px 32px 28px;text-align:center">
       <h1 style="font-family:${fontSerif};color:white;margin:0;font-size:28px;font-weight:600;letter-spacing:0.5px">Aicoute</h1>
-      <p style="color:rgba(255,255,255,0.92);margin:6px 0 0;font-size:14px;font-style:italic">La présence qui réchauffe</p>
+      <p style="color:rgba(255,255,255,0.92);margin:6px 0 0;font-size:14px;font-style:italic">${s.tagline}</p>
     </div>
 
     <!-- Body -->
     <div style="padding:32px">
       <p style="color:#3D2817;font-size:16px;margin:0 0 8px;line-height:1.6">
-        Bonjour <strong>${caregiver_name}</strong>,
+        ${s.greeting(caregiver_name)}
       </p>
       <p style="color:#6B4423;font-size:16px;margin:0 0 24px;line-height:1.6">
-        Voici le compte-rendu de l'appel de <strong>${beneficiary_name}</strong>.
+        ${s.intro(beneficiary_name)}
       </p>
 
       <!-- Carte récap -->
@@ -176,16 +181,16 @@ export function reportEmailHtml(params: {
           </tr>
         </table>
         <p style="color:#3D2817;font-size:15px;line-height:1.6;margin:10px 0 0">
-          <strong>Humeur :</strong> ${mood_label}
+          <strong>${s.moodPrefix}</strong> ${mood_label}
         </p>
       </div>
 
       <!-- Résumé narratif -->
-      <h2 style="font-family:${fontSerif};color:#3D2817;font-size:20px;font-weight:600;margin:0 0 12px">Résumé de la conversation</h2>
+      <h2 style="font-family:${fontSerif};color:#3D2817;font-size:20px;font-weight:600;margin:0 0 12px">${s.summaryTitle}</h2>
       <p style="color:#6B4423;font-size:15px;line-height:1.75;margin:0 0 24px">${summary}</p>
 
       <!-- Thèmes abordés -->
-      ${key_topics.length > 0 ? `<h3 style="font-family:${fontSerif};color:#3D2817;font-size:17px;font-weight:600;margin:0 0 6px">Thèmes abordés</h3>${topicsHtml}` : ''}
+      ${key_topics.length > 0 ? `<h3 style="font-family:${fontSerif};color:#3D2817;font-size:17px;font-weight:600;margin:0 0 6px">${s.topicsTitle}</h3>${topicsHtml}` : ''}
 
       <!-- Alertes -->
       ${alertsHtml}
@@ -194,18 +199,18 @@ export function reportEmailHtml(params: {
       <div style="text-align:center;margin:32px 0 8px">
         <a href="${report_url}"
            style="display:inline-block;background:#C75D3A;color:white;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:600;text-decoration:none;letter-spacing:0.3px">
-          Voir le compte-rendu complet →
+          ${s.cta}
         </a>
       </div>
       <p style="color:#9A8467;font-size:12px;text-align:center;margin:14px 0 0;line-height:1.5">
-        Ce lien est valable 48&nbsp;heures et peut être partagé avec un proche, sans création de compte.
+        ${s.shareNote}
       </p>
     </div>
 
     <!-- Footer -->
     <div style="background:#FBF5EE;padding:20px 32px;text-align:center;border-top:1px solid #E8DCC4">
       <p style="color:#6B4423;font-size:13px;margin:0;line-height:1.6">
-        © 2026 Aicoute · <a href="${app_url}/compte" style="color:#6B4423;text-decoration:underline">Gérer les notifications</a>
+        © 2026 Aicoute · <a href="${app_url}/compte" style="color:#6B4423;text-decoration:underline">${s.manageNotifications}</a>
       </p>
     </div>
   </div>
@@ -219,37 +224,40 @@ export function noAnswerEmailHtml(params: {
   attempts:         number
   call_time:        string
   app_url:          string
+  lang?:            ReportLang
 }): string {
   const { caregiver_name, beneficiary_name, attempts, call_time, app_url } = params
+  const lang = normalizeReportLang(params.lang)
+  const s    = EMAIL_STRINGS[lang]
   return `<!DOCTYPE html>
-<html lang="fr">
+<html lang="${lang}">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#F8FAFC;font-family:'Source Sans Pro',Arial,sans-serif">
   <div style="max-width:600px;margin:32px auto;background:white;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08)">
     <div style="background:#C75D3A;padding:28px 32px;text-align:center">
       <h1 style="color:white;margin:0;font-size:24px;font-weight:700">Aicoute</h1>
-      <p style="color:rgba(255,255,255,0.9);margin:6px 0 0;font-size:14px">⚠️ Appel sans réponse</p>
+      <p style="color:rgba(255,255,255,0.9);margin:6px 0 0;font-size:14px">${s.noAnswerTagline}</p>
     </div>
     <div style="padding:32px">
       <p style="color:#475569;font-size:16px;margin:0 0 16px">
-        Bonjour <strong>${caregiver_name}</strong>,
+        ${s.greeting(caregiver_name)}
       </p>
       <p style="color:#475569;font-size:16px;line-height:1.6;margin:0 0 16px">
-        Nous n'avons pas réussi à joindre <strong>${beneficiary_name}</strong> lors de l'appel planifié à <strong>${call_time}</strong>${attempts > 1 ? `, malgré ${attempts} tentatives` : ''}.
+        ${s.noAnswerIntro(beneficiary_name, call_time, attempts)}
       </p>
       <p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 24px">
-        Cela peut être normal (sortie, sieste, téléphone hors de portée). Si cette situation se répète, n'hésitez pas à prendre contact directement avec votre proche.
+        ${s.noAnswerReassurance}
       </p>
       <div style="text-align:center;margin-top:24px">
         <a href="${app_url}/planning"
            style="display:inline-block;background:#C75D3A;color:white;padding:14px 28px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none">
-          Vérifier les plannings →
+          ${s.noAnswerCta}
         </a>
       </div>
     </div>
     <div style="background:#F8FAFC;padding:20px 32px;text-align:center;border-top:1px solid #E2E8F0">
       <p style="color:#94A3B8;font-size:13px;margin:0">
-        © 2026 Aicoute · <a href="${app_url}/compte" style="color:#94A3B8">Gérer les notifications</a>
+        © 2026 Aicoute · <a href="${app_url}/compte" style="color:#94A3B8">${s.manageNotifications}</a>
       </p>
     </div>
   </div>

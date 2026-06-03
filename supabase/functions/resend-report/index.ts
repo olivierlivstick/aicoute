@@ -24,12 +24,7 @@ import { requireAdmin }                 from '../_shared/requireAdmin.ts'
 import { sendEmail, reportEmailHtml, normalizeRecipients } from '../_shared/email.ts'
 import type { EmailAlert }              from '../_shared/email.ts'
 import { issueReportToken }             from '../_shared/reportToken.ts'
-
-const MOOD_LABELS: Record<string, string> = {
-  positive:  'Positif 😊',
-  neutral:   'Neutre 😐',
-  concerned: 'Préoccupant 😟',
-}
+import { normalizeReportLang, MOOD_LABELS, DATE_LOCALE, EMAIL_STRINGS } from '../_shared/reportI18n.ts'
 
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req)
@@ -88,10 +83,15 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Cas 2 : compte-rendu déjà là → on renvoie l'email tel quel.
+    // Langue = snapshot du rapport (calls.report_language) pour rester cohérent
+    // avec le texte déjà stocké ; fallback réglage bénéficiaire puis 'fr'.
+    const reportLang  = normalizeReportLang(call.report_language ?? beneficiary?.report_language)
     const callDate    = new Date(call.ended_at ?? call.scheduled_at)
     const durationMin = call.duration_seconds ? Math.round(call.duration_seconds / 60) : 0
-    const mood        = MOOD_LABELS[call.mood_detected] ? call.mood_detected : 'neutral'
-    const dateFormatted = callDate.toLocaleDateString('fr-FR', {
+    const moodKey     = (['positive', 'neutral', 'concerned'] as const).includes(call.mood_detected)
+                        ? call.mood_detected as 'positive' | 'neutral' | 'concerned' : 'neutral'
+    const moodLabel   = MOOD_LABELS[reportLang][moodKey]
+    const dateFormatted = callDate.toLocaleDateString(DATE_LOCALE[reportLang], {
       weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
     })
 
@@ -101,18 +101,19 @@ Deno.serve(async (req: Request) => {
 
     const ok = await sendEmail({
       to:      recipients,
-      subject: `Compte-rendu de l'appel de ${beneficiary.first_name} — ${mood === 'concerned' ? '⚠️ ' : ''}${MOOD_LABELS[mood]}`,
+      subject: EMAIL_STRINGS[reportLang].subject(beneficiary.first_name, moodLabel, moodKey === 'concerned'),
       html: reportEmailHtml({
         caregiver_name:   caregiver.full_name ?? 'Aidant',
         beneficiary_name: `${beneficiary.first_name} ${beneficiary.last_name}`,
         call_date:        dateFormatted,
         duration_min:     durationMin,
-        mood_label:       MOOD_LABELS[mood],
+        mood_label:       moodLabel,
         summary:          call.summary,
         key_topics:       Array.isArray(call.key_topics) ? call.key_topics : [],
         alerts:           (Array.isArray(call.alerts) ? call.alerts : []) as EmailAlert[],
         app_url:          appUrl,
         report_url:       reportUrl,
+        lang:             reportLang,
       }),
     })
 

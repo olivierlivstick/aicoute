@@ -27,6 +27,7 @@
 
 import { getSupabaseAdmin }              from '../_shared/supabaseAdmin.ts'
 import { sendEmail, noAnswerEmailHtml }  from '../_shared/email.ts'
+import { normalizeReportLang, DATE_LOCALE, EMAIL_STRINGS } from '../_shared/reportI18n.ts'
 import { logEvent }                      from '../_shared/systemEvents.ts'
 
 type Supabase = ReturnType<typeof getSupabaseAdmin>
@@ -170,7 +171,7 @@ async function passB_noAnswer(
 
       const { data: schedule } = await supabase
         .from('session_schedules')
-        .select('id, retry_count, retry_interval_minutes, notify_on_no_answer, no_answer_timeout_seconds, beneficiaries(first_name, last_name, caregiver_id, profiles(email, full_name))')
+        .select('id, retry_count, retry_interval_minutes, notify_on_no_answer, no_answer_timeout_seconds, beneficiaries(first_name, last_name, caregiver_id, report_language, profiles(email, full_name))')
         .eq('id', call.schedule_id)
         .single()
 
@@ -213,17 +214,19 @@ async function passB_noAnswer(
           const beneficiary = schedule.beneficiaries
           const caregiver   = beneficiary?.profiles
           if (caregiver?.email) {
+            const reportLang = normalizeReportLang(beneficiary.report_language)
             await sendEmail({
               to:      caregiver.email,
-              subject: `⚠️ ${beneficiary.first_name} n'a pas répondu`,
+              subject: EMAIL_STRINGS[reportLang].noAnswerSubject(beneficiary.first_name),
               html: noAnswerEmailHtml({
                 caregiver_name:   caregiver.full_name ?? 'Aidant',
                 beneficiary_name: `${beneficiary.first_name} ${beneficiary.last_name}`,
                 attempts:         call.attempt_number,
-                call_time:        new Date(call.scheduled_at).toLocaleString('fr-FR', {
+                call_time:        new Date(call.scheduled_at).toLocaleString(DATE_LOCALE[reportLang], {
                   weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
                 }),
                 app_url:          appUrl,
+                lang:             reportLang,
               }),
             })
           }
