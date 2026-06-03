@@ -8,9 +8,20 @@ import { DemoPhoneModal } from '@/marketing/components/DemoPhoneModal'
 type Mode   = null | 'web' | 'phone'
 export type Engine = 'openai' | 'gemini'
 
+// Langues proposées pour la démo (alignées avec le back : public-realtime-token
+// + voice-bridge prompt.js). La conversation se déroule dans la langue choisie.
+const DEMO_LANGUAGES = [
+  { value: 'fr', label: '🇫🇷 Français' },
+  { value: 'en', label: '🇬🇧 English' },
+  { value: 'es', label: '🇪🇸 Español' },
+  { value: 'de', label: '🇩🇪 Deutsch' },
+  { value: 'it', label: '🇮🇹 Italiano' },
+]
+
 export function Demo() {
   const [mode,   setMode]   = useState<Mode>(null)
   const [engine, setEngine] = useState<Engine>('gemini')
+  const [lang,   setLang]   = useState<string>('fr')
 
   return (
     <section id="essai" className="bg-creme py-20 md:py-28">
@@ -29,7 +40,10 @@ export function Demo() {
           </p>
         </div>
 
-        <EngineToggle engine={engine} onChange={setEngine} />
+        <div className="mt-10 flex flex-col sm:flex-row sm:items-start sm:justify-center gap-8">
+          <EngineToggle engine={engine} onChange={setEngine} />
+          <LanguageSelect lang={lang} onChange={setLang} />
+        </div>
 
         <div className="mt-10 grid md:grid-cols-2 gap-6">
           {/* Carte 1 — Mode web */}
@@ -108,8 +122,8 @@ export function Demo() {
         </p>
       </div>
 
-      {mode === 'web'   && <DemoWebModal   engine={engine} onClose={() => setMode(null)} />}
-      {mode === 'phone' && <DemoPhoneModal engine={engine} onClose={() => setMode(null)} />}
+      {mode === 'web'   && <DemoWebModal   engine={engine} lang={lang} onClose={() => setMode(null)} />}
+      {mode === 'phone' && <DemoPhoneModal engine={engine} lang={lang} onClose={() => setMode(null)} />}
     </section>
   )
 }
@@ -122,7 +136,7 @@ function EngineToggle({ engine, onChange }: { engine: Engine; onChange: (e: Engi
   const active  = 'bg-terracotta text-creme shadow-sm'
   const passive = 'text-brun-700 hover:text-brun-900'
   return (
-    <div className="mt-10 max-w-sm mx-auto">
+    <div className="w-full max-w-xs mx-auto sm:mx-0">
       <p className="text-center text-[11px] uppercase tracking-[0.18em] text-brun-700/70 mb-2.5">
         Moteur conversationnel
       </p>
@@ -142,6 +156,29 @@ function EngineToggle({ engine, onChange }: { engine: Engine; onChange: (e: Engi
           OpenAI
         </button>
       </div>
+    </div>
+  )
+}
+
+// --- Sélecteur de langue de la conversation ---------------------------------
+function LanguageSelect({ lang, onChange }: { lang: string; onChange: (l: string) => void }) {
+  return (
+    <div className="w-full max-w-xs mx-auto sm:mx-0">
+      <p className="text-center text-[11px] uppercase tracking-[0.18em] text-brun-700/70 mb-2.5">
+        Langue de la conversation
+      </p>
+      <select
+        value={lang}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label="Langue de la conversation"
+        className="w-full px-4 py-2.5 bg-white border border-creme-sable rounded-lg text-sm font-medium text-brun-900 focus:outline-none focus:border-terracotta focus:ring-2 focus:ring-terracotta/20 cursor-pointer"
+      >
+        {DEMO_LANGUAGES.map(({ value, label }) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
     </div>
   )
 }

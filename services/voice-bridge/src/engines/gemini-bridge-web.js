@@ -40,6 +40,7 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
   let setupAcked          = false
   let started             = false
   let opener              = null
+  let lang                = 'fr'
   // Identifiants de tour pour le transcript live. Le client utilise itemId
   // pour mettre à jour le bon message dans l'UI (delta vs done).
   let currentAssistantId  = null
@@ -62,6 +63,7 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
     if (msg.type === 'start' && !started) {
       started = true
       opener  = typeof msg.opener === 'string' && msg.opener.trim() ? msg.opener.trim() : null
+      lang    = typeof msg.lang === 'string' && msg.lang.trim() ? msg.lang.trim() : 'fr'
       connectGemini()
       return
     }
@@ -202,7 +204,7 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
   }
 
   function sendSetup() {
-    const systemPrompt = buildSystemPrompt(opener)
+    const systemPrompt = buildSystemPrompt(opener, lang)
     const realtimeInputConfig = buildRealtimeInputConfig()
     console.log(`📤 [web/gemini] setup (modèle=${MODEL}, voix=${VOICE}, VAD ${vadSummary()}, mode ${opener ? 'opener custom' : 'MODECT'})`)
     geminiWs.send(JSON.stringify({

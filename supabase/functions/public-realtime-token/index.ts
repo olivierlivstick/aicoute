@@ -34,6 +34,27 @@ Ton rôle :
 
 CONTRAINTE TEMPS CRITIQUE : la démo dure 2 minutes max, l'appel sera coupé sec à 2 min. À partir de 1 min 30, commence à conclure chaleureusement (« On approche de la fin de notre petit moment ensemble… »). À 1 min 50, dis au revoir avec une formule courte et invite à découvrir le service sur aicoute.fr. Va à l'essentiel, ne t'éparpille pas, sois efficace tout en restant chaleureux.`
 
+// Langues proposées pour la démo vitrine (alignées avec le front Demo.tsx et le
+// voice-bridge prompt.js). Le français est le défaut → aucune directive ajoutée.
+const LANG_LABELS: Record<string, string> = {
+  fr: 'français',
+  en: 'anglais',
+  es: 'espagnol',
+  de: 'allemand',
+  it: 'italien',
+}
+
+function languageDirective(lang: string): string {
+  const label = LANG_LABELS[lang]
+  if (!label || lang === 'fr') return ''
+  return `\n\nLANGUE IMPÉRATIVE : tu parles et réponds EXCLUSIVEMENT en ${label}, dès le tout premier mot et pendant toute la conversation, même si ton interlocuteur s'exprime dans une autre langue. Traduis naturellement dans cette langue toutes les formulations et exemples donnés ci-dessus (y compris ton message d'accueil). Ne réponds jamais en français.`
+}
+
+function sanitizeLang(raw: unknown): string {
+  const v = String(raw ?? '').trim().toLowerCase()
+  return v in LANG_LABELS ? v : 'fr'
+}
+
 // --- Rate limit en mémoire (best-effort, par instance Edge) -----------------
 // Limite : 5 tokens par IP / heure. Empêche l'abus depuis la home publique.
 const RATE_LIMIT_MAX = 5
@@ -76,6 +97,11 @@ Deno.serve(async (req: Request) => {
       )
     }
 
+    // Langue de la conversation (démo multilingue). Défaut 'fr' → prompt inchangé.
+    const body = await req.json().catch(() => ({}))
+    const lang = sanitizeLang((body as { lang?: unknown })?.lang)
+    const instructions = DEMO_PROMPT + languageDirective(lang)
+
     const tokenRes = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
       method: 'POST',
       headers: {
@@ -89,7 +115,7 @@ Deno.serve(async (req: Request) => {
           audio: {
             output: { voice: VOICE },
           },
-          instructions: DEMO_PROMPT,
+          instructions,
         },
       }),
     })

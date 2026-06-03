@@ -22,6 +22,8 @@ export interface GeminiLiveConfig {
   bridgeUrl: string
   /** Phrase d'ouverture custom (mode caméléon), ou null pour le mode MODECT */
   opener?: string | null
+  /** Langue de la conversation (fr/en/es/de/it). Défaut 'fr' côté bridge. */
+  lang?: string
   onStatusChange?: (status: RealtimeStatus) => void
   onMessagesChange?: (messages: RealtimeMessage[]) => void
   onError?: (err: Error) => void
@@ -112,7 +114,7 @@ export class GeminiLiveSession {
       // 3. WebSocket vers le voice-bridge
       this.ws = new WebSocket(this.cfg.bridgeUrl)
       this.ws.onopen = () => {
-        this.send({ type: 'start', opener: this.cfg.opener ?? null })
+        this.send({ type: 'start', opener: this.cfg.opener ?? null, lang: this.cfg.lang ?? 'fr' })
       }
       this.ws.onmessage = (e) => this.onServerMessage(typeof e.data === 'string' ? e.data : '')
       this.ws.onerror = () => this.fail(new Error('Connexion au serveur Gemini impossible'))

@@ -40,17 +40,42 @@ Style : phrases courtes, ton chaleureux et fluide, quelques hésitations naturel
 
 L'appel dure environ 2 minutes. Reste naturel sans mentionner le temps — le système coupera doucement à la fin sans que tu aies à le gérer.`
 
+// Langues proposées pour la démo vitrine (alignées avec le sélecteur du front
+// Demo.tsx et avec public-realtime-token côté Edge). Le label sert à formuler
+// la directive ci-dessous. Le français étant la langue par défaut des prompts,
+// il ne reçoit AUCUNE directive (chaîne vide) → comportement inchangé.
+const LANG_LABELS = {
+  fr: 'français',
+  en: 'anglais',
+  es: 'espagnol',
+  de: 'allemand',
+  it: 'italien',
+}
+
+/**
+ * Directive de langue à concaténer au system prompt. Vide pour `fr` (défaut)
+ * ou une langue inconnue → on garde le prompt français tel quel.
+ */
+export function languageDirective(lang) {
+  const label = LANG_LABELS[lang]
+  if (!label || lang === 'fr') return ''
+  return `\n\nLANGUE IMPÉRATIVE : tu parles et réponds EXCLUSIVEMENT en ${label}, dès le tout premier mot et pendant toute la conversation, même si ton interlocuteur s'exprime dans une autre langue. Traduis naturellement dans cette langue toutes les formulations et exemples donnés ci-dessus (y compris ton message d'accueil). Ne réponds jamais en français.`
+}
+
 /**
  * Construit le system prompt (envoyé en session.update.session.instructions).
  *
  * - Avec opener : caméléon (persona libre, pas MODECT) avec phrase d'ouverture
  *   imposée dans le prompt lui-même (= règle haute priorité pour l'IA).
  * - Sans opener : MODECT classique.
+ *
+ * `lang` (code court fr/en/es/de/it, défaut 'fr') ajoute une directive de langue
+ * en fin de prompt. Sans effet pour 'fr'.
  */
-export function buildSystemPrompt(opener) {
+export function buildSystemPrompt(opener, lang = 'fr') {
   const clean = (opener ?? '').trim()
-  if (!clean) return MODECT_PROMPT
-  return CUSTOM_OPENER_PROMPT_TEMPLATE(clean)
+  const base  = clean ? CUSTOM_OPENER_PROMPT_TEMPLATE(clean) : MODECT_PROMPT
+  return base + languageDirective(lang)
 }
 
 /**

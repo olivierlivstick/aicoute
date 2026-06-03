@@ -177,9 +177,18 @@ app.get('/health', (_req, res) => {
 // au cas où quelqu'un POST direct sans passer par le formulaire).
 const OPENER_MAX_LENGTH = 500
 
+// Langues proposées pour la démo vitrine (alignées avec le front Demo.tsx et
+// prompt.js). Toute valeur hors liste retombe sur 'fr' (prompt français défaut).
+const DEMO_LANGS = ['fr', 'en', 'es', 'de', 'it']
+function sanitizeLang(raw) {
+  const v = String(raw ?? '').trim().toLowerCase()
+  return DEMO_LANGS.includes(v) ? v : 'fr'
+}
+
 app.post('/call', async (req, res) => {
   try {
-    const { phoneNumber, opener, engine: engineRaw } = req.body ?? {}
+    const { phoneNumber, opener, engine: engineRaw, lang: langRaw } = req.body ?? {}
+    const lang = sanitizeLang(langRaw)
 
     const cleaned = String(phoneNumber || '').replace(/\s/g, '')
     if (!cleaned.match(/^\+\d{8,15}$/)) {
@@ -229,6 +238,7 @@ app.post('/call', async (req, res) => {
     if (demoCallId)  queryParts.push(`demoCallId=${encodeURIComponent(demoCallId)}`)
     if (openerClean) queryParts.push(`opener=${encodeURIComponent(openerClean)}`)
     queryParts.push(`engine=${encodeURIComponent(engine)}`)
+    queryParts.push(`lang=${encodeURIComponent(lang)}`)
     const outgoingUrl = `${publicBase}/outgoing?${queryParts.join('&')}`
 
     const call = await twilioClient.calls.create({
@@ -237,7 +247,7 @@ app.post('/call', async (req, res) => {
       url:  outgoingUrl,
     })
 
-    console.log(`📞 Appel sortant initié vers ${maskNumber(cleaned)} engine=${engine} (sid: ${call.sid}${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
+    console.log(`📞 Appel sortant initié vers ${maskNumber(cleaned)} engine=${engine} lang=${lang} (sid: ${call.sid}${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
     res.json({ ok: true, callSid: call.sid })
   } catch (err) {
     console.error('❌ /call :', err)
@@ -252,12 +262,14 @@ app.all('/outgoing', (req, res) => {
   const demoCallId = (req.query.demoCallId ?? req.body?.demoCallId ?? '').toString()
   const opener     = (req.query.opener     ?? req.body?.opener     ?? '').toString()
   const engine     = (req.query.engine     ?? req.body?.engine     ?? 'openai').toString()
-  console.log(`📩 /outgoing reçu (engine=${engine}, demoCallId=${demoCallId ? 'yes' : 'no'}, opener=${opener ? `"${opener.substring(0, 50)}…"` : 'no'})`)
+  const lang       = sanitizeLang(req.query.lang ?? req.body?.lang)
+  console.log(`📩 /outgoing reçu (engine=${engine}, lang=${lang}, demoCallId=${demoCallId ? 'yes' : 'no'}, opener=${opener ? `"${opener.substring(0, 50)}…"` : 'no'})`)
   // <Parameter> est retransmis à la WS dans event start (data.start.customParameters)
   const params = []
   if (demoCallId) params.push(`      <Parameter name="demoCallId" value="${escapeXml(demoCallId)}" />`)
   if (opener)     params.push(`      <Parameter name="opener" value="${escapeXml(opener)}" />`)
   params.push(`      <Parameter name="engine" value="${escapeXml(engine)}" />`)
+  params.push(`      <Parameter name="lang" value="${escapeXml(lang)}" />`)
   const paramTags = params.join('\n') + '\n'
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -546,11 +558,12 @@ wss.on('connection', (twilioWs) => {
       const streamSid = data.start.streamSid
       const params    = data.start.customParameters ?? {}
       const opener    = params.opener ?? null
+      const lang      = sanitizeLang(params.lang)
       demoCallId      = params.demoCallId ?? null
       engine          = params.engine === 'gemini' ? 'gemini' : 'openai'
       streamStartedAt = Date.now()
 
-      console.log(`✅ Stream démarré engine=${engine} (${streamSid.substring(0, 12)}…${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
+      console.log(`✅ Stream démarré engine=${engine} lang=${lang} (${streamSid.substring(0, 12)}…${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
       console.log(`   customParameters reçus :`, JSON.stringify(params))
 
       if (engine === 'gemini') {
@@ -562,12 +575,12 @@ wss.on('connection', (twilioWs) => {
           return
         }
         session = createGeminiBridge({
-          twilioWs, streamSid, opener,
+          twilioWs, streamSid, opener, lang,
           geminiApiKey: GOOGLE_API_KEY,
         })
       } else {
         session = createOpenaiBridge({
-          twilioWs, streamSid, opener,
+          twilioWs, streamSid, opener, lang,
           openaiApiKey: OPENAI_API_KEY,
         })
       }

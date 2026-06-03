@@ -25,7 +25,7 @@ const VOICE = process.env.GEMINI_VOICE || 'Aoede'
 
 const ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
 
-export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey }) {
+export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, lang = 'fr' }) {
   let setupAcked = false
 
   // Accumulateur tokens. Schéma aligné sur OpenAI pour réutiliser les colonnes
@@ -115,9 +115,9 @@ export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey }
   })
 
   function sendSetup() {
-    const systemPrompt = buildSystemPrompt(opener)
+    const systemPrompt = buildSystemPrompt(opener, lang)
     const realtimeInputConfig = buildRealtimeInputConfig()
-    console.log(`📤 [gemini] setup (modèle=${MODEL}, voix=${VOICE}, VAD ${vadSummary()}, mode ${opener ? 'opener custom' : 'MODECT'})`)
+    console.log(`📤 [gemini] setup (modèle=${MODEL}, voix=${VOICE}, VAD ${vadSummary()}, mode ${opener ? 'opener custom' : 'MODECT'}, lang=${lang})`)
     geminiWs.send(JSON.stringify({
       setup: {
         model: MODEL,

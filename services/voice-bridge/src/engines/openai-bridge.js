@@ -16,7 +16,7 @@ import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
 const MODEL = 'gpt-realtime-2'
 const VOICE = 'cedar'
 
-export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey }) {
+export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey, lang = 'fr' }) {
   // État de l'interaction OpenAI ↔ Twilio
   let latestMediaTimestamp   = 0
   let lastAssistantItem      = null
@@ -111,9 +111,9 @@ export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey }
     if (setupDone) return
     setupDone = true
 
-    const systemPrompt = buildSystemPrompt(opener)
+    const systemPrompt = buildSystemPrompt(opener, lang)
     const firstMessage = buildFirstMessage(opener)
-    console.log(`📤 [openai] session.update + response.create (mode ${opener ? 'opener custom' : 'MODECT'})`)
+    console.log(`📤 [openai] session.update + response.create (mode ${opener ? 'opener custom' : 'MODECT'}, lang=${lang})`)
 
     openaiWs.send(JSON.stringify({
       type: 'session.update',

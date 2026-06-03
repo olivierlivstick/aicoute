@@ -27,9 +27,10 @@ const VOICE_BRIDGE_URL = import.meta.env.VITE_VOICE_BRIDGE_URL as string | undef
 interface Props {
   onClose: () => void
   engine:  'openai' | 'gemini'
+  lang:    string
 }
 
-export function DemoWebModal({ onClose, engine }: Props) {
+export function DemoWebModal({ onClose, engine, lang }: Props) {
   const [status,   setStatus]   = useState<RealtimeStatus>('idle')
   const [messages, setMessages] = useState<RealtimeMessage[]>([])
   const [error,    setError]    = useState<string | null>(null)
@@ -106,6 +107,7 @@ export function DemoWebModal({ onClose, engine }: Props) {
         const session = new GeminiLiveSession({
           bridgeUrl:        wsUrl,
           opener:           null,
+          lang,
           onStatusChange:   (s) => setStatus(s),
           onMessagesChange: (m) => setMessages(m),
           onError:          (e) => setError(e.message),
@@ -114,7 +116,9 @@ export function DemoWebModal({ onClose, engine }: Props) {
         await session.start()
       } else {
         // OpenAI : WebRTC direct via ephemeral token (architecture historique)
-        const tokenResp = await supabase.functions.invoke('public-realtime-token')
+        const tokenResp = await supabase.functions.invoke('public-realtime-token', {
+          body: { lang },
+        })
         if (tokenResp.error || !tokenResp.data?.value) {
           throw new Error(tokenResp.error?.message ?? tokenResp.data?.error ?? 'Token Realtime indisponible')
         }
