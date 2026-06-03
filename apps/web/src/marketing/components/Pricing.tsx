@@ -14,8 +14,8 @@ type Plan = {
 export function Pricing() {
   const plans: Plan[] = [
     {
-      name: 'Essentiel',
-      price: '14,90',
+      name: 'Découverte',
+      price: '22',
       tagline: "Pour rester en lien sans s'engager.",
       features: [
         '1 appel par semaine',
@@ -23,12 +23,12 @@ export function Pricing() {
         '1 profil de proche',
         'Support par email',
       ],
-      cta: 'Choisir Essentiel',
+      cta: 'Choisir Découverte',
       featured: false,
     },
     {
-      name: 'Famille',
-      price: '24,90',
+      name: 'Confort',
+      price: '65',
       tagline: 'Pour une vraie régularité.',
       features: [
         '3 appels par semaine',
@@ -37,12 +37,12 @@ export function Pricing() {
         'Personnalisation avancée',
         'Support prioritaire',
       ],
-      cta: 'Choisir Famille',
+      cta: 'Choisir Confort',
       featured: true,
     },
     {
       name: 'Sérénité',
-      price: '49',
+      price: '150',
       tagline: 'Pour un accompagnement quotidien.',
       features: [
         '1 appel par jour',
