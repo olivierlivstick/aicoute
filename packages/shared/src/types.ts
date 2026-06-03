@@ -164,3 +164,37 @@ export interface SummaryResult {
     importance: number
   }>
 }
+
+// --- Abonnements -----------------------------------------------------------
+// Forfaits de la vitrine : Découverte (1/sem) · Confort (3/sem) · Sérénité
+// (7/sem). + un palier d'essai gratuit (3/sem, 1 mois) pour la phase de test.
+export type PlanTier = 'trial' | 'discovery' | 'comfort' | 'serenity'
+export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'canceled'
+
+export interface Subscription {
+  id: string
+  caregiver_id: string
+  plan_tier: PlanTier
+  status: SubscriptionStatus
+  max_calls_per_week: number
+  service_started_at: string | null
+  trial_ends_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PlanDef {
+  tier: PlanTier
+  name: string
+  callsPerWeek: number       // = max_calls_per_week autorisé
+  priceEur: number | null    // 0 pour l'essai, prix mensuel pour les payants
+  tagline: string
+}
+
+// Source de vérité partagée (UI + bridage). Aligné sur la page Tarifs vitrine.
+export const PLAN_TIERS: Record<PlanTier, PlanDef> = {
+  trial:     { tier: 'trial',     name: 'Essai gratuit', callsPerWeek: 3, priceEur: 0,   tagline: '1 mois offert pour découvrir le service.' },
+  discovery: { tier: 'discovery', name: 'Découverte',    callsPerWeek: 1, priceEur: 22,  tagline: "Pour rester en lien sans s'engager." },
+  comfort:   { tier: 'comfort',   name: 'Confort',       callsPerWeek: 3, priceEur: 65,  tagline: 'Pour une vraie régularité.' },
+  serenity:  { tier: 'serenity',  name: 'Sérénité',      callsPerWeek: 7, priceEur: 150, tagline: 'Pour un accompagnement quotidien.' },
+}

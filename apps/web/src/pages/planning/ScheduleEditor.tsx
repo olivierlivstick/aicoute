@@ -34,6 +34,11 @@ interface Props {
    * pour ne pas réattribuer le planning à l'admin lors d'un update/create.
    */
   caregiverId?: string
+  /**
+   * Nombre d'appels/semaine autorisé par le forfait (bridage). Défaut 7 (pas de
+   * limite — ex. côté admin). Borne les boutons « appels par semaine ».
+   */
+  maxCallsPerWeek?: number
 }
 
 const DAY_LABELS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
@@ -46,10 +51,15 @@ const TIMEZONES = [
 const DURATIONS = [5, 10, 15, 20, 30, 45, 60]
 const RETRY_INTERVALS = [2, 5, 10, 15]
 
-export function ScheduleEditor({ beneficiary, schedule, onSaved, caregiverId }: Props) {
+export function ScheduleEditor({ beneficiary, schedule, onSaved, caregiverId, maxCallsPerWeek = 7 }: Props) {
   const { user } = useAuth()
   const ownerId = caregiverId ?? beneficiary.caregiver_id ?? user?.id
-  const [selectedDays, setSelectedDays] = useState<number[]>(schedule?.days_of_week ?? [1, 3, 5])
+  // Options d'appels/semaine autorisées par le forfait (1..max).
+  const allowedCalls = [1, 2, 3, 4, 5, 6, 7].filter((n) => n <= maxCallsPerWeek)
+  // Jours par défaut clampés à la limite du forfait.
+  const [selectedDays, setSelectedDays] = useState<number[]>(
+    (schedule?.days_of_week ?? [1, 3, 5]).slice(0, maxCallsPerWeek)
+  )
   const [isActive, setIsActive] = useState<boolean>(schedule?.is_active ?? true)
   const [togglingActive, setTogglingActive] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -85,7 +95,7 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved, caregiverId }: 
       time_of_day:               schedule?.time_of_day?.slice(0, 5) ?? '10:00',
       max_duration_minutes:      schedule?.max_duration_minutes ?? 15,
       timezone:                  schedule?.timezone ?? 'Europe/Paris',
-      calls_per_week:            schedule?.calls_per_week ?? (schedule?.days_of_week?.length ?? 3),
+      calls_per_week:            Math.min(schedule?.calls_per_week ?? (schedule?.days_of_week?.length ?? 3), maxCallsPerWeek),
       retry_count:               schedule?.retry_count ?? 1,
       retry_interval_minutes:    schedule?.retry_interval_minutes ?? 5,
       notify_on_no_answer:       schedule?.notify_on_no_answer ?? true,
@@ -205,7 +215,7 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved, caregiverId }: 
         <div>
           <Label>Nombre d'appels par semaine *</Label>
           <div className="flex gap-2 mt-1 flex-wrap">
-            {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+            {allowedCalls.map((n) => (
               <button
                 key={n}
                 type="button"
@@ -222,6 +232,9 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved, caregiverId }: 
             ))}
           </div>
           <p className="text-xs text-slate-400 mt-2">
+            {maxCallsPerWeek < 7
+              ? `Votre forfait permet jusqu'à ${maxCallsPerWeek} appel${maxCallsPerWeek > 1 ? 's' : ''} par semaine. `
+              : ''}
             Choisissez ensuite les {callsPerWeek} jour{callsPerWeek > 1 ? 's' : ''} de la semaine ci-dessous.
           </p>
         </div>
