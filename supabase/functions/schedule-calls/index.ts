@@ -26,8 +26,9 @@
  */
 
 import { getSupabaseAdmin }              from '../_shared/supabaseAdmin.ts'
-import { sendEmail, noAnswerEmailHtml }  from '../_shared/email.ts'
+import { sendEmail, noAnswerEmailHtml, trialEndedEmailHtml }  from '../_shared/email.ts'
 import { normalizeReportLang, DATE_LOCALE, EMAIL_STRINGS } from '../_shared/reportI18n.ts'
+import { evaluateSubscriptionForCall } from '../_shared/subscription.ts'
 import { logEvent }                      from '../_shared/systemEvents.ts'
 
 type Supabase = ReturnType<typeof getSupabaseAdmin>
@@ -108,7 +109,7 @@ async function passA_main(
   supabase: Supabase,
   supabaseUrl: string,
   serviceKey: string,
-  _appUrl: string,
+  appUrl: string,
   results: { triggered: number; skipped: number; errors: string[] },
 ): Promise<void> {
   const windowStart = new Date(Date.now() - 90_000).toISOString()
@@ -116,7 +117,7 @@ async function passA_main(
 
   const { data: due, error } = await supabase
     .from('calls')
-    .select('id, beneficiary_id, beneficiaries(is_active)')
+    .select('id, beneficiary_id, beneficiaries(is_active, caregiver_id, profiles(email, full_name))')
     .eq('status', 'scheduled')
     .eq('attempt_number', 1)
     .gte('scheduled_at', windowStart)
@@ -125,13 +126,52 @@ async function passA_main(
   if (error) throw new Error(`Fetch due calls: ${error.message}`)
   if (!due || due.length === 0) return
 
-  for (const call of due as Array<{ id: string; beneficiary_id: string; beneficiaries: { is_active: boolean } | null }>) {
+  // deno-lint-ignore no-explicit-any
+  for (const call of due as Array<any>) {
     try {
+      const ben = call.beneficiaries
       // Bénéficiaire désactivé entre-temps → on saute (le call reste 'scheduled'
       // mais ne sera jamais déclenché ; régénération suivante le supprimera).
-      if (call.beneficiaries && call.beneficiaries.is_active === false) {
+      if (ben && ben.is_active === false) {
         results.skipped++
         continue
+      }
+
+      // Paywall : pas d'appel si l'essai/abonnement est expiré. Un compte sans
+      // abonnement (créé avant la feature) reste autorisé (grandfather).
+      const caregiverId = ben?.caregiver_id ?? null
+      if (caregiverId) {
+        const verdict = await evaluateSubscriptionForCall(supabase, caregiverId)
+        if (verdict !== 'ok') {
+          results.skipped++
+          if (verdict === 'just_expired') {
+            // Met les plannings du compte en pause + prévient l'aidant (une fois).
+            await supabase
+              .from('session_schedules')
+              .update({ is_active: false })
+              .eq('caregiver_id', caregiverId)
+              .eq('is_active', true)
+            const caregiver = ben?.profiles
+            if (caregiver?.email) {
+              await sendEmail({
+                to:      caregiver.email,
+                subject: 'Votre essai Aicoute est terminé',
+                html:    trialEndedEmailHtml({
+                  caregiver_name: caregiver.full_name ?? 'Aidant',
+                  app_url:        appUrl,
+                }),
+              })
+            }
+            await logEvent(supabase, {
+              level:   'info',
+              source:  'schedule-calls/A',
+              call_id: call.id,
+              message: 'Essai expiré → plannings mis en pause, appel non déclenché',
+              payload: { caregiver_id: caregiverId },
+            })
+          }
+          continue
+        }
       }
 
       triggerInitiateCall(supabaseUrl, serviceKey, call.id)

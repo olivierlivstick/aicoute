@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Check } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { createSchedule, updateSchedule, pauseSchedule, activateSchedule } from '@/hooks/useSessionSchedule'
 import { Button } from '@/components/ui/Button'
@@ -62,6 +62,7 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved, caregiverId, ma
   )
   const [isActive, setIsActive] = useState<boolean>(schedule?.is_active ?? true)
   const [togglingActive, setTogglingActive] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -283,6 +284,18 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved, caregiverId, ma
           <Input id="time_of_day" type="time" error={errors.time_of_day?.message} {...register('time_of_day')} />
         </div>
 
+        {/* Options avancées — repliables pour garder la page compacte */}
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
+        >
+          <ChevronDown size={16} className={cn('transition-transform', showAdvanced && 'rotate-180')} />
+          Options avancées
+        </button>
+
+        {showAdvanced && (<>
+
         {/* Durée */}
         <div>
           <Label>Durée maximale</Label>
@@ -388,6 +401,8 @@ export function ScheduleEditor({ beneficiary, schedule, onSaved, caregiverId, ma
             </p>
           )}
         </div>
+
+        </>)}
 
         {/* Footer save */}
         <div className="flex items-center justify-between pt-2 border-t border-slate-100">

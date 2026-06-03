@@ -19,6 +19,7 @@
 import { corsHeaders, handleCors } from '../_shared/cors.ts'
 import { getSupabaseAdmin } from '../_shared/supabaseAdmin.ts'
 import { logEvent } from '../_shared/systemEvents.ts'
+import { markServiceStarted } from '../_shared/subscription.ts'
 
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req)
@@ -58,7 +59,7 @@ Deno.serve(async (req: Request) => {
     // 2. Récupérer le bénéficiaire (numéro, persona pour logs, moteur préféré)
     const { data: beneficiary, error: benError } = await supabase
       .from('beneficiaries')
-      .select('id, first_name, phone, ai_persona_name, preferred_engine')
+      .select('id, first_name, phone, ai_persona_name, preferred_engine, caregiver_id')
       .eq('id', call.beneficiary_id)
       .single()
 
@@ -136,6 +137,10 @@ Deno.serve(async (req: Request) => {
       .eq('id', call_id)
 
     if (updateError) throw new Error(`Update call failed: ${updateError.message}`)
+
+    // Premier appel réel → on date le démarrage du service (et la fin d'essai).
+    // Best-effort, une seule écriture grâce au filtre service_started_at IS NULL.
+    await markServiceStarted(supabase, beneficiary.caregiver_id)
 
     return jsonResponse({
       success:      true,

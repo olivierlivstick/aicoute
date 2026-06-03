@@ -265,6 +265,59 @@ export function noAnswerEmailHtml(params: {
 </html>`
 }
 
+/**
+ * Email « essai gratuit terminé » (compte aidant). Envoyé une fois quand l'essai
+ * d'un mois arrive à échéance et que les appels sont mis en pause. Français
+ * uniquement (email de compte, pas un compte-rendu de bénéficiaire).
+ */
+export function trialEndedEmailHtml(params: {
+  caregiver_name: string
+  app_url:        string
+}): string {
+  const { caregiver_name, app_url } = params
+  const fontSerif = `'Fraunces', Georgia, 'Times New Roman', serif`
+  const fontSans  = `'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif`
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#FBF5EE;font-family:${fontSans};color:#3D2817">
+  <div style="max-width:600px;margin:32px auto;background:#FFFEFA;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(199,93,58,0.10)">
+    <div style="background:#C75D3A;padding:32px;text-align:center">
+      <h1 style="font-family:${fontSerif};color:#ffffff;margin:0;font-size:28px;font-weight:600;letter-spacing:0.5px">Aicoute</h1>
+      <p style="color:rgba(255,255,255,0.92);margin:6px 0 0;font-size:14px;font-style:italic">La présence qui réchauffe</p>
+    </div>
+    <div style="padding:36px 32px 28px">
+      <h2 style="font-family:${fontSerif};color:#3D2817;font-size:22px;font-weight:600;margin:0 0 14px">
+        Votre mois d'essai est terminé
+      </h2>
+      <p style="color:#6B4423;font-size:16px;line-height:1.65;margin:0 0 12px">
+        Bonjour <strong>${caregiver_name}</strong>, nous espérons que ce premier mois
+        avec Aicoute vous a plu. Votre essai gratuit vient de se terminer, et les
+        appels sont <strong>en pause</strong> pour le moment.
+      </p>
+      <p style="color:#6B4423;font-size:16px;line-height:1.65;margin:0 0 12px">
+        Pour que les appels reprennent, choisissez la formule qui vous convient
+        depuis votre espace personnel.
+      </p>
+      <div style="text-align:center;margin:30px 0 6px">
+        <a href="${app_url}/compte"
+           style="display:inline-block;background:#C75D3A;color:#ffffff;padding:15px 34px;border-radius:12px;font-size:16px;font-weight:600;text-decoration:none">
+          Choisir ma formule
+        </a>
+      </div>
+    </div>
+    <div style="background:#FBF5EE;padding:20px 32px;text-align:center;border-top:1px solid #E8DCC4">
+      <p style="color:#6B4423;font-size:13px;margin:0">© 2026 Aicoute · Une présence pour ceux que vous aimez</p>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
