@@ -113,9 +113,18 @@ export function frenchRelativeDate(iso: string | null, now: Date = new Date()): 
  * Les variables inconnues sont laissées telles quelles (pas de crash).
  * (Côté web, packages/shared/promptTemplate.ts a une copie pour le snapshot wizard.)
  */
+// Nom « humain » de la langue parlée (fr/en/es/de/it). Sert à la fois à résoudre
+// {{langue}} dans le template ET à la directive de langue du BLOC CONTEXTE.
+const LANG_LABEL: Record<string, string> = {
+  fr: 'français', en: 'anglais', es: 'espagnol', de: 'allemand', it: 'italien',
+}
+function langLabelOf(code: string | null | undefined): string {
+  return LANG_LABEL[(code ?? '').toLowerCase()] ?? 'français'
+}
+
 export function resolvePromptPlaceholders(template: string, b: BeneficiaryContext): string {
   const styleDesc = STYLE_DESCRIPTIONS[b.conversation_style] ?? 'chaleureux et bienveillant'
-  const langLabel = b.language_preference === 'fr' ? 'français' : b.language_preference
+  const langLabel = langLabelOf(b.language_preference)
   const pronoun   = GENDER_PRONOUN[b.gender ?? 'other']
   return template
     .replaceAll('{{persona}}', b.ai_persona_name)
@@ -136,9 +145,11 @@ function buildContextBlock(
     first_name, birth_year, gender,
     family_history, life_story, hobbies,
     favorite_topics, topics_to_avoid, personality_notes, health_notes,
+    language_preference,
   } = beneficiary
 
-  const pronoun = GENDER_PRONOUN[gender ?? 'other']
+  const pronoun  = GENDER_PRONOUN[gender ?? 'other']
+  const langName = langLabelOf(language_preference)
 
   const topMemories = [...memories]
     .sort((a, b) => b.importance - a.importance)
@@ -192,7 +203,12 @@ SUJETS SUGGÉRÉS POUR CET APPEL
 ${suggestedTopicsText}
 ${schedule.special_instructions ? `\nInstruction spéciale : ${schedule.special_instructions}` : ''}
 
-Durée cible de cet appel : ${schedule.max_duration_minutes} minutes.`
+Durée cible de cet appel : ${schedule.max_duration_minutes} minutes.
+
+═══════════════════════════════════════
+LANGUE DE L'APPEL (IMPÉRATIF)
+═══════════════════════════════════════
+Tu parles avec ${first_name} EXCLUSIVEMENT en ${langName}, dès le tout premier mot et pendant tout l'appel, même si des instructions plus haut sont rédigées dans une autre langue. Cette règle prime sur toute autre indication de langue.`
 }
 
 /**

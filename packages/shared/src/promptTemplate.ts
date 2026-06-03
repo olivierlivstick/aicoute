@@ -46,8 +46,11 @@ export const GENDER_PRONOUN: Record<string, { subject: string; object: string; a
   other:  { subject: 'il/elle', object: 'le/la', adj: 'né(e)' },
 }
 
+const LANG_LABEL: Record<string, string> = {
+  fr: 'français', en: 'anglais', es: 'espagnol', de: 'allemand', it: 'italien',
+}
 export function langLabel(language_preference: string): string {
-  return language_preference === 'fr' ? 'français' : language_preference
+  return LANG_LABEL[(language_preference ?? '').toLowerCase()] ?? 'français'
 }
 
 export interface PromptResolveInput {
