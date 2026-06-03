@@ -10,7 +10,6 @@ import { Step2History } from './steps/Step2History'
 import { Step3Tastes } from './steps/Step3Tastes'
 import { Step4Personality } from './steps/Step4Personality'
 import { Step5AIConfig } from './steps/Step5AIConfig'
-import { Step6Phone } from './steps/Step6Phone'
 import type { Beneficiary } from '@modect/shared'
 import { cn } from '@/lib/utils'
 
@@ -22,7 +21,6 @@ const STEPS = [
   { label: 'Ses goûts',        short: '3' },
   { label: 'Personnalité',     short: '4' },
   { label: 'Configuration IA', short: '5' },
-  { label: 'Téléphone',        short: '6' },
 ]
 
 export function BeneficiaryWizard() {
@@ -171,7 +169,6 @@ export function BeneficiaryWizard() {
         {step === 2 && <Step3Tastes {...stepProps} />}
         {step === 3 && <Step4Personality {...stepProps} />}
         {step === 4 && <Step5AIConfig {...stepProps} />}
-        {step === 5 && <Step6Phone {...stepProps} />}
       </div>
     </div>
   )

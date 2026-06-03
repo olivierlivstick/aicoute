@@ -104,20 +104,53 @@ export function DashboardPage() {
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       ) : beneficiaries.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-2xl border border-slate-100 shadow-sm">
-          <div className="text-5xl mb-4">💛</div>
-          <h2 className="font-title text-xl font-semibold text-slate-700 mb-2">
-            Aucun bénéficiaire configuré
-          </h2>
-          <p className="text-slate-500 mb-6">
-            Ajoutez un bénéficiaire pour commencer à planifier des appels IA.
-          </p>
-          <Link to="/beneficiary/new">
-            <Button>
-              <Plus size={18} />
-              Créer le profil de mon bénéficiaire
-            </Button>
-          </Link>
+        <div className="py-14 px-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
+          <div className="max-w-xl mx-auto text-center">
+            <div className="text-5xl mb-4">💛</div>
+            <h2 className="font-title text-2xl font-semibold text-slate-800 mb-2">
+              Créons le profil de votre bénéficiaire
+            </h2>
+            <p className="text-slate-500 mb-8">
+              En quelques minutes, vous mettez en place un compagnon d'appel sur
+              mesure. Le formulaire vous guide en trois temps :
+            </p>
+          </div>
+
+          <ol className="max-w-xl mx-auto space-y-4 mb-9 text-left">
+            {[
+              {
+                title: 'Les données de base',
+                desc: 'Prénom, nom, année de naissance et numéro de téléphone du bénéficiaire.',
+              },
+              {
+                title: 'Mieux le connaître',
+                desc: 'Son histoire, ses goûts et sa personnalité — pour des conversations naturelles et personnalisées.',
+              },
+              {
+                title: 'La voix qui l\'appellera',
+                desc: 'Le prénom du compagnon, sa voix, son style et la langue des appels.',
+              },
+            ].map((s, i) => (
+              <li key={i} className="flex gap-4">
+                <span className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                  {i + 1}
+                </span>
+                <div>
+                  <p className="font-semibold text-slate-800">{s.title}</p>
+                  <p className="text-sm text-slate-500 leading-relaxed">{s.desc}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          <div className="text-center">
+            <Link to="/beneficiary/new">
+              <Button>
+                <Plus size={18} />
+                Créer le profil de mon bénéficiaire
+              </Button>
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">

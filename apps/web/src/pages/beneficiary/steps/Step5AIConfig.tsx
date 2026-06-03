@@ -20,8 +20,9 @@ type FormData = z.infer<typeof schema>
 
 interface Props {
   data: WizardData
-  onNext: (patch: WizardData) => void
   onPrev: () => void
+  onSubmit: (patch: WizardData) => void
+  saving?: boolean
 }
 
 // Genre de la voix → voix Realtime GA (cedar = masculine, marin = féminine)
@@ -45,7 +46,7 @@ const LANGUAGES = [
   { value: 'it', label: '🇮🇹 Italiano' },
 ]
 
-export function Step5AIConfig({ data, onNext, onPrev }: Props) {
+export function Step5AIConfig({ data, onPrev, onSubmit, saving }: Props) {
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -60,14 +61,16 @@ export function Step5AIConfig({ data, onNext, onPrev }: Props) {
   const selectedVoice = watch('ai_voice')
   const selectedStyle = watch('conversation_style')
 
-  const onSubmit = (values: FormData) => onNext(values)
+  const handleFinish = (values: FormData) => onSubmit(values)
 
   return (
     <StepLayout
       title="Configuration du compagnon IA"
       subtitle="Personnalisez la façon dont l'IA s'exprime"
       onPrev={onPrev}
-      onNext={handleSubmit(onSubmit)}
+      onSubmit={handleSubmit(handleFinish)}
+      saving={saving}
+      isLast
     >
       {/* Prénom du compagnon */}
       <div>

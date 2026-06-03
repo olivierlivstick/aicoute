@@ -17,6 +17,7 @@ const schema = z.object({
     .optional()
     .or(z.literal('')),
   gender: z.enum(['male', 'female', 'other']).optional(),
+  phone: z.string().optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -41,6 +42,7 @@ export function Step1BasicInfo({ data, onNext, onPrev }: Props) {
       last_name:  data.last_name ?? '',
       birth_year: data.birth_year ?? ('' as unknown as number),
       gender:     data.gender ?? undefined,
+      phone:      data.phone ?? '',
     },
   })
 
@@ -52,6 +54,7 @@ export function Step1BasicInfo({ data, onNext, onPrev }: Props) {
       last_name:  values.last_name,
       birth_year: values.birth_year ? Number(values.birth_year) : undefined,
       gender:     values.gender,
+      phone:      values.phone?.trim() || undefined,
     })
   }
 
@@ -106,6 +109,19 @@ export function Step1BasicInfo({ data, onNext, onPrev }: Props) {
             </button>
           ))}
         </div>
+      </div>
+
+      <div>
+        <Label htmlFor="phone">Numéro de téléphone</Label>
+        <p className="text-xs text-slate-400 mb-1">
+          Le numéro sur lequel votre bénéficiaire recevra les appels (modifiable à tout moment).
+        </p>
+        <Input
+          id="phone"
+          type="tel"
+          placeholder="+33 6 00 00 00 00"
+          {...register('phone')}
+        />
       </div>
 
       <div className="bg-primary-50 rounded-xl px-4 py-3">
