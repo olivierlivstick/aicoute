@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Favicon AICOUTE — tuile terracotta + ondes sonores crème (rappel du pictogramme du logo) -->
+  <rect width="64" height="64" rx="14" fill="#C75D3A"/>
+  <g stroke="#FBF5EE" stroke-width="5" stroke-linecap="round">
+    <line x1="18" y1="28" x2="18" y2="36"/>
+    <line x1="27" y1="20" x2="27" y2="44"/>
+    <line x1="36" y1="25" x2="36" y2="39"/>
+    <line x1="46" y1="18" x2="46" y2="46"/>
+  </g>
+</svg>

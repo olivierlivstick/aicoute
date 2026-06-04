@@ -1,0 +1,10 @@
+# robots.txt — vitrine Aicoute (www.aicoute.fr)
+# Le back-office (app.aicoute.fr) est servi par la même app mais n'a pas vocation
+# à être indexé : il est protégé par auth et ne contient pas de contenu public.
+User-agent: *
+Allow: /
+
+# Pages publiques de compte-rendu : secrètes (token), inutile de les crawler
+Disallow: /r/
+
+Sitemap: https://www.aicoute.fr/sitemap.xml

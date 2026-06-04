@@ -3,12 +3,137 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#C75D3A" />
     <title>Aicoute — Pour ne jamais passer une journée sans parler</title>
     <meta
       name="description"
       content="Aicoute appelle régulièrement vos parents âgés, prend de leurs nouvelles et vous envoie un résumé chaleureux après chaque échange. Une présence pour ceux que vous aimez."
     />
+    <link rel="canonical" href="https://www.aicoute.fr/" />
+
+    <!-- Open Graph (Facebook, LinkedIn, WhatsApp…) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Aicoute" />
+    <meta property="og:locale" content="fr_FR" />
+    <meta property="og:url" content="https://www.aicoute.fr/" />
+    <meta property="og:title" content="Aicoute — Pour ne jamais passer une journée sans parler" />
+    <meta
+      property="og:description"
+      content="Aicoute appelle régulièrement vos parents âgés, prend de leurs nouvelles et vous envoie un résumé chaleureux après chaque échange. Une présence pour ceux que vous aimez."
+    />
+    <!-- TODO : remplacer par une image dédiée 1200×630 (ratio 1.91:1) pour un aperçu optimal -->
+    <meta property="og:image" content="https://www.aicoute.fr/hero.jpg" />
+    <meta property="og:image:alt" content="Une personne âgée dans une lumière chaleureuse" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Aicoute — Pour ne jamais passer une journée sans parler" />
+    <meta
+      name="twitter:description"
+      content="Aicoute appelle régulièrement vos parents âgés et vous envoie un résumé chaleureux après chaque échange."
+    />
+    <meta name="twitter:image" content="https://www.aicoute.fr/hero.jpg" />
+
+    <!-- Données structurées (JSON-LD) — Organization + WebSite + FAQ -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://www.aicoute.fr/#organization",
+            "name": "Aicoute",
+            "url": "https://www.aicoute.fr/",
+            "logo": "https://www.aicoute.fr/favicon.svg",
+            "description": "Compagnon téléphonique qui appelle régulièrement vos proches âgés et vous envoie un résumé après chaque échange.",
+            "email": "contact@aicoute.fr",
+            "sameAs": ["https://www.linkedin.com/company/aicoute/"],
+            "areaServed": "FR"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://www.aicoute.fr/#website",
+            "url": "https://www.aicoute.fr/",
+            "name": "Aicoute",
+            "inLanguage": "fr-FR",
+            "publisher": { "@id": "https://www.aicoute.fr/#organization" }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://www.aicoute.fr/#faq",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Mon proche va-t-il comprendre qu'il parle à une IA ?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Oui, en toute transparence. Dès la première seconde du premier appel, Aicoute se présente comme une IA mandatée par vous. Cette honnêteté est au cœur de notre démarche — et la plupart de nos utilisateurs trouvent cela rassurant plutôt que dérangeant."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Que se passe-t-il si mon proche dit quelque chose d'inquiétant ?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Tout signal sensible — douleur physique, déprime, chute évoquée, sujet préoccupant — est remonté dans la section « Point d'attention » de votre résumé. Sur la formule Sérénité, vous recevez une alerte en temps réel."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Comment Aicoute se souvient-il des conversations précédentes ?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Chaque conversation est résumée puis indexée dans la mémoire dédiée à votre proche : les sujets récurrents, les personnes mentionnées, les événements importants. L'IA peut ainsi reprendre le fil naturellement d'un appel à l'autre."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Mon proche peut-il refuser d'être appelé ?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Absolument et à tout moment. Pendant l'appel il lui suffit de le dire ; les appels suivants sont immédiatement suspendus et vous êtes informé·e. Le respect du consentement prime sur tout le reste."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Sur quel numéro l'appel est-il passé ?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Sur le numéro de ligne fixe ou mobile que vous renseignez lors de la création du profil. Vous pouvez le modifier à tout moment depuis votre espace personnel."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Que devient l'enregistrement de l'appel après le résumé ?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "L'enregistrement audio brut est supprimé dans les 24 heures. Seule la transcription textuelle est conservée pendant 12 mois glissants, le temps utile à la continuité de la conversation. Vous pouvez tout effacer à la demande."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Peut-on tester Aicoute avant de payer ?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Oui. Le premier appel est entièrement offert, sans carte bancaire, pour que vous et votre proche puissiez juger sur pièce avant tout engagement."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Comment résilier mon abonnement ?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "En deux clics depuis votre espace personnel, sans justificatif, sans appel à passer. Aucun engagement, aucun frais caché."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+
     <!-- Google Fonts — charte Aicoute : Fraunces (titres) + Inter (corps) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
