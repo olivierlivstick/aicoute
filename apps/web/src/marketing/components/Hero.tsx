@@ -73,8 +73,8 @@ function HeroPhoto() {
       <div className="relative rounded-xl overflow-hidden aspect-[4/5] md:aspect-[5/6] w-full shadow-sm">
         <img
           src="/hero.jpg"
-          alt="Une personne âgée au téléphone, dans une lumière chaleureuse"
-          className="w-full h-full object-cover"
+          alt="Une personne âgée lisant près d'une fenêtre, dans une lumière chaleureuse"
+          className="w-full h-full object-cover object-[center_30%]"
           loading="eager"
         />
         {/* Lueur dorée bas pour fondre la carte flottante */}
