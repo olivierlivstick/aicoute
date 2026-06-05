@@ -7,17 +7,17 @@ export function Footer() {
     {
       title: 'Produit',
       links: [
-        { label: 'Comment ça marche', href: '#comment' },
-        { label: 'Tarifs', href: '#tarifs' },
-        { label: 'Sécurité', href: '#securite' },
-        { label: 'FAQ', href: '#faq' },
+        { label: 'Comment ça marche', href: '/#comment' },
+        { label: 'Tarifs', href: '/#tarifs' },
+        { label: 'Sécurité', href: '/#securite' },
+        { label: 'FAQ', href: '/#faq' },
       ],
     },
     {
       title: 'Entreprise',
       links: [
         { label: 'À propos', href: '/a-propos' },
-        { label: 'Contact', href: '#contact' },
+        { label: 'Contact', href: '/#contact' },
       ],
     },
     {
