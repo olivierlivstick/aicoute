@@ -82,6 +82,10 @@ Utilisé pour les vrais appels vers le bénéficiaire, déclenchés par le worke
 
 Modèle GA imposé : tout modèle Beta/legacy (`*-realtime-preview`) est ramené à `gpt-realtime-2` par `loadCallContext`. Voix par défaut `cedar`. Coupure serveur de sécurité côté voice-bridge à `MAX_SCHEDULED_CALL_SECONDS` (900 s = 15 min).
 
+> **⏰ Veille modèles voix — À REFAIRE PÉRIODIQUEMENT (~tous les 1–2 mois).** La **qualité de la conversation est le cœur du produit** et les modèles audio temps réel progressent vite. Vérifier régulièrement (doc/​changelog OpenAI Realtime + Gemini Live, recherche web) si un modèle **plus récent ou meilleur** est sorti, et le **tester avant bascule**. Migration sans douleur : Gemini via l'env `GEMINI_MODEL` (cf. Bugs connus), OpenAI via le label/snapshot dans `_shared/callContext.ts` + bridges voice-bridge.
+> - **État vérifié le 2026-06-05 : on est à jour.** OpenAI `gpt-realtime-2` (snapshot 2026-05-07, dernier généraliste temps réel) ; Gemini `models/gemini-3.1-flash-live-preview` (sorti 2026-03-26, dernier ; toujours *Preview*, pas de GA). Voix actuelles : cedar/marin (OpenAI), Aoede (Gemini).
+> - **Levier qualité hors version** : `gpt-realtime-2` expose un `reasoning_effort` configurable (minimal→very high, **défaut `low`**) + contexte 128k. Tester `medium` pour des réponses plus pertinentes (léger surcoût de latence) — non câblé pour l'instant.
+
 ### Interruptions (barge-in) — adoucissement Gemini
 
 Par défaut, Gemini Live coupe la voix de l'IA « au couteau » dès qu'il détecte un son entrant (un souffle, un « hum » suffisent) → effet robotique, très différent d'une conversation humaine. Deux leviers adoucissent ça (**ciblés Gemini** ; OpenAI non concerné) :
