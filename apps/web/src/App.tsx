@@ -7,6 +7,10 @@ import { useIsAdmin } from '@/hooks/useIsAdmin'
 import { Home } from '@/marketing/Home'
 import { TrackCallsPage } from '@/marketing/TrackCalls'
 import { PublicReportPage } from '@/pages/public/PublicReport'
+import { MentionsLegalesPage } from '@/marketing/legal/MentionsLegales'
+import { CGUPage } from '@/marketing/legal/CGU'
+import { RGPDPage } from '@/marketing/legal/RGPD'
+import { IAActPage } from '@/marketing/legal/IAAct'
 
 // Mono-site : la vitrine et le back-office sont la même app, servie sur deux
 // sous-domaines. Sur app.modect.com on entre dans le back-office ; ailleurs
@@ -64,6 +68,12 @@ export function App() {
         {/* Compte-rendu partageable (public, sans login) — jeton 48h dans l'URL.
             Servi sur les deux hôtes (www + app) ; data via Edge Fn get-report. */}
         <Route path="/r/:token" element={<PublicReportPage />} />
+
+        {/* Pages légales (vitrine, publiques) */}
+        <Route path="/mentions-legales" element={<MentionsLegalesPage />} />
+        <Route path="/cgu" element={<CGUPage />} />
+        <Route path="/rgpd" element={<RGPDPage />} />
+        <Route path="/ia-act" element={<IAActPage />} />
 
         {/* App (protégée) */}
         <Route

@@ -25,10 +25,10 @@ export function Footer() {
     {
       title: 'Légal',
       links: [
-        { label: 'Mentions légales', href: '#' },
-        { label: 'CGU', href: '#' },
-        { label: 'Confidentialité', href: '#' },
-        { label: 'Cookies', href: '#' },
+        { label: 'Mentions légales', href: '/mentions-legales' },
+        { label: 'CGU', href: '/cgu' },
+        { label: 'RGPD', href: '/rgpd' },
+        { label: 'IA Act', href: '/ia-act' },
       ],
     },
   ]
