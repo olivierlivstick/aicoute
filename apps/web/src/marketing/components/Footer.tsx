@@ -16,10 +16,8 @@ export function Footer() {
     {
       title: 'Entreprise',
       links: [
-        { label: 'À propos', href: '#' },
-        { label: 'Blog', href: '#' },
+        { label: 'À propos', href: '/a-propos' },
         { label: 'Contact', href: '#contact' },
-        { label: 'Presse', href: '#' },
       ],
     },
     {

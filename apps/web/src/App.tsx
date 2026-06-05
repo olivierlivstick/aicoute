@@ -7,6 +7,7 @@ import { useIsAdmin } from '@/hooks/useIsAdmin'
 import { Home } from '@/marketing/Home'
 import { TrackCallsPage } from '@/marketing/TrackCalls'
 import { PublicReportPage } from '@/pages/public/PublicReport'
+import { AboutPage } from '@/marketing/About'
 import { MentionsLegalesPage } from '@/marketing/legal/MentionsLegales'
 import { CGUPage } from '@/marketing/legal/CGU'
 import { RGPDPage } from '@/marketing/legal/RGPD'
@@ -69,7 +70,8 @@ export function App() {
             Servi sur les deux hôtes (www + app) ; data via Edge Fn get-report. */}
         <Route path="/r/:token" element={<PublicReportPage />} />
 
-        {/* Pages légales (vitrine, publiques) */}
+        {/* Pages de contenu (vitrine, publiques) */}
+        <Route path="/a-propos" element={<AboutPage />} />
         <Route path="/mentions-legales" element={<MentionsLegalesPage />} />
         <Route path="/cgu" element={<CGUPage />} />
         <Route path="/rgpd" element={<RGPDPage />} />
