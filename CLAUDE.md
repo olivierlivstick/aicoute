@@ -209,6 +209,29 @@ Numéro Twilio prod : `+33 9 39 03 52 69`. Modèle Gemini par défaut surchargea
 
 **Tracking des démos** : chaque démo (web ou téléphone, OpenAI ou Gemini) crée une row dans `demo_calls`. Champs : mode, engine, started_at, ended_at, duration_seconds, phone_prefix (6 chars, mode téléphone uniquement), twilio_cost_eur (estim. durée), openai_cost_eur (estim. durée — nom historique, applicable aux deux moteurs), openai_cost_eur_real (coût IA réel par tokens — applicable aux deux moteurs, dispatch tarifs via `computeAiCostEur(engine, tokens)`), tokens_input_audio + tokens_input_audio_cached + tokens_output_audio + tokens_input_text + tokens_output_text (mutualisés ; `input_audio_cached` reste à 0 pour Gemini qui ne facture pas le cache audio). Côté web : `DemoWebModal` appelle l'Edge Function `log-demo` (actions `start`/`end`) → écrit ended_at + duration + estimation par durée. **Coût IA réel (tokens)** : pour le web **Gemini**, les tokens ne sont visibles que côté serveur (proxy `gemini-bridge-web.js`), donc le client propage le `demoId` en query (`/ws/gemini-web?demoId=…`) et le voice-bridge complète `openai_cost_eur_real` + `tokens_*` via `recordDemoRealCost` (colonnes disjointes de log-demo → pas de course). Le web **OpenAI** (WebRTC direct) n'a pas encore ce câblage → seule l'estimation par durée est remontée. Côté téléphone : `services/voice-bridge/src/tracking.js` écrit directement dans Supabase via service role, `demoCallId` propagé via TwiML `<Parameter>`, coût réel inclus. Tarifs : OpenAI ($32/$64 in/out par M tokens) et Gemini ($3/$12) hardcodés dans tracking.js, conversion USD→EUR à 0,92. Consultable via `https://www.aicoute.fr/track_calls?key=<DEMO_TRACK_KEY>` (page `TrackCalls.tsx` + Edge Function `list-demos`, colonne "Moteur" badge OpenAI/Gemini).
 
+## Vitrine — pages de contenu, SEO & prerendering
+
+### Pages publiques hors home (vitrine)
+Routes déclarées dans [App.tsx](apps/web/src/App.tsx) hors `AuthGuard`, servies sur les deux hôtes (utiles sur la vitrine) :
+- `/a-propos` — [About.tsx](apps/web/src/marketing/About.tsx) (récit « Notre histoire »)
+- `/mentions-legales`, `/cgu`, `/rgpd`, `/ia-act` — pages légales dans [src/marketing/legal/](apps/web/src/marketing/legal/)
+
+Toutes réutilisent **[LegalLayout.tsx](apps/web/src/marketing/legal/LegalLayout.tsx)** : barre minimale (logo + « ← Retour à l'accueil »), titre Fraunces, date de MAJ optionnelle, `Footer`, + primitives typo exportées (`Section`/`P`/`UL`/`LI`/`Mail`). Liens internes en `<a>` simple (aucun hook react-router) → composants **SSR-safe**. `document.title` posé via `useEffect`. Contenu légal **adapté** de corraict.com (même société Oaventure EURL) au modèle B2C d'Aicoute (responsable de traitement, sous-traitants OpenAI/Google/Twilio/Resend/Supabase/Render/Netlify, volet données de santé art. 9 + consentement) ; CGU = trame **générique à relire juridiquement**. Ces pages ne sont **pas** prerendues (rendu client, SEO secondaire).
+
+Le **[Footer.tsx](apps/web/src/marketing/components/Footer.tsx)** est partagé home + sous-pages : ses liens-ancres sont en `/#section` (et NON `#section`) pour scroller sur la home ET naviguer-puis-scroller depuis une sous-page. Bloc Légal = Mentions légales/CGU/RGPD/IA Act ; bloc Entreprise = À propos/Contact. (Les ancres nues `#…` restantes du Header/Hero/FAQ sont OK car ces composants ne vivent que sur la home.)
+
+### SEO (vitrine)
+- `index.html` : `<title>` + description, `canonical`, **Open Graph + Twitter Card**, **JSON-LD** (`Organization` + `WebSite` + `FAQPage` 8 Q/R), `favicon.svg`, `theme-color`. Ces balises sont statiques → vues par Google ET bots sociaux sans JS. ⚠️ servies aussi sur `app.*` (même index.html) mais sans impact (back-office non indexé).
+- `public/robots.txt` (+ `Disallow: /r/`, lien sitemap) + `public/sitemap.xml`.
+- **Image OG** `public/og-image.jpg` (1200×630, charte) régénérable via `node scripts/make-og-image.mjs` — script **PONCTUEL, hors build** : `npm i --no-save @resvg/resvg-js sharp` + polices TTF sous-settées Google Fonts (UA Android → TTF, param `&text=` = glyphes de la copie courante uniquement → re-télécharger si la copie change).
+
+### Prerendering SSG de la home
+`build` = `vite build && vite build --ssr src/entry-prerender.tsx --outDir dist-ssr && node scripts/prerender.mjs` :
+- [entry-prerender.tsx](apps/web/src/entry-prerender.tsx) rend `<Home/>` en HTML via `react-dom/server` (sans navigateur).
+- [scripts/prerender.mjs](apps/web/scripts/prerender.mjs) l'injecte dans `dist/index.html`. **Résilient** : en cas d'échec → garde l'index.html SPA (fonctionnel) et n'échoue PAS le build (dégradation SEO-only, jamais un deploy cassé) ; nettoie `dist-ssr` (gitignoré).
+- [main.tsx](apps/web/src/main.tsx) : `hydrateRoot` **uniquement** sur la home vitrine pré-rendue (`pathname === '/' && !hostname.startsWith('app.')`) ; sinon `root.replaceChildren()` + `createRoot` (l'index.html servi sur TOUTE route contient le markup home → sans ça, mismatch d'hydratation sur les sous-pages).
+- Marche car les composants react-router n'émettent aucun DOM → markup de `<App/>` sur "/" === `<Home/>`. ⚠️ Si la home utilise un jour une valeur non-déterministe au rendu (`Date`/`Math.random`) ou un accès `window`/`document` hors `useEffect`, l'hydratation casse.
+
 ## Variables d'environnement
 
 ### apps/web (.env) — app unique (vitrine + back-office)
