@@ -123,7 +123,13 @@ export class RealtimeSession {
       dc.onopen = () => {
         // L'IA démarre la conversation (salutation) → état "speaking"
         this.setStatus('speaking')
-        // Activer la transcription des entrées utilisateur
+        // Activer la transcription des entrées utilisateur + régler la fluidité :
+        //  - turn_detection semantic_vad → l'IA répond quand on a VRAIMENT fini de
+        //    parler (selon les mots, pas un délai de silence fixe) → moins de « blanc ».
+        //  - noise_reduction far_field → filtre le bruit d'ambiance AVANT la VAD,
+        //    pour ne pas prendre un bruit pour un coupage de parole.
+        // (Pendant WebRTC : ces réglages sont fixés ici, l'équivalent côté téléphone /
+        //  appels planifiés est tunable par env OPENAI_VAD_* dans le voice-bridge.)
         this.send({
           type: 'session.update',
           session: {
@@ -132,6 +138,8 @@ export class RealtimeSession {
             audio: {
               input: {
                 transcription: { model: this.cfg.inputTranscriptionModel ?? 'whisper-1' },
+                turn_detection: { type: 'semantic_vad', eagerness: 'medium' },
+                noise_reduction: { type: 'far_field' },
               },
             },
           },

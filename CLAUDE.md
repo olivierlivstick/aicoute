@@ -86,20 +86,27 @@ Modèle GA imposé : tout modèle Beta/legacy (`*-realtime-preview`) est ramené
 > - **État vérifié le 2026-06-05 : on est à jour.** OpenAI `gpt-realtime-2` (snapshot 2026-05-07, dernier généraliste temps réel) ; Gemini `models/gemini-3.1-flash-live-preview` (sorti 2026-03-26, dernier ; toujours *Preview*, pas de GA). Voix actuelles : cedar/marin (OpenAI), Aoede (Gemini).
 > - **Levier qualité hors version** : `gpt-realtime-2` expose un `reasoning_effort` configurable (minimal→very high, **défaut `low`**) + contexte 128k. Tester `medium` pour des réponses plus pertinentes (léger surcoût de latence) — non câblé pour l'instant.
 
-### Interruptions (barge-in) — adoucissement Gemini
+### Fluidité de la conversation (VAD / tour de parole)
 
-Par défaut, Gemini Live coupe la voix de l'IA « au couteau » dès qu'il détecte un son entrant (un souffle, un « hum » suffisent) → effet robotique, très différent d'une conversation humaine. Deux leviers adoucissent ça (**ciblés Gemini** ; OpenAI non concerné) :
+La fluidité est un axe produit prioritaire. Trois symptômes traités, chacun via la **détection d'activité vocale (VAD)** — orthogonaux : début de parole = barge-in/bruit ; fin de parole = « blanc ».
 
-1. **VAD moins nerveuse** ([`engines/vad.js`](services/voice-bridge/src/engines/vad.js)) — helper partagé qui injecte `setup.realtimeInputConfig.automaticActivityDetection` dans les **3** bridges Gemini : `gemini-bridge.js` (démo tél), `gemini-bridge-web.js` (démo web), `modect-gemini-bridge.js` (appels planifiés prod). Défauts : `startOfSpeechSensitivity = START_SENSITIVITY_LOW` + `prefixPaddingMs = 200` → exige ~200 ms de vraie parole avant de valider l'interruption, ignore souffles/bruits brefs. La détection de **fin** de parole n'est PAS touchée par défaut (la durcir ralentirait la prise de parole de l'IA).
-2. **Fade-out web** ([`packages/shared/src/geminiLive.ts`](packages/shared/src/geminiLive.ts)) — à l'interruption, un `GainNode` maître fait une rampe 100 %→0 en ~120 ms avant de couper les sources, au lieu d'un `stop()` sec. **Démo navigateur uniquement** : le chemin téléphone coupe via `event:'clear'` Twilio (l'audio est déjà bufferisé chez Twilio, non « fondable ») → sur le tél, c'est la VAD seule qui porte l'amélioration.
+**① Barge-in trop nerveux (Gemini) — adoucissement.** Par défaut, Gemini Live coupe la voix de l'IA « au couteau » dès qu'il détecte un son entrant. Deux leviers (**ciblés Gemini** ; OpenAI gère l'interruption via `conversation.item.truncate`) :
+- **VAD moins nerveuse** ([`engines/vad.js`](services/voice-bridge/src/engines/vad.js)) — helper partagé qui injecte `setup.realtimeInputConfig.automaticActivityDetection` dans les **3** bridges Gemini. Défauts : `startOfSpeechSensitivity = START_SENSITIVITY_LOW` + `prefixPaddingMs = 300` (cf. ③ bruit).
+- **Fade-out web** ([`packages/shared/src/geminiLive.ts`](packages/shared/src/geminiLive.ts)) — à l'interruption, un `GainNode` maître fait une rampe 100 %→0 en ~120 ms avant de couper les sources. **Démo navigateur uniquement** (le tél coupe via `event:'clear'` Twilio, audio déjà bufferisé donc non « fondable »).
 
-**Réglages env (voice-bridge / Render)** — surchargeables sans redéploiement de code :
-- `GEMINI_VAD_DISABLED=true` — **kill-switch** : n'injecte plus le bloc, Gemini reprend son comportement par défaut au prochain appel (rollback instantané).
-- `GEMINI_VAD_START_SENSITIVITY` (défaut `START_SENSITIVITY_LOW`)
-- `GEMINI_VAD_PREFIX_PADDING_MS` (défaut `200` ; ↑ = interruptions moins nerveuses, ↓ = plus réactives)
-- `GEMINI_VAD_END_SENSITIVITY` / `GEMINI_VAD_SILENCE_DURATION_MS` (optionnels — non envoyés par défaut, on laisse le défaut Gemini)
+**② Le « blanc » (silence trop long avant que l'IA réponde)** = détection de FIN de tour.
+- **OpenAI** ([`engines/openai-vad.js`](services/voice-bridge/src/engines/openai-vad.js)) — défaut **`semantic_vad`** (`eagerness=medium`) : un modèle décide quand l'utilisateur a VRAIMENT fini (selon ses mots), pas un délai de silence fixe → répond vite sur une phrase finie, sans couper une pause de réflexion (idéal personnes âgées). Appliqué aux 2 bridges OpenAI voice-bridge (`modect-call-bridge.js` prod + `openai-bridge.js` démo tél) ET au web WebRTC ([`realtime.ts`](packages/shared/src/realtime.ts), hardcodé car bundle navigateur sans env — couvre démo web + simulation aidant).
+- **Gemini** — pas de fin-de-tour sémantique : seuls `endOfSpeechSensitivity` / `silenceDurationMs` jouent. Laissés au défaut Gemini (les durcir risque de couper une pause) → à régler à l'oreille par env.
 
-⚠️ `realtimeInputConfig` est un champ **valide** du `setup` Gemini (vérifié sur la doc officielle) et le bloc reste optionnel (kill-switch) → aucun risque de `setup` malformé qui casserait les appels. Validé en prod le 2026-06-01 (nette amélioration web ET téléphone).
+**③ Bruit d'ambiance pris pour un coupage de parole** = détection de DÉBUT de tour.
+- **OpenAI** — **`noise_reduction`** (défaut `far_field`, env) : OpenAI filtre le bruit AVANT la VAD. `far_field` = haut-parleur/pièce (cas fréquent), `near_field` = combiné à l'oreille. En `server_vad`, `threshold` ↑ = exige une voix plus franche.
+- **Gemini** — pas de filtre dédié ; `prefixPaddingMs = 300` (vs 200 avant) exige une parole soutenue avant interruption → rejette les bruits brefs.
+
+**Réglages env (voice-bridge / Render)** — surchargeables sans redéploiement (kill-switch côté chaque moteur) :
+- **Gemini** : `GEMINI_VAD_DISABLED` · `GEMINI_VAD_START_SENSITIVITY` (défaut `START_SENSITIVITY_LOW`) · `GEMINI_VAD_PREFIX_PADDING_MS` (défaut `300`) · `GEMINI_VAD_END_SENSITIVITY` / `GEMINI_VAD_SILENCE_DURATION_MS` (anti-« blanc », non envoyés par défaut).
+- **OpenAI** : `OPENAI_VAD_DISABLED` · `OPENAI_VAD_TYPE` (défaut `semantic_vad`, ou `server_vad`) · `OPENAI_VAD_EAGERNESS` (défaut `medium`) · `OPENAI_NOISE_REDUCTION` (défaut `far_field`, ou `near_field`/`off`) · `OPENAI_VAD_THRESHOLD`/`_PREFIX_PADDING_MS`/`_SILENCE_DURATION_MS` (server_vad only).
+
+⚠️ `realtimeInputConfig` (Gemini) et `audio.input.{turn_detection,noise_reduction}` (OpenAI) sont des champs valides et tout reste optionnel (kill-switch) → aucun risque de setup malformé. Barge-in Gemini validé en prod le 2026-06-01. `semantic_vad` + `noise_reduction` + prefix 300 = **à valider à l'oreille** (caveat OpenAI : un retour communautaire signale parfois +latence avec noise_reduction → togglable).
 
 ## Back-office aidant (app.aicoute.fr)
 
@@ -277,12 +284,21 @@ GOOGLE_API_KEY=              # clé Google AI Studio (https://aistudio.google.co
 GEMINI_MODEL=                # défaut : models/gemini-3.1-flash-live-preview ; override si Google publie un nouveau preview label
 GEMINI_VOICE=                # défaut : Aoede (validée meilleure que cedar OpenAI en français)
 
-# --- VAD / interruptions Gemini (optionnel — adoucit le barge-in, cf. « Interruptions » plus haut) ---
+# --- VAD / fluidité Gemini (optionnel — cf. « Fluidité de la conversation » plus haut) ---
 GEMINI_VAD_DISABLED=         # true → kill-switch, retour au comportement Gemini par défaut
 GEMINI_VAD_START_SENSITIVITY=   # défaut : START_SENSITIVITY_LOW
-GEMINI_VAD_PREFIX_PADDING_MS=   # défaut : 200 (ms de vraie parole requis avant interruption)
-GEMINI_VAD_END_SENSITIVITY=     # optionnel (non envoyé par défaut)
-GEMINI_VAD_SILENCE_DURATION_MS= # optionnel (non envoyé par défaut)
+GEMINI_VAD_PREFIX_PADDING_MS=   # défaut : 300 (ms de parole soutenue requis avant interruption ; ↑ = rejette + le bruit)
+GEMINI_VAD_END_SENSITIVITY=     # anti-« blanc » (optionnel, non envoyé par défaut ; END_SENSITIVITY_HIGH = fin détectée + tôt)
+GEMINI_VAD_SILENCE_DURATION_MS= # anti-« blanc » (optionnel, non envoyé par défaut ; ex. 600-800)
+
+# --- VAD / fluidité OpenAI (optionnel — cf. « Fluidité de la conversation » plus haut) ---
+OPENAI_VAD_DISABLED=         # true → kill-switch, retour aux défauts OpenAI
+OPENAI_VAD_TYPE=             # défaut : semantic_vad (anti-« blanc ») | server_vad
+OPENAI_VAD_EAGERNESS=        # semantic_vad : low|medium|high|auto (défaut medium ; ↓ = attend plus)
+OPENAI_NOISE_REDUCTION=      # défaut : far_field (haut-parleur) | near_field (combiné) | off
+OPENAI_VAD_THRESHOLD=           # server_vad only (défaut 0.5 ; ↑ = exige voix plus franche)
+OPENAI_VAD_PREFIX_PADDING_MS=   # server_vad only (défaut 300)
+OPENAI_VAD_SILENCE_DURATION_MS= # server_vad only (défaut 500 ; ↓ = répond + vite)
 ```
 
 ## Déploiement

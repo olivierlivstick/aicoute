@@ -12,6 +12,7 @@
 
 import { WebSocket } from 'ws'
 import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
+import { buildTurnDetection, buildNoiseReduction, openaiVadSummary } from './openai-vad.js'
 
 const MODEL = 'gpt-realtime-2'
 const VOICE = 'cedar'
@@ -113,7 +114,9 @@ export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey, 
 
     const systemPrompt = buildSystemPrompt(opener, lang)
     const firstMessage = buildFirstMessage(opener)
-    console.log(`📤 [openai] session.update + response.create (mode ${opener ? 'opener custom' : 'MODECT'}, lang=${lang})`)
+    const turnDetection  = buildTurnDetection()
+    const noiseReduction = buildNoiseReduction()
+    console.log(`📤 [openai] session.update + response.create (mode ${opener ? 'opener custom' : 'MODECT'}, lang=${lang}, VAD ${openaiVadSummary()})`)
 
     openaiWs.send(JSON.stringify({
       type: 'session.update',
@@ -123,13 +126,11 @@ export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey, 
         output_modalities: ['audio'],
         audio: {
           input: {
-            format:         { type: 'audio/pcmu' },
-            turn_detection: {
-              type:                'server_vad',
-              threshold:           0.5,
-              prefix_padding_ms:   300,
-              silence_duration_ms: 500,
-            },
+            format: { type: 'audio/pcmu' },
+            // Fin de tour (anti-« blanc ») + réduction de bruit (anti faux barge-in).
+            // Omis si kill-switch (OPENAI_VAD_DISABLED) → défauts OpenAI.
+            ...(turnDetection  ? { turn_detection:  turnDetection }  : {}),
+            ...(noiseReduction ? { noise_reduction: noiseReduction } : {}),
           },
           output: {
             format: { type: 'audio/pcmu' },

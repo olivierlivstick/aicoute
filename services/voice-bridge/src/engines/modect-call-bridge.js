@@ -16,6 +16,7 @@
 //   }
 
 import { WebSocket } from 'ws'
+import { buildTurnDetection, buildNoiseReduction, openaiVadSummary } from './openai-vad.js'
 import { logEvent } from '../persistence/system-events.js'
 
 const MODEL_DEFAULT = 'gpt-realtime-2'
@@ -232,7 +233,9 @@ export function createModectCallBridge(opts) {
     if (setupDone || !openaiReady || !contextFetched) return
     setupDone = true
 
-    console.log(`📤 [modect:${shortId(callId)}] session.update + response.create`)
+    const turnDetection  = buildTurnDetection()
+    const noiseReduction = buildNoiseReduction()
+    console.log(`📤 [modect:${shortId(callId)}] session.update + response.create (VAD ${openaiVadSummary()})`)
     openaiWs.send(JSON.stringify({
       type: 'session.update',
       session: {
@@ -243,12 +246,10 @@ export function createModectCallBridge(opts) {
           input: {
             format: { type: 'audio/pcmu' },
             transcription: { model: 'whisper-1' },  // transcript user pour save-transcript
-            turn_detection: {
-              type:                'server_vad',
-              threshold:           0.5,
-              prefix_padding_ms:   300,
-              silence_duration_ms: 500,
-            },
+            // Fin de tour (anti-« blanc ») + réduction de bruit (anti faux barge-in).
+            // Omis si kill-switch (OPENAI_VAD_DISABLED) → défauts OpenAI.
+            ...(turnDetection  ? { turn_detection:  turnDetection }  : {}),
+            ...(noiseReduction ? { noise_reduction: noiseReduction } : {}),
           },
           output: {
             format: { type: 'audio/pcmu' },
