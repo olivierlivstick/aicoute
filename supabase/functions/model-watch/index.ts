@@ -88,17 +88,34 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Réponse LLM illisible (JSON non parsé).', raw: text.slice(0, 1000) }, 502)
     }
 
-    // up_to_date DÉRIVÉ des is_latest par moteur → garantit la cohérence
-    // verdict/badges (le LLM ne le renvoie plus séparément).
+    // Cohérence garantie : on DÉRIVE le verdict global ET le texte du bandeau
+    // en CODE à partir des is_latest par moteur. Le texte libre du LLM n'est
+    // PAS fiable (il peut contredire ses propres champs) → on l'ignore pour le
+    // bandeau et on ne garde du LLM que les notes par moteur + recommandations.
     const openaiOk = (parsed.openai as { is_latest?: boolean })?.is_latest !== false
     const geminiOk = (parsed.gemini as { is_latest?: boolean })?.is_latest !== false
     const upToDate = openaiOk && geminiOk
+
+    const verdict = upToDate
+      ? 'Les deux moteurs sont à jour (modèle et voix).'
+      : (!openaiOk && !geminiOk)
+        ? 'Une amélioration (modèle ou voix) est disponible pour OpenAI et pour Gemini.'
+        : !openaiOk
+          ? 'Une amélioration est disponible pour OpenAI ; Gemini est à jour.'
+          : 'Une amélioration est disponible pour Gemini ; OpenAI est à jour.'
+
+    // Si tout est à jour → pas de recommandation (évite « à jour » + une action).
+    const recommendations = upToDate
+      ? []
+      : (Array.isArray(parsed.recommendations) ? parsed.recommendations : [])
 
     const result = {
       checked_at: new Date().toISOString(),
       research_model: RESEARCH_MODEL,
       ...parsed,
+      verdict,
       up_to_date: upToDate,
+      recommendations,
       sources,
     }
 
@@ -131,7 +148,6 @@ function buildPrompt(today: string): string {
     ``,
     `Réponds UNIQUEMENT par un objet JSON valide (aucun texte autour, aucune balise de code), avec EXACTEMENT cette forme :`,
     `{`,
-    `  "verdict": string,                // 1 à 2 phrases FR, cohérentes avec les is_latest ci-dessous, mentionnant le levier concret`,
     `  "openai": { "in_use": string, "latest": string, "is_latest": boolean, "note": string },`,
     `  "gemini": { "in_use": string, "latest": string, "is_latest": boolean, "note": string },`,
     `  "recommendations": string[]`,
