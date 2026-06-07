@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Clock, RefreshCcw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock, RefreshCcw, Sparkles, ExternalLink } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface StuckCall {
@@ -111,6 +111,9 @@ export function AdminSantePage() {
             />
           </section>
 
+          {/* Veille modèles voix (self-service, recherche web via Edge Fn) */}
+          <ModelWatchSection />
+
           {/* Alertes bloquages */}
           <StuckSection
             title="Calls bloqués en « notified » (> 5 min)"
@@ -135,6 +138,169 @@ export function AdminSantePage() {
           <SystemEventsSection events={snap.events} />
         </>
       )}
+    </div>
+  )
+}
+
+interface EngineWatch {
+  in_use:    string
+  latest:    string
+  is_latest: boolean
+  note:      string
+}
+interface ModelWatchResult {
+  checked_at:       string
+  research_model?:  string
+  up_to_date:       boolean
+  verdict:          string
+  openai:           EngineWatch
+  gemini:           EngineWatch
+  recommendations:  string[]
+  sources:          { url: string; title: string }[]
+}
+
+function ModelWatchSection() {
+  const [result, setResult] = useState<ModelWatchResult | null>(null)
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Au montage : réaffiche la dernière veille journalisée dans system_events.
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from('system_events')
+        .select('payload')
+        .eq('source', 'model-watch')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const payload = (data as { payload: ModelWatchResult } | null)?.payload
+      if (payload?.verdict) setResult(payload)
+    })()
+  }, [])
+
+  async function run() {
+    setRunning(true)
+    setError(null)
+    const { data, error: invokeErr } = await supabase.functions.invoke('model-watch')
+    if (invokeErr) {
+      let msg = 'La veille a échoué. Réessayez dans un instant.'
+      try {
+        const body = await (invokeErr as { context?: { json?: () => Promise<{ error?: string }> } }).context?.json?.()
+        if (body?.error) msg = body.error
+      } catch { /* garde le message générique */ }
+      setError(msg)
+    } else {
+      setResult(data as ModelWatchResult)
+    }
+    setRunning(false)
+  }
+
+  return (
+    <section className="mb-8">
+      <div className="flex items-center gap-2 mb-2">
+        <Sparkles size={16} className="text-accent-700" />
+        <h2 className="font-serif text-lg font-semibold text-brun-900">Veille modèles voix</h2>
+        <button
+          onClick={run}
+          disabled={running}
+          className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent-600 text-white text-sm hover:bg-accent-700 transition-colors disabled:opacity-60"
+        >
+          <Sparkles size={14} className={running ? 'animate-pulse' : ''} />
+          {running ? 'Recherche en cours…' : 'Lancer la veille'}
+        </button>
+      </div>
+      <p className="text-xs text-slate-500 mb-3">
+        Recherche web : existe-t-il un modèle voix temps réel plus récent qu'OpenAI Realtime / Gemini Live actuels ?
+      </p>
+
+      {error && (
+        <div className="bg-brique/10 border border-brique/30 text-brique rounded-xl px-4 py-3 text-sm mb-3">
+          {error}
+        </div>
+      )}
+
+      {!result && !error && (
+        <p className="text-sm text-slate-400 italic">
+          {running ? 'Première veille en cours…' : 'Aucune veille lancée. Cliquez sur « Lancer la veille ».'}
+        </p>
+      )}
+
+      {result && (
+        <div className="bg-white rounded-xl border border-creme-sable overflow-hidden">
+          {/* Verdict global */}
+          <div className={`px-4 py-3 flex items-start gap-2 ${result.up_to_date ? 'bg-sauge/10' : 'bg-accent-50'}`}>
+            {result.up_to_date
+              ? <CheckCircle2 size={18} className="text-sauge shrink-0 mt-0.5" />
+              : <AlertTriangle size={18} className="text-accent-700 shrink-0 mt-0.5" />}
+            <div>
+              <p className="text-sm text-brun-900 font-medium">{result.verdict}</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Vérifié {formatRelative(result.checked_at)}
+                {result.research_model ? ` · via ${result.research_model}` : ''}
+              </p>
+            </div>
+          </div>
+
+          {/* Détail par moteur */}
+          <div className="divide-y divide-creme-sable">
+            <EngineRow label="OpenAI Realtime" data={result.openai} />
+            <EngineRow label="Google Gemini Live" data={result.gemini} />
+          </div>
+
+          {/* Recommandations */}
+          {result.recommendations?.length > 0 && (
+            <div className="px-4 py-3 border-t border-creme-sable">
+              <p className="text-xs uppercase tracking-wider text-brun-700 font-semibold mb-1">Recommandations</p>
+              <ul className="list-disc list-inside text-sm text-brun-900 space-y-0.5">
+                {result.recommendations.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {/* Sources */}
+          {result.sources?.length > 0 && (
+            <div className="px-4 py-3 border-t border-creme-sable">
+              <p className="text-xs uppercase tracking-wider text-brun-700 font-semibold mb-1">Sources</p>
+              <ul className="space-y-0.5">
+                {result.sources.map((s, i) => (
+                  <li key={i}>
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      <ExternalLink size={11} />
+                      {s.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function EngineRow({ label, data }: { label: string; data: EngineWatch }) {
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="font-medium text-brun-900 text-sm">{label}</span>
+        <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full ${data.is_latest ? 'bg-sauge/15 text-sauge' : 'bg-accent-50 text-accent-700'}`}>
+          {data.is_latest ? 'À jour' : 'Plus récent dispo'}
+        </span>
+      </div>
+      <p className="text-xs text-slate-500">
+        En service : <span className="font-mono text-brun-700">{data.in_use}</span>
+        {data.latest && data.latest !== data.in_use && (
+          <> · Dernier : <span className="font-mono text-brun-700">{data.latest}</span></>
+        )}
+      </p>
+      {data.note && <p className="text-sm text-brun-900 mt-1">{data.note}</p>}
     </div>
   )
 }

@@ -73,3 +73,6 @@ verify_jwt = false   # page publique de partage du compte-rendu (sans login) ; l
 
 [functions.contact-form]
 verify_jwt = false   # formulaire de contact public de la vitrine (#contact) → email vers contact@aicoute.fr via Resend
+
+[functions.model-watch]
+verify_jwt = false   # auth gérée en interne via requireAdmin (JWT appelant) ; veille modèles voix self-service (/admin/sante)
