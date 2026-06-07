@@ -40,6 +40,7 @@ import { AdminDashboardPage } from '@/pages/admin/AdminDashboard'
 import { AdminComptesPage } from '@/pages/admin/AdminComptes'
 import { AdminCompteDetailPage } from '@/pages/admin/AdminCompteDetail'
 import { AdminAppelsPage } from '@/pages/admin/AdminAppels'
+import { AdminQualitePage } from '@/pages/admin/AdminQualite'
 import { AdminBeneficiairesPage } from '@/pages/admin/AdminBeneficiaires'
 import { AdminBeneficiaireDetailPage } from '@/pages/admin/AdminBeneficiaireDetail'
 import { AdminSantePage } from '@/pages/admin/AdminSante'
@@ -107,6 +108,7 @@ export function App() {
           <Route path="/admin/beneficiaires" element={<RequireAdmin><AdminBeneficiairesPage /></RequireAdmin>} />
           <Route path="/admin/beneficiaires/:id" element={<RequireAdmin><AdminBeneficiaireDetailPage /></RequireAdmin>} />
           <Route path="/admin/appels"        element={<RequireAdmin><AdminAppelsPage       /></RequireAdmin>} />
+          <Route path="/admin/qualite"       element={<RequireAdmin><AdminQualitePage      /></RequireAdmin>} />
           <Route path="/admin/sante"         element={<RequireAdmin><AdminSantePage        /></RequireAdmin>} />
           <Route path="/admin/prompt"        element={<RequireAdmin><AdminPromptPage       /></RequireAdmin>} />
 
