@@ -29,6 +29,7 @@
 import { WebSocket } from 'ws'
 import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
 import { buildRealtimeInputConfig, vadSummary } from './vad.js'
+import { createFluidityTracker, pcm16Ms } from './fluidity.js'
 
 const MODEL = process.env.GEMINI_MODEL || 'models/gemini-3.1-flash-live-preview'
 const VOICE = process.env.GEMINI_VOICE || 'Aoede'
@@ -54,6 +55,9 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
     input_text:         0,
     output_text:        0,
   }
+
+  // Métriques de fluidité (Étape 0 — observation). Audio sortant = PCM16 24kHz.
+  const fluidity = createFluidityTracker({ hasUserTranscription: true })
 
   // --- Client (browser) → bridge ------------------------------------------
   clientWs.on('message', (raw) => {
@@ -137,6 +141,7 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
           if (b64) {
             if (!currentAssistantId) currentAssistantId = `g-a-${turnSeq++}`
             sendClient({ type: 'audio', data: b64 })
+            fluidity.onAiAudio(pcm16Ms(b64, 24000))
           }
         }
 
@@ -162,11 +167,13 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
             done:   false,
             itemId: currentUserId,
           })
+          fluidity.onUserText(sc.inputTranscription.text)
         }
 
         if (sc.interrupted) {
           sendClient({ type: 'interrupted' })
           currentAssistantId = null
+          fluidity.onBargeIn()
         }
 
         if (sc.turnComplete) {
@@ -180,6 +187,7 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
             currentUserId = null
           }
           sendClient({ type: 'turn_complete' })
+          fluidity.onAiTurnComplete()
         }
       }
 
@@ -255,6 +263,9 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
 
   return {
     getTokens() { return { ...tokens } },
+    getFluidityMetrics(durationSeconds) {
+      return fluidity.compute(null, durationSeconds, 'gemini')
+    },
     close: cleanup,
   }
 }

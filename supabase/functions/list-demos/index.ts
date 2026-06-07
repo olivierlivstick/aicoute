@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
         id, mode, engine, started_at, ended_at, duration_seconds, phone_prefix,
         twilio_cost_eur, openai_cost_eur, openai_cost_eur_real,
         tokens_input_audio, tokens_input_audio_cached, tokens_output_audio,
-        tokens_input_text, tokens_output_text
+        tokens_input_text, tokens_output_text, fluidity_metrics
       `)
       .order('started_at', { ascending: false })
       .limit(limit)
@@ -70,6 +70,7 @@ Deno.serve(async (req: Request) => {
       tokens_output_audio: number | null
       tokens_input_text: number | null
       tokens_output_text: number | null
+      fluidity_metrics: Record<string, unknown> | null
     }
     const list = (rows ?? []) as Row[]
 

@@ -101,6 +101,20 @@ export async function recordCallTokens(callId, tokens, engine = 'openai') {
 }
 
 /**
+ * Écrit le snapshot de fluidité sur le call (Étape 0 — observation pure).
+ * Best-effort, jamais bloquant. metrics = objet renvoyé par
+ * fluidity.compute() (cf. engines/fluidity.js).
+ */
+export async function recordCallFluidity(callId, metrics) {
+  if (!supabase || !callId || !metrics) return
+  const { error } = await supabase
+    .from('calls')
+    .update({ fluidity_metrics: metrics })
+    .eq('id', callId)
+  if (error) console.error(`❌ [modect-call] recordFluidity ${callId}:`, error.message)
+}
+
+/**
  * Marque un call selon un statut Twilio reçu via statusCallback.
  *   - no-answer / busy → 'missed' (court-circuite la passe B no-answer qui
  *     attendrait 120s par défaut)

@@ -18,6 +18,7 @@
 import { WebSocket } from 'ws'
 import { mulawB64ToPcm16B64At16k, pcm24B64ToMulawB64At8k } from './audio.js'
 import { buildRealtimeInputConfig, vadSummary } from './vad.js'
+import { createFluidityTracker, mulaw8kMs } from './fluidity.js'
 import { logEvent } from '../persistence/system-events.js'
 
 const MODEL = process.env.GEMINI_MODEL || 'models/gemini-3.1-flash-live-preview'
@@ -70,6 +71,11 @@ export function createModectGeminiBridge(opts) {
   let userBuffer      = ''
   let flushed         = false
 
+  // Métriques de fluidité (Étape 0 — observation). Gemini fournit
+  // inputTranscription → presence_checks + suspected_false mesurables. Pas
+  // d'event de fin de parole → latence du « blanc » approximative (approx=true).
+  const fluidity = createFluidityTracker({ hasUserTranscription: true })
+
   // --- Connexion Gemini Live ------------------------------------------------
   const url = `${ENDPOINT}?key=${encodeURIComponent(geminiApiKey)}`
   const geminiWs = new WebSocket(url)
@@ -115,6 +121,7 @@ export function createModectGeminiBridge(opts) {
             media: { payload: mulawB64 },
           }))
           twilioWs.send(JSON.stringify({ event: 'mark', streamSid, mark: { name: 'ai-chunk' } }))
+          fluidity.onAiAudio(mulaw8kMs(mulawB64))
         }
       }
 
@@ -124,6 +131,7 @@ export function createModectGeminiBridge(opts) {
       }
       if (sc.inputTranscription?.text) {
         userBuffer += sc.inputTranscription.text
+        fluidity.onUserText(sc.inputTranscription.text)
       }
 
       // Fin de turn → commit les buffers dans l'ordre temporel : l'user a
@@ -149,11 +157,13 @@ export function createModectGeminiBridge(opts) {
         }
         assistantBuffer = ''
         userBuffer      = ''
+        fluidity.onAiTurnComplete()
       }
 
       // Barge-in : user a interrompu l'IA → vider le buffer Twilio
       if (sc.interrupted) {
         twilioWs.send(JSON.stringify({ event: 'clear', streamSid }))
+        fluidity.onBargeIn()
       }
     }
 
@@ -341,6 +351,9 @@ export function createModectGeminiBridge(opts) {
     },
     getTokens() {
       return { ...tokens }
+    },
+    getFluidityMetrics(durationSeconds) {
+      return fluidity.compute(transcript, durationSeconds, 'gemini')
     },
     flushFinal,
   }

@@ -36,6 +36,7 @@ import { createModectGeminiBridge } from './engines/modect-gemini-bridge.js'
 import {
   markCallInProgress,
   recordCallTokens,
+  recordCallFluidity,
   markCallByTwilioStatus,
   findCallIdByTwilioSid,
   saveTwilioCostBySid,
@@ -617,7 +618,8 @@ wss.on('connection', (twilioWs) => {
       if (demoCallId && streamStartedAt) {
         const durationSeconds = (Date.now() - streamStartedAt) / 1000
         const tokensToSave = totalAudioIn > 0 || (tokens.output_audio ?? 0) > 0 ? tokens : undefined
-        void recordDemoEnd(demoCallId, durationSeconds, tokensToSave, engine)
+        const fluidity = session.getFluidityMetrics?.(durationSeconds) ?? null
+        void recordDemoEnd(demoCallId, durationSeconds, tokensToSave, engine, fluidity)
       }
     }
   })
@@ -667,8 +669,9 @@ wssWeb.on('connection', (clientWs, req) => {
         ` text_in=${tokens.input_text ?? 0} text_out=${tokens.output_text ?? 0}` +
         ` durée=${dur.toFixed(1)}s → coût réel ≈ €${realCostEur.toFixed(4)}`,
       )
-      // Persiste le coût réel + tokens (colonnes disjointes de log-demo).
-      void recordDemoRealCost(demoCallId, tokens, 'gemini')
+      // Persiste le coût réel + tokens + fluidité (colonnes disjointes de log-demo).
+      const fluidity = bridge.getFluidityMetrics?.(dur) ?? null
+      void recordDemoRealCost(demoCallId, tokens, 'gemini', fluidity)
     },
   })
 
@@ -775,6 +778,10 @@ wssScheduled.on('connection', (twilioWs) => {
     if (totalAudioIn > 0 || (tokens.output_audio ?? 0) > 0) {
       await recordCallTokens(callId, tokens, engine)
     }
+
+    // Snapshot de fluidité (Étape 0 — observation, best-effort)
+    const fluidity = session.getFluidityMetrics?.(durationSeconds) ?? null
+    if (fluidity) await recordCallFluidity(callId, fluidity)
 
     session.close()
 

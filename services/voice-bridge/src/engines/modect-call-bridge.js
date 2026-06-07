@@ -17,6 +17,7 @@
 
 import { WebSocket } from 'ws'
 import { buildTurnDetection, buildNoiseReduction, openaiVadSummary } from './openai-vad.js'
+import { createFluidityTracker, mulaw8kMs } from './fluidity.js'
 import { logEvent } from '../persistence/system-events.js'
 
 const MODEL_DEFAULT = 'gpt-realtime-2'
@@ -73,6 +74,10 @@ export function createModectCallBridge(opts) {
   const assistantBuffer = new Map()  // item_id → { text, started_at }
   let flushed           = false
 
+  // Métriques de fluidité (Étape 0 — observation). OpenAI fournit le transcript
+  // user (whisper) → presence_checks + suspected_false mesurables.
+  const fluidity = createFluidityTracker({ hasUserTranscription: true })
+
   // --- Connexion OpenAI Realtime -------------------------------------------
   const openaiWs = new WebSocket(
     `wss://api.openai.com/v1/realtime?model=${MODEL_DEFAULT}`,
@@ -113,6 +118,7 @@ export function createModectCallBridge(opts) {
       if (event.item_id) lastAssistantItem = event.item_id
       twilioWs.send(JSON.stringify({ event: 'mark', streamSid, mark: { name: 'ai-chunk' } }))
       markQueue.push('ai-chunk')
+      fluidity.onAiAudio(mulaw8kMs(event.delta))
     }
 
     // Transcript assistant (GA : response.output_audio_transcript.* ;
@@ -150,7 +156,18 @@ export function createModectCallBridge(opts) {
           text,
           timestamp: new Date().toISOString(),
         })
+        fluidity.onUserText(text)
       }
+    }
+
+    // Fin de réponse IA = fin de tour (fluidité)
+    if (event.type === 'response.done') {
+      fluidity.onAiTurnComplete()
+    }
+
+    // VAD : l'utilisateur a fini de parler → ancre précise du « blanc »
+    if (event.type === 'input_audio_buffer.speech_stopped') {
+      fluidity.onUserSpeechStop()
     }
 
     // Tokens (en fin de chaque réponse IA)
@@ -170,6 +187,7 @@ export function createModectCallBridge(opts) {
     // Interruption (user prend la parole pendant que l'IA parle)
     if (event.type === 'input_audio_buffer.speech_started') {
       if (markQueue.length > 0 && responseStartTimestamp != null && lastAssistantItem) {
+        fluidity.onBargeIn()
         const elapsed = latestMediaTimestamp - responseStartTimestamp
         openaiWs.send(JSON.stringify({
           type:          'conversation.item.truncate',
@@ -355,6 +373,9 @@ export function createModectCallBridge(opts) {
     },
     getTokens() {
       return { ...tokens }
+    },
+    getFluidityMetrics(durationSeconds) {
+      return fluidity.compute(transcript, durationSeconds, 'openai')
     },
     flushFinal,
   }

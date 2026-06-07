@@ -13,6 +13,7 @@
 import { WebSocket } from 'ws'
 import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
 import { buildTurnDetection, buildNoiseReduction, openaiVadSummary } from './openai-vad.js'
+import { createFluidityTracker, mulaw8kMs } from './fluidity.js'
 
 const MODEL = 'gpt-realtime-2'
 const VOICE = 'cedar'
@@ -34,6 +35,11 @@ export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey, 
     input_text:         0,
     output_text:        0,
   }
+
+  // Métriques de fluidité (Étape 0 — observation). Démo OpenAI = pas de
+  // transcription user activée → presence_checks + suspected_false non
+  // mesurables (null), mais le « blanc » reste précis (event speech_stopped).
+  const fluidity = createFluidityTracker({ hasUserTranscription: false })
 
   const openaiWs = new WebSocket(
     `wss://api.openai.com/v1/realtime?model=${MODEL}`,
@@ -74,10 +80,17 @@ export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey, 
         mark:      { name: 'ai-chunk' },
       }))
       markQueue.push('ai-chunk')
+      fluidity.onAiAudio(mulaw8kMs(event.delta))
+    }
+
+    // VAD : l'utilisateur a fini de parler → ancre précise du « blanc »
+    if (event.type === 'input_audio_buffer.speech_stopped') {
+      fluidity.onUserSpeechStop()
     }
 
     // Comptage tokens en fin de chaque réponse IA
     if (event.type === 'response.done') {
+      fluidity.onAiTurnComplete()
       const u = event.response?.usage
       if (u) {
         const totalAudioIn  = u.input_token_details?.audio_tokens                       ?? 0
@@ -93,6 +106,7 @@ export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey, 
     // Interruption (l'utilisateur prend la parole pendant que l'IA parle)
     if (event.type === 'input_audio_buffer.speech_started') {
       if (markQueue.length > 0 && responseStartTimestamp != null && lastAssistantItem) {
+        fluidity.onBargeIn()
         const elapsed = latestMediaTimestamp - responseStartTimestamp
         openaiWs.send(JSON.stringify({
           type:          'conversation.item.truncate',
@@ -181,6 +195,9 @@ export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey, 
     },
     getTokens() {
       return { ...tokens }
+    },
+    getFluidityMetrics(durationSeconds) {
+      return fluidity.compute(null, durationSeconds, 'openai')
     },
   }
 }

@@ -5,7 +5,6 @@ import { RequireAdmin } from '@/components/RequireAdmin'
 import { AidantOnly } from '@/components/AidantOnly'
 import { useIsAdmin } from '@/hooks/useIsAdmin'
 import { Home } from '@/marketing/Home'
-import { TrackCallsPage } from '@/marketing/TrackCalls'
 import { PublicReportPage } from '@/pages/public/PublicReport'
 import { AboutPage } from '@/marketing/About'
 import { MentionsLegalesPage } from '@/marketing/legal/MentionsLegales'
@@ -63,8 +62,8 @@ export function App() {
         <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
 
-        {/* Tracking admin des démos vitrine — protégé par ?key=<DEMO_TRACK_KEY> */}
-        <Route path="/track_calls" element={<TrackCallsPage />} />
+        {/* (Démos vitrine : déplacées dans /admin/appels onglet « Démos vitrine ».
+            L'ancienne page publique /track_calls a été retirée le 2026-06-07.) */}
 
         {/* Compte-rendu partageable (public, sans login) — jeton 48h dans l'URL.
             Servi sur les deux hôtes (www + app) ; data via Edge Fn get-report. */}

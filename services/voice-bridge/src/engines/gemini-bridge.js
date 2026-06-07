@@ -16,6 +16,7 @@ import { WebSocket } from 'ws'
 import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
 import { mulawB64ToPcm16B64At16k, pcm24B64ToMulawB64At8k } from './audio.js'
 import { buildRealtimeInputConfig, vadSummary } from './vad.js'
+import { createFluidityTracker, mulaw8kMs } from './fluidity.js'
 
 // Modèle et voix surchargeables par env pour itérer sans redéploiement de code.
 // Valeur par défaut validée en test réel le 2026-05-28 (Aoede sonne mieux en
@@ -38,6 +39,10 @@ export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, 
     input_text:         0,
     output_text:        0,
   }
+
+  // Métriques de fluidité (Étape 0 — observation). inputAudioTranscription est
+  // activé dans le setup → presence_checks + suspected_false mesurables.
+  const fluidity = createFluidityTracker({ hasUserTranscription: true })
 
   const url = `${ENDPOINT}?key=${encodeURIComponent(geminiApiKey)}`
   const geminiWs = new WebSocket(url)
@@ -84,12 +89,23 @@ export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, 
             streamSid,
             mark:      { name: 'ai-chunk' },
           }))
+          fluidity.onAiAudio(mulaw8kMs(mulawB64))
         }
+      }
+
+      // Transcript user (fluidité : presence_checks + ancre proxy du « blanc »)
+      if (sc.inputTranscription?.text) {
+        fluidity.onUserText(sc.inputTranscription.text)
+      }
+
+      if (sc.turnComplete) {
+        fluidity.onAiTurnComplete()
       }
 
       // Barge-in : l'utilisateur a interrompu → vider le buffer Twilio
       if (sc.interrupted) {
         twilioWs.send(JSON.stringify({ event: 'clear', streamSid }))
+        fluidity.onBargeIn()
       }
     }
 
@@ -189,6 +205,9 @@ export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, 
     },
     getTokens() {
       return { ...tokens }
+    },
+    getFluidityMetrics(durationSeconds) {
+      return fluidity.compute(null, durationSeconds, 'gemini')
     },
   }
 }

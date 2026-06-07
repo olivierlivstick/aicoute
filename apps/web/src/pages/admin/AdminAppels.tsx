@@ -1,7 +1,9 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { RefreshCcw, ExternalLink, PhoneCall, Zap, Trash2, Mail } from 'lucide-react'
+import { RefreshCcw, ExternalLink, PhoneCall, Zap, Trash2, Mail, Activity } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { FluidityModal, type FluidityMetrics } from '@/components/FluidityModal'
+import { DemosTab } from './AdminDemosTab'
 
 type CallStatus = 'scheduled' | 'notified' | 'in_progress' | 'completed' | 'missed' | 'failed'
 
@@ -26,6 +28,7 @@ interface CallRow {
   report_email_sent_at: string | null
   engine:           'openai' | 'gemini' | null
   alerts:           Array<{ severity: string }> | null
+  fluidity_metrics: FluidityMetrics | null
   beneficiaries: {
     id: string
     first_name: string
@@ -112,7 +115,7 @@ const PERIOD_LABEL_UPCOMING: Record<Period, string> = {
   all:   'Tout',
 }
 
-type Tab = 'past' | 'upcoming'
+type Tab = 'past' | 'upcoming' | 'demos'
 
 export function AdminAppelsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -126,6 +129,7 @@ export function AdminAppelsPage() {
   const [beneficiariesList, setBeneficiariesList] = useState<BeneficiaryOption[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
+  const [qualityFor, setQualityFor] = useState<FluidityMetrics | null>(null)
 
   // Liste des bénéficiaires pour le dropdown (chargée une seule fois)
   useEffect(() => {
@@ -142,13 +146,14 @@ export function AdminAppelsPage() {
   }, [tab, period, beneficiary])
 
   async function load() {
+    if (tab === 'demos') { setLoading(false); return }  // onglet démos = composant autonome
     setLoading(true)
     const statuses = tab === 'past' ? PAST_STATUSES : UPCOMING_STATUSES
 
     // Tri : passés desc (plus récents en haut), prévus asc (prochain en haut)
     let q = supabase
       .from('calls')
-      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, report_email_sent_at, engine, alerts, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
+      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, report_email_sent_at, engine, alerts, fluidity_metrics, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
       .in('status', statuses)
       .order('scheduled_at', { ascending: tab === 'upcoming' })
       .limit(200)
@@ -333,9 +338,11 @@ export function AdminAppelsPage() {
       <div className="flex gap-1 mb-5 border-b border-creme-sable">
         <TabButton active={tab === 'past'}     onClick={() => setParam('tab', 'past')}>Appels passés</TabButton>
         <TabButton active={tab === 'upcoming'} onClick={() => setParam('tab', 'upcoming')}>Appels prévus</TabButton>
+        <TabButton active={tab === 'demos'}    onClick={() => setParam('tab', 'demos')}>Démos vitrine</TabButton>
       </div>
 
-      {/* Filtres */}
+      {/* Filtres (appels uniquement — l'onglet démos a ses propres filtres) */}
+      {tab !== 'demos' && (
       <div className="flex flex-wrap gap-3 mb-5">
         <Filter
           label="Bénéficiaire"
@@ -370,8 +377,11 @@ export function AdminAppelsPage() {
           />
         )}
       </div>
+      )}
 
-      {loading ? (
+      {tab === 'demos' ? (
+        <DemosTab />
+      ) : loading ? (
         <p className="text-slate-400 text-sm">Chargement…</p>
       ) : (
         <div className="bg-white rounded-2xl border border-creme-sable overflow-x-auto">
@@ -491,6 +501,15 @@ export function AdminAppelsPage() {
                         >
                           <ExternalLink size={12} /> Détail
                         </Link>
+                        {tab === 'past' && c.fluidity_metrics && (
+                          <button
+                            onClick={() => setQualityFor(c.fluidity_metrics)}
+                            className="inline-flex items-center gap-1 text-xs text-accent-700 hover:underline"
+                            title="Métriques de fluidité de la conversation"
+                          >
+                            <Activity size={12} /> Qualité
+                          </button>
+                        )}
                         {canRelaunch && (
                           <button
                             onClick={() => relaunch(c.id, ben!.id)}
@@ -550,6 +569,10 @@ export function AdminAppelsPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {qualityFor && (
+        <FluidityModal metrics={qualityFor} onClose={() => setQualityFor(null)} />
       )}
     </div>
   )

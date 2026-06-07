@@ -113,7 +113,7 @@ export function computeAiCostEur(engine, tokens) {
  *
  * Silencieux si l'id est null ou si l'UPDATE échoue.
  */
-export async function recordDemoEnd(id, durationSeconds, tokens, engine = 'openai') {
+export async function recordDemoEnd(id, durationSeconds, tokens, engine = 'openai', fluidity = null) {
   if (!supabase || !id) return
   const seconds    = Math.max(1, Math.round(durationSeconds))
   const aiCost     = +(seconds * AI_EUR_PER_SECOND).toFixed(4)
@@ -125,6 +125,9 @@ export async function recordDemoEnd(id, durationSeconds, tokens, engine = 'opena
     openai_cost_eur:  aiCost,
     twilio_cost_eur:  twilioCost,
   }
+
+  // Snapshot de fluidité (Étape 0 — observation). Best-effort.
+  if (fluidity) update.fluidity_metrics = fluidity
 
   if (tokens) {
     update.openai_cost_eur_real      = computeAiCostEur(engine, tokens)
@@ -152,7 +155,7 @@ export async function recordDemoEnd(id, durationSeconds, tokens, engine = 'opena
  *
  * Silencieux si id null / supabase absent / pas de tokens.
  */
-export async function recordDemoRealCost(id, tokens, engine = 'openai') {
+export async function recordDemoRealCost(id, tokens, engine = 'openai', fluidity = null) {
   if (!supabase || !id || !tokens) return
   const update = {
     openai_cost_eur_real:      computeAiCostEur(engine, tokens),
@@ -162,6 +165,8 @@ export async function recordDemoRealCost(id, tokens, engine = 'openai') {
     tokens_input_text:         tokens.input_text         ?? 0,
     tokens_output_text:        tokens.output_text        ?? 0,
   }
+  // Snapshot de fluidité (Étape 0). Colonne disjointe de log-demo → pas de course.
+  if (fluidity) update.fluidity_metrics = fluidity
   const { error } = await supabase.from('demo_calls').update(update).eq('id', id)
   if (error) console.error('❌ tracking realCost UPDATE failed:', error.message)
 }
