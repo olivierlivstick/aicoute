@@ -31,31 +31,53 @@ interface CallRow {
   } | null
 }
 
+interface DemoRow {
+  id:               string
+  engine:           'openai' | 'gemini'
+  started_at:       string
+  fluidity_metrics: FluidityMetrics | null
+}
+
 type Period = '8d' | '30d'
 type ScopeKind = 'global' | 'caregiver' | 'beneficiary'
+type Source = 'calls' | 'demos' | 'both'
 
 const PERIOD_DAYS: Record<Period, number> = { '8d': 8, '30d': 30 }
 
 export function AdminQualitePage() {
-  const [rows, setRows]       = useState<CallRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [period, setPeriod]   = useState<Period>('8d')
-  const [scope, setScope]     = useState<ScopeKind>('global')
-  const [scopeId, setScopeId] = useState<string>('')   // caregiver_id ou beneficiary_id
+  const [rows, setRows]         = useState<CallRow[]>([])
+  const [demoRows, setDemoRows] = useState<DemoRow[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [period, setPeriod]     = useState<Period>('8d')
+  const [scope, setScope]       = useState<ScopeKind>('global')
+  const [scopeId, setScopeId]   = useState<string>('')   // caregiver_id ou beneficiary_id
+  const [source, setSource]     = useState<Source>('both')
 
   useEffect(() => { load() }, [period])
 
   async function load() {
     setLoading(true)
-    const sinceMs = Date.now() - PERIOD_DAYS[period] * 24 * 3600 * 1000
-    const { data } = await supabase
-      .from('calls')
-      .select('id, scheduled_at, engine, fluidity_metrics, beneficiary_id, beneficiaries(id, first_name, last_name, caregiver_id, profiles(id, full_name))')
-      .not('fluidity_metrics', 'is', null)
-      .gte('scheduled_at', new Date(sinceMs).toISOString())
-      .order('scheduled_at', { ascending: false })
-      .limit(3000)
-    setRows((data ?? []) as unknown as CallRow[])
+    const sinceIso = new Date(Date.now() - PERIOD_DAYS[period] * 24 * 3600 * 1000).toISOString()
+    // On charge les 2 sources en parallèle (le filtre Source est appliqué côté
+    // client → pas de refetch quand on change de source).
+    const [callsRes, demosRes] = await Promise.all([
+      supabase
+        .from('calls')
+        .select('id, scheduled_at, engine, fluidity_metrics, beneficiary_id, beneficiaries(id, first_name, last_name, caregiver_id, profiles(id, full_name))')
+        .not('fluidity_metrics', 'is', null)
+        .gte('scheduled_at', sinceIso)
+        .order('scheduled_at', { ascending: false })
+        .limit(3000),
+      supabase
+        .from('demo_calls')
+        .select('id, engine, started_at, fluidity_metrics')
+        .not('fluidity_metrics', 'is', null)
+        .gte('started_at', sinceIso)
+        .order('started_at', { ascending: false })
+        .limit(3000),
+    ])
+    setRows((callsRes.data ?? []) as unknown as CallRow[])
+    setDemoRows((demosRes.data ?? []) as unknown as DemoRow[])
     setLoading(false)
   }
 
@@ -78,19 +100,26 @@ export function AdminQualitePage() {
     return [...map.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label))
   }, [rows])
 
-  // Sous-ensemble filtré par périmètre
-  const scoped = useMemo(() => {
-    if (scope === 'caregiver' && scopeId) return rows.filter((r) => r.beneficiaries?.caregiver_id === scopeId)
-    if (scope === 'beneficiary' && scopeId) return rows.filter((r) => r.beneficiary_id === scopeId)
-    return rows
-  }, [rows, scope, scopeId])
+  // Items unifiés (appels réels + démos) filtrés par Source ET Périmètre.
+  // Les démos n'ont pas d'aidant/bénéficiaire → incluses seulement en Global.
+  const items = useMemo(() => {
+    const out: Array<{ engine: 'openai' | 'gemini' | null; m: FluidityMetrics }> = []
 
-  const metricsOf = (list: CallRow[]) =>
-    list.map((r) => ({ engine: r.engine, m: r.fluidity_metrics })).filter((x): x is { engine: 'openai' | 'gemini' | null; m: FluidityMetrics } => !!x.m)
+    if (source !== 'demos') {
+      let cr = rows
+      if (scope === 'caregiver' && scopeId)   cr = rows.filter((r) => r.beneficiaries?.caregiver_id === scopeId)
+      else if (scope === 'beneficiary' && scopeId) cr = rows.filter((r) => r.beneficiary_id === scopeId)
+      for (const r of cr) if (r.fluidity_metrics) out.push({ engine: r.engine, m: r.fluidity_metrics })
+    }
+    if (source !== 'calls' && scope === 'global') {
+      for (const r of demoRows) if (r.fluidity_metrics) out.push({ engine: r.engine, m: r.fluidity_metrics })
+    }
+    return out
+  }, [rows, demoRows, source, scope, scopeId])
 
-  const all    = useMemo(() => aggregate(metricsOf(scoped).map((x) => x.m)), [scoped])
-  const openai = useMemo(() => aggregate(metricsOf(scoped).filter((x) => x.engine === 'openai').map((x) => x.m)), [scoped])
-  const gemini = useMemo(() => aggregate(metricsOf(scoped).filter((x) => x.engine === 'gemini').map((x) => x.m)), [scoped])
+  const all    = useMemo(() => aggregate(items.map((x) => x.m)), [items])
+  const openai = useMemo(() => aggregate(items.filter((x) => x.engine === 'openai').map((x) => x.m)), [items])
+  const gemini = useMemo(() => aggregate(items.filter((x) => x.engine === 'gemini').map((x) => x.m)), [items])
 
   function onScopeKind(k: ScopeKind) { setScope(k); setScopeId('') }
 
@@ -128,6 +157,16 @@ export function AdminQualitePage() {
         )}
         <SelectField label="Période" value={period} onChange={(v) => setPeriod(v as Period)}
           options={[{ value: '8d', label: '8 derniers jours' }, { value: '30d', label: '30 derniers jours' }]} />
+        {scope === 'global' ? (
+          <SelectField label="Source" value={source} onChange={(v) => setSource(v as Source)}
+            options={[
+              { value: 'both',  label: 'Appels réels + démos' },
+              { value: 'calls', label: 'Appels réels' },
+              { value: 'demos', label: 'Démos vitrine' },
+            ]} />
+        ) : (
+          <span className="text-[11px] text-slate-400 self-center">Démos exclues hors périmètre Global (pas d'aidant/bénéficiaire).</span>
+        )}
       </div>
 
       {loading ? (
