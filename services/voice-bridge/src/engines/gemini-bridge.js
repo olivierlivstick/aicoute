@@ -17,6 +17,7 @@ import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
 import { mulawB64ToPcm16B64At16k, pcm24B64ToMulawB64At8k } from './audio.js'
 import { buildRealtimeInputConfig, vadSummary } from './vad.js'
 import { createFluidityTracker, mulaw8kMs } from './fluidity.js'
+import { GREETING_FALLBACK_MS, GREETING_PROTECT_MAX_MS } from './greeting.js'
 
 // Modèle et voix surchargeables par env pour itérer sans redéploiement de code.
 // Valeur par défaut validée en test réel le 2026-05-28 (Aoede sonne mieux en
@@ -27,7 +28,11 @@ const VOICE = process.env.GEMINI_VOICE || 'Aoede'
 const ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
 
 export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, lang = 'fr' }) {
-  let setupAcked = false
+  let setupAcked      = false
+  let greetingHandled = false  // bonjour proactif envoyé
+  let greetingTimer   = null
+  let micGateOpen     = false  // porte micro : fermée tant que le bonjour d'ouverture n'est pas fini
+  let micGateTimer    = null
 
   // Accumulateur tokens. Schéma aligné sur OpenAI pour réutiliser les colonnes
   // demo_calls.tokens_* existantes. input_audio_cached reste à 0 (Gemini ne
@@ -61,11 +66,21 @@ export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, 
     let msg
     try { msg = JSON.parse(data.toString()) } catch { return }
 
-    // 1er message attendu : setupComplete → on peut envoyer l'amorce
+    // 1er message attendu : setupComplete → amorce PROACTIVE (défaut immédiat).
+    // La porte micro reste FERMÉE le temps du bonjour (cf. handleTwilioEvent) →
+    // un « allô » réflexe ne coupe pas le bonjour. Filet : rouvrir le micro même
+    // si turnComplete manquait.
     if (msg.setupComplete && !setupAcked) {
       setupAcked = true
-      console.log('📤 [gemini] setupComplete reçu — envoi du first message')
-      sendFirstMessage()
+      console.log('• [gemini] setupComplete reçu — bonjour protégé (micro fermé)')
+      greetingTimer = setTimeout(() => {
+        greetingTimer = null
+        if (greetingHandled) return
+        greetingHandled = true
+        console.log('📤 [gemini] amorce proactive')
+        sendFirstMessage()
+      }, GREETING_FALLBACK_MS)
+      micGateTimer = setTimeout(() => { micGateTimer = null; openMicGate('sécurité') }, GREETING_PROTECT_MAX_MS)
       return
     }
 
@@ -100,6 +115,8 @@ export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, 
 
       if (sc.turnComplete) {
         fluidity.onAiTurnComplete()
+        // Fin du bonjour d'ouverture → on rouvre le micro (barge-in normal ensuite).
+        openMicGate('bonjour terminé')
       }
 
       // Barge-in : l'utilisateur a interrompu → vider le buffer Twilio
@@ -158,6 +175,15 @@ export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, 
     }))
   }
 
+  // Rouvre la porte micro (idempotent) : l'audio user est de nouveau transmis à
+  // Gemini → barge-in normal.
+  function openMicGate(reason) {
+    if (micGateOpen) return
+    micGateOpen = true
+    if (micGateTimer) { clearTimeout(micGateTimer); micGateTimer = null }
+    console.log(`• [gemini] micro ouvert (${reason}) → barge-in actif`)
+  }
+
   function sendFirstMessage() {
     const firstMessage = buildFirstMessage(opener)
     // Gemini ne répond que lorsque le user envoie quelque chose. On simule donc
@@ -176,7 +202,9 @@ export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, 
     handleTwilioEvent(data) {
       switch (data.event) {
         case 'media':
-          if (setupAcked && geminiWs.readyState === WebSocket.OPEN) {
+          // Porte micro fermée tant que le bonjour d'ouverture n'est pas fini →
+          // on DROP l'audio (un « allô » réflexe ne coupe pas le bonjour).
+          if (setupAcked && micGateOpen && geminiWs.readyState === WebSocket.OPEN) {
             const pcm16B64 = mulawB64ToPcm16B64At16k(data.media.payload)
             geminiWs.send(JSON.stringify({
               realtimeInput: {
@@ -201,6 +229,8 @@ export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, 
       }
     },
     close() {
+      if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null }
+      if (micGateTimer) { clearTimeout(micGateTimer); micGateTimer = null }
       if (geminiWs.readyState === WebSocket.OPEN) geminiWs.close()
     },
     getTokens() {

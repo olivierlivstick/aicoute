@@ -19,6 +19,7 @@ import { WebSocket } from 'ws'
 import { mulawB64ToPcm16B64At16k, pcm24B64ToMulawB64At8k } from './audio.js'
 import { buildRealtimeInputConfig, vadSummary } from './vad.js'
 import { createFluidityTracker, mulaw8kMs } from './fluidity.js'
+import { GREETING_FALLBACK_MS, GREETING_PROTECT_MAX_MS } from './greeting.js'
 import { logEvent } from '../persistence/system-events.js'
 
 const MODEL = process.env.GEMINI_MODEL || 'models/gemini-3.1-flash-live-preview'
@@ -52,6 +53,10 @@ export function createModectGeminiBridge(opts) {
   let setupSent           = false
   let contextFetched      = false
   let geminiReady         = false
+  let greetingHandled     = false  // bonjour proactif envoyé
+  let greetingTimer       = null
+  let micGateOpen         = false  // porte micro : fermée tant que le bonjour d'ouverture n'est pas fini
+  let micGateTimer        = null
 
   // Tokens accumulés (snapshot final → calls.ai_cost_eur_real). Gemini ne
   // distingue pas cached vs non-cached pour l'audio → input_audio_cached = 0.
@@ -98,11 +103,21 @@ export function createModectGeminiBridge(opts) {
     let msg
     try { msg = JSON.parse(raw.toString()) } catch { return }
 
-    // 1er ack : on peut envoyer le first message
+    // 1er ack : bonjour PROACTIF (défaut GREETING_FALLBACK_MS=0 = immédiat). La
+    // porte micro reste FERMÉE le temps du bonjour (cf. handleTwilioEvent) → un
+    // « allô » réflexe ne coupe pas le bonjour. Filet de sécurité pour rouvrir le
+    // micro même si turnComplete manquait.
     if (msg.setupComplete && !setupAcked) {
       setupAcked = true
-      console.log(`📤 [modect-gemini:${shortId(callId)}] setupComplete reçu — envoi du first message`)
-      sendFirstMessage()
+      console.log(`• [modect-gemini:${shortId(callId)}] setupComplete reçu — bonjour protégé (micro fermé)`)
+      greetingTimer = setTimeout(() => {
+        greetingTimer = null
+        if (greetingHandled) return
+        greetingHandled = true
+        console.log(`📤 [modect-gemini:${shortId(callId)}] bonjour proactif`)
+        sendFirstMessage()
+      }, GREETING_FALLBACK_MS)
+      micGateTimer = setTimeout(() => { micGateTimer = null; openMicGate('sécurité') }, GREETING_PROTECT_MAX_MS)
       return
     }
 
@@ -158,6 +173,8 @@ export function createModectGeminiBridge(opts) {
         assistantBuffer = ''
         userBuffer      = ''
         fluidity.onAiTurnComplete()
+        // Fin du bonjour d'ouverture → on rouvre le micro (barge-in normal ensuite).
+        openMicGate('bonjour terminé')
       }
 
       // Barge-in : user a interrompu l'IA → vider le buffer Twilio
@@ -258,6 +275,15 @@ export function createModectGeminiBridge(opts) {
     }))
   }
 
+  // Rouvre la porte micro (idempotent) : à partir de là, l'audio user est de
+  // nouveau transmis à Gemini → barge-in normal.
+  function openMicGate(reason) {
+    if (micGateOpen) return
+    micGateOpen = true
+    if (micGateTimer) { clearTimeout(micGateTimer); micGateTimer = null }
+    console.log(`• [modect-gemini:${shortId(callId)}] micro ouvert (${reason}) → barge-in actif`)
+  }
+
   function sendFirstMessage() {
     geminiWs.send(JSON.stringify({
       clientContent: {
@@ -324,7 +350,9 @@ export function createModectGeminiBridge(opts) {
     handleTwilioEvent(data) {
       switch (data.event) {
         case 'media':
-          if (setupAcked && geminiWs.readyState === WebSocket.OPEN) {
+          // Porte micro fermée tant que le bonjour d'ouverture n'est pas fini →
+          // on DROP l'audio (un « allô » réflexe ne coupe pas le bonjour).
+          if (setupAcked && micGateOpen && geminiWs.readyState === WebSocket.OPEN) {
             const pcm16B64 = mulawB64ToPcm16B64At16k(data.media.payload)
             geminiWs.send(JSON.stringify({
               realtimeInput: {
@@ -348,6 +376,8 @@ export function createModectGeminiBridge(opts) {
       }
     },
     close() {
+      if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null }
+      if (micGateTimer) { clearTimeout(micGateTimer); micGateTimer = null }
       if (geminiWs.readyState === WebSocket.OPEN) geminiWs.close()
     },
     getTokens() {

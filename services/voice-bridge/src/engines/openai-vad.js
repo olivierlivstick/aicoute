@@ -8,7 +8,10 @@
 //      juste la durée de silence). Résultat : l'IA répond vite quand la phrase
 //      est finie, sans couper une pause de réflexion — idéal pour des personnes
 //      âgées qui parlent lentement. `eagerness` règle la nervosité (low|medium|
-//      high|auto ; timeouts max ~8s/4s/2s). Défaut `medium` = compromis.
+//      high|auto ; timeouts max ~8s/4s/2s). Défaut `high` = prise de parole la
+//      plus rapide possible après une phrase finie (objectif fluidité : minimiser
+//      « le blanc »). Si on observe que l'IA coupe des pauses de réflexion chez
+//      certains bénéficiaires, repli immédiat via OPENAI_VAD_EAGERNESS=medium.
 //
 //   2. « Bruit d'ambiance » pris pour un coupage de parole (faux barge-in).
 //      Leviers :
@@ -29,9 +32,10 @@ const DISABLED = /^(1|true|yes|on)$/i.test(process.env.OPENAI_VAD_DISABLED || ''
 // Type de détection de tour : 'semantic_vad' (défaut, cf. ci-dessus) ou 'server_vad'.
 const TYPE = (process.env.OPENAI_VAD_TYPE || 'semantic_vad').toLowerCase()
 
-// semantic_vad : low | medium | high | auto. Défaut 'medium' = bon compromis
-// entre « répond vite » et « ne coupe pas une pause ».
-const EAGERNESS = process.env.OPENAI_VAD_EAGERNESS || 'medium'
+// semantic_vad : low | medium | high | auto. Défaut 'high' = prise de parole la
+// plus rapide après une phrase finie (objectif fluidité). Repli 'medium' par env
+// si l'IA coupe des pauses de réflexion.
+const EAGERNESS = process.env.OPENAI_VAD_EAGERNESS || 'high'
 
 // server_vad : réglages classiques (utilisés UNIQUEMENT si OPENAI_VAD_TYPE=server_vad).
 const THRESHOLD           = floatEnv('OPENAI_VAD_THRESHOLD', 0.5)

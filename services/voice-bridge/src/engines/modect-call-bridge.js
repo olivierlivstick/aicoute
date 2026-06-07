@@ -18,6 +18,7 @@
 import { WebSocket } from 'ws'
 import { buildTurnDetection, buildNoiseReduction, openaiVadSummary } from './openai-vad.js'
 import { createFluidityTracker, mulaw8kMs } from './fluidity.js'
+import { GREETING_FALLBACK_MS, GREETING_PROTECT_MAX_MS } from './greeting.js'
 import { logEvent } from '../persistence/system-events.js'
 
 const MODEL_DEFAULT = 'gpt-realtime-2'
@@ -50,6 +51,10 @@ export function createModectCallBridge(opts) {
   let setupDone             = false
   let openaiReady           = false  // openai WS ouverte ET context fetché
   let contextFetched        = false
+  let greetingHandled       = false  // bonjour proactif envoyé
+  let greetingTimer         = null
+  let micGateOpen           = false  // porte micro : fermée tant que le bonjour d'ouverture n'est pas fini
+  let micGateTimer          = null
 
   let latestMediaTimestamp   = 0
   let lastAssistantItem      = null
@@ -163,6 +168,8 @@ export function createModectCallBridge(opts) {
     // Fin de réponse IA = fin de tour (fluidité)
     if (event.type === 'response.done') {
       fluidity.onAiTurnComplete()
+      // Fin du bonjour d'ouverture → on rouvre le micro (barge-in normal ensuite).
+      openMicGate('bonjour terminé')
     }
 
     // VAD : l'utilisateur a fini de parler → ancre précise du « blanc »
@@ -278,13 +285,30 @@ export function createModectCallBridge(opts) {
       },
     }))
 
-    setTimeout(() => {
-      if (openaiWs.readyState !== WebSocket.OPEN) return
+    // Bonjour PROACTIF (défaut GREETING_FALLBACK_MS=0 = immédiat). La porte micro
+    // reste FERMÉE le temps du bonjour (cf. handleTwilioEvent) → un « allô »
+    // réflexe ne coupe pas le bonjour. Filet : rouvrir le micro même si
+    // response.done manquait.
+    greetingTimer = setTimeout(() => {
+      greetingTimer = null
+      if (greetingHandled || openaiWs.readyState !== WebSocket.OPEN) return
+      greetingHandled = true
+      console.log(`📤 [modect:${shortId(callId)}] bonjour proactif`)
       openaiWs.send(JSON.stringify({
         type:     'response.create',
         response: { instructions: firstMessageHint },
       }))
-    }, 250)
+    }, GREETING_FALLBACK_MS)
+    micGateTimer = setTimeout(() => { micGateTimer = null; openMicGate('sécurité') }, GREETING_PROTECT_MAX_MS)
+  }
+
+  // Rouvre la porte micro (idempotent) : l'audio user est de nouveau transmis à
+  // OpenAI → barge-in normal.
+  function openMicGate(reason) {
+    if (micGateOpen) return
+    micGateOpen = true
+    if (micGateTimer) { clearTimeout(micGateTimer); micGateTimer = null }
+    console.log(`• [modect:${shortId(callId)}] micro ouvert (${reason}) → barge-in actif`)
   }
 
   // --- Flush final (transcript + tokens) vers Supabase ----------------------
@@ -350,7 +374,9 @@ export function createModectCallBridge(opts) {
       switch (data.event) {
         case 'media':
           latestMediaTimestamp = data.media.timestamp
-          if (setupDone && openaiWs.readyState === WebSocket.OPEN) {
+          // Porte micro fermée tant que le bonjour d'ouverture n'est pas fini →
+          // on DROP l'audio (un « allô » réflexe ne coupe pas le bonjour).
+          if (setupDone && micGateOpen && openaiWs.readyState === WebSocket.OPEN) {
             openaiWs.send(JSON.stringify({
               type:  'input_audio_buffer.append',
               audio: data.media.payload,
@@ -369,6 +395,8 @@ export function createModectCallBridge(opts) {
       }
     },
     close() {
+      if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null }
+      if (micGateTimer) { clearTimeout(micGateTimer); micGateTimer = null }
       if (openaiWs.readyState === WebSocket.OPEN) openaiWs.close()
     },
     getTokens() {

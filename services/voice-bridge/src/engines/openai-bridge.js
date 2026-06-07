@@ -14,6 +14,7 @@ import { WebSocket } from 'ws'
 import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
 import { buildTurnDetection, buildNoiseReduction, openaiVadSummary } from './openai-vad.js'
 import { createFluidityTracker, mulaw8kMs } from './fluidity.js'
+import { GREETING_FALLBACK_MS, GREETING_PROTECT_MAX_MS } from './greeting.js'
 
 const MODEL = 'gpt-realtime-2'
 const VOICE = 'cedar'
@@ -25,6 +26,10 @@ export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey, 
   let markQueue              = []
   let responseStartTimestamp = null
   let setupDone              = false
+  let greetingHandled        = false  // bonjour proactif envoyé
+  let greetingTimer          = null
+  let micGateOpen            = false  // porte micro : fermée tant que le bonjour d'ouverture n'est pas fini
+  let micGateTimer           = null
 
   // Accumulateur tokens (incrémenté à chaque response.done OpenAI).
   // En fin d'appel, server.js lit ça via getTokens() pour calculer le coût réel.
@@ -91,6 +96,8 @@ export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey, 
     // Comptage tokens en fin de chaque réponse IA
     if (event.type === 'response.done') {
       fluidity.onAiTurnComplete()
+      // Fin du bonjour d'ouverture → on rouvre le micro (barge-in normal ensuite).
+      openMicGate('bonjour terminé')
       const u = event.response?.usage
       if (u) {
         const totalAudioIn  = u.input_token_details?.audio_tokens                       ?? 0
@@ -155,14 +162,29 @@ export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey, 
       },
     }))
 
-    // Petit délai pour laisser OpenAI digérer session.update avant la 1re réponse
-    setTimeout(() => {
-      if (openaiWs.readyState !== WebSocket.OPEN) return
+    // Bonjour PROACTIF (défaut GREETING_FALLBACK_MS=0 = immédiat). La porte micro
+    // reste FERMÉE le temps du bonjour (cf. handleTwilioEvent) → un « allô »
+    // réflexe ne coupe pas le bonjour. Filet : rouvrir même si response.done manquait.
+    greetingTimer = setTimeout(() => {
+      greetingTimer = null
+      if (greetingHandled || openaiWs.readyState !== WebSocket.OPEN) return
+      greetingHandled = true
+      console.log('📤 [openai] bonjour proactif')
       openaiWs.send(JSON.stringify({
         type:     'response.create',
         response: { instructions: firstMessage },
       }))
-    }, 250)
+    }, GREETING_FALLBACK_MS)
+    micGateTimer = setTimeout(() => { micGateTimer = null; openMicGate('sécurité') }, GREETING_PROTECT_MAX_MS)
+  }
+
+  // Rouvre la porte micro (idempotent) : l'audio user est de nouveau transmis à
+  // OpenAI → barge-in normal.
+  function openMicGate(reason) {
+    if (micGateOpen) return
+    micGateOpen = true
+    if (micGateTimer) { clearTimeout(micGateTimer); micGateTimer = null }
+    console.log(`• [openai] micro ouvert (${reason}) → barge-in actif`)
   }
 
   return {
@@ -170,9 +192,11 @@ export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey, 
       switch (data.event) {
         case 'media':
           latestMediaTimestamp = data.media.timestamp
-          // Ne forwarder l'audio QU'APRÈS setupDone (sinon OpenAI ne connaît
-          // pas encore le format µ-law ni son contexte system prompt).
-          if (setupDone && openaiWs.readyState === WebSocket.OPEN) {
+          // Ne forwarder l'audio QU'APRÈS setupDone (sinon OpenAI ne connaît pas
+          // encore le format µ-law ni son contexte) ET porte micro ouverte : tant
+          // que le bonjour d'ouverture n'est pas fini, on DROP l'audio (un « allô »
+          // réflexe ne coupe pas le bonjour).
+          if (setupDone && micGateOpen && openaiWs.readyState === WebSocket.OPEN) {
             openaiWs.send(JSON.stringify({
               type:  'input_audio_buffer.append',
               audio: data.media.payload,
@@ -191,6 +215,8 @@ export function createOpenaiBridge({ twilioWs, streamSid, opener, openaiApiKey, 
       }
     },
     close() {
+      if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null }
+      if (micGateTimer) { clearTimeout(micGateTimer); micGateTimer = null }
       if (openaiWs.readyState === WebSocket.OPEN) openaiWs.close()
     },
     getTokens() {

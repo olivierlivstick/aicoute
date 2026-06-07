@@ -30,6 +30,7 @@ import { WebSocket } from 'ws'
 import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
 import { buildRealtimeInputConfig, vadSummary } from './vad.js'
 import { createFluidityTracker, pcm16Ms } from './fluidity.js'
+import { GREETING_FALLBACK_MS, GREETING_PROTECT_MAX_MS } from './greeting.js'
 
 const MODEL = process.env.GEMINI_MODEL || 'models/gemini-3.1-flash-live-preview'
 const VOICE = process.env.GEMINI_VOICE || 'Aoede'
@@ -42,6 +43,10 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
   let started             = false
   let opener              = null
   let lang                = 'fr'
+  let greetingHandled     = false  // amorce proactive envoyée
+  let greetingTimer       = null
+  let micGateOpen         = false  // porte micro : fermée tant que le bonjour d'ouverture n'est pas fini
+  let micGateTimer        = null
   // Identifiants de tour pour le transcript live. Le client utilise itemId
   // pour mettre à jour le bon message dans l'UI (delta vs done).
   let currentAssistantId  = null
@@ -72,7 +77,9 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
       return
     }
 
-    if (msg.type === 'audio' && setupAcked && geminiWs?.readyState === WebSocket.OPEN) {
+    if (msg.type === 'audio' && setupAcked && micGateOpen && geminiWs?.readyState === WebSocket.OPEN) {
+      // Porte micro fermée tant que le bonjour d'ouverture n'est pas fini → on
+      // DROP l'audio (un « allô » réflexe ne coupe pas le bonjour).
       // Le client envoie déjà du base64 PCM16 16k LE → forward sans conversion
       geminiWs.send(JSON.stringify({
         realtimeInput: {
@@ -123,11 +130,21 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
       let msg
       try { msg = JSON.parse(data.toString()) } catch { return }
 
-      // 1er message après setup → on prévient le client + envoie l'amorce
+      // 1er message après setup → on prévient le client (UI) + amorce PROACTIVE
+      // (défaut immédiat). La porte micro reste FERMÉE le temps du bonjour → un
+      // « allô » réflexe ne coupe pas le bonjour. Filet : rouvrir même si
+      // turnComplete manquait.
       if (msg.setupComplete && !setupAcked) {
         setupAcked = true
         sendClient({ type: 'ready' })
-        sendFirstMessage()
+        greetingTimer = setTimeout(() => {
+          greetingTimer = null
+          if (greetingHandled) return
+          greetingHandled = true
+          console.log('📤 [web/gemini] amorce proactive')
+          sendFirstMessage()
+        }, GREETING_FALLBACK_MS)
+        micGateTimer = setTimeout(() => { micGateTimer = null; openMicGate('sécurité') }, GREETING_PROTECT_MAX_MS)
         return
       }
 
@@ -188,6 +205,8 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
           }
           sendClient({ type: 'turn_complete' })
           fluidity.onAiTurnComplete()
+          // Fin du bonjour d'ouverture → on rouvre le micro (barge-in normal ensuite).
+          openMicGate('bonjour terminé')
         }
       }
 
@@ -237,6 +256,15 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
     }))
   }
 
+  // Rouvre la porte micro (idempotent) : l'audio client est de nouveau transmis
+  // à Gemini → barge-in normal.
+  function openMicGate(reason) {
+    if (micGateOpen) return
+    micGateOpen = true
+    if (micGateTimer) { clearTimeout(micGateTimer); micGateTimer = null }
+    console.log(`• [web/gemini] micro ouvert (${reason}) → barge-in actif`)
+  }
+
   function sendFirstMessage() {
     const firstMessage = buildFirstMessage(opener)
     geminiWs.send(JSON.stringify({
@@ -256,6 +284,8 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
   }
 
   function cleanup() {
+    if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null }
+    if (micGateTimer) { clearTimeout(micGateTimer); micGateTimer = null }
     if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
       try { geminiWs.close() } catch { /* */ }
     }
