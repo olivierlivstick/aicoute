@@ -210,9 +210,10 @@ export function createModectGeminiBridge(opts) {
         return
       }
       const ctx = await res.json()
-      // Pour Gemini on garde la voice Gemini (Aoede par défaut) — la voice
-      // OpenAI (cedar/marin) ne s'applique pas. Si plus tard on ajoute un
-      // champ voice côté ctx, on le respectera.
+      // Voix Gemini choisie par le bénéficiaire (ctx.gemini_voice, validée côté
+      // edge). La voice OpenAI (ctx.voice = cedar/marin) ne s'applique pas ici.
+      // Fallback sur l'env GEMINI_VOICE / Aoede si le champ est absent.
+      if (ctx.gemini_voice) voice = ctx.gemini_voice
       instructions     = ctx.instructions     ?? ''
       firstMessageHint = buildFirstMessageHint(ctx.persona_name, ctx.beneficiary_name)
       contextFetched   = true

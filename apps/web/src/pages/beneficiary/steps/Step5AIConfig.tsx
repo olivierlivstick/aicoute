@@ -5,12 +5,15 @@ import { StepLayout } from './StepLayout'
 import { Label } from '@/components/ui/Label'
 import { Input } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
+import { VoicePicker } from '@/components/VoicePicker'
 import type { WizardData } from '../BeneficiaryWizard'
-import type { AIVoice, ConversationStyle } from '@modect/shared'
+import type { ConversationStyle } from '@modect/shared'
 
 const schema = z.object({
   ai_persona_name:    z.string().min(1, 'Prénom requis'),
-  ai_voice:           z.enum(['cedar', 'marin']),
+  preferred_engine:   z.enum(['openai', 'gemini']),
+  ai_voice:           z.string(),
+  gemini_voice:       z.string(),
   conversation_style: z.enum(['warm', 'playful', 'calm', 'formal']),
   language_preference: z.string().min(2),
   report_language:     z.string().min(2),
@@ -25,10 +28,9 @@ interface Props {
   saving?: boolean
 }
 
-// Genre de la voix → voix Realtime GA (cedar = masculine, marin = féminine)
-const VOICES: { value: AIVoice; label: string; description: string }[] = [
-  { value: 'marin', label: 'Féminin',  description: 'Voix féminine, douce et chaleureuse' },
-  { value: 'cedar', label: 'Masculin', description: 'Voix masculine, posée et rassurante' },
+const ENGINES: { value: 'openai' | 'gemini'; label: string; description: string }[] = [
+  { value: 'openai', label: 'OpenAI',        description: 'gpt-realtime-2' },
+  { value: 'gemini', label: 'Google Gemini', description: 'Gemini Live' },
 ]
 
 const STYLES: { value: ConversationStyle; label: string; description: string; emoji: string }[] = [
@@ -51,17 +53,23 @@ export function Step5AIConfig({ data, onPrev, onSubmit, saving }: Props) {
     resolver: zodResolver(schema),
     defaultValues: {
       ai_persona_name:    data.ai_persona_name ?? 'Marie',
-      ai_voice:           data.ai_voice ?? 'marin',
+      preferred_engine:   data.preferred_engine ?? 'openai',
+      ai_voice:           data.ai_voice ?? 'cedar',
+      gemini_voice:       data.gemini_voice ?? 'Aoede',
       conversation_style: data.conversation_style ?? 'warm',
       language_preference: data.language_preference ?? 'fr',
       report_language:     data.report_language ?? 'fr',
     },
   })
 
-  const selectedVoice = watch('ai_voice')
-  const selectedStyle = watch('conversation_style')
+  const selectedEngine = watch('preferred_engine')
+  const selectedVoice  = watch('ai_voice')
+  const selectedGemini = watch('gemini_voice')
+  const selectedStyle  = watch('conversation_style')
 
-  const handleFinish = (values: FormData) => onSubmit(values)
+  // ai_voice/gemini_voice sont des string côté form (le VoicePicker ne produit
+  // que des ids valides du catalogue) → cast vers WizardData.
+  const handleFinish = (values: FormData) => onSubmit(values as unknown as WizardData)
 
   return (
     <StepLayout
@@ -86,21 +94,21 @@ export function Step5AIConfig({ data, onPrev, onSubmit, saving }: Props) {
         />
       </div>
 
-      {/* Genre de la voix */}
+      {/* Moteur AVANT la voix : les voix disponibles dépendent du moteur. */}
       <div>
-        <Label>Genre de la voix</Label>
+        <Label>Moteur conversationnel</Label>
         <p className="text-xs text-slate-400 mb-1">
-          Voix masculine ou féminine pour les appels de votre bénéficiaire.
+          Le modèle IA qui anime les appels. Vous pourrez en changer à tout moment.
         </p>
         <div className="grid grid-cols-2 gap-2 mt-1">
-          {VOICES.map(({ value, label, description }) => (
+          {ENGINES.map(({ value, label, description }) => (
             <button
               key={value}
               type="button"
-              onClick={() => setValue('ai_voice', value)}
+              onClick={() => setValue('preferred_engine', value)}
               className={cn(
                 'text-left px-3 py-2.5 rounded-xl border text-sm transition-all',
-                selectedVoice === value
+                selectedEngine === value
                   ? 'border-primary bg-primary-50 text-primary'
                   : 'border-slate-200 text-slate-600 hover:border-slate-300'
               )}
@@ -110,6 +118,21 @@ export function Step5AIConfig({ data, onPrev, onSubmit, saving }: Props) {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Voix : écoute d'un échantillon par voix du moteur choisi */}
+      <div>
+        <Label>Voix du compagnon</Label>
+        <p className="text-xs text-slate-400 mb-1">
+          Écoutez chaque voix puis choisissez celle qui appellera votre bénéficiaire.
+        </p>
+        <VoicePicker
+          engine={selectedEngine}
+          value={selectedEngine === 'gemini' ? selectedGemini : selectedVoice}
+          onChange={(id) =>
+            setValue(selectedEngine === 'gemini' ? 'gemini_voice' : 'ai_voice', id, { shouldDirty: true })
+          }
+        />
       </div>
 
       {/* Style de conversation */}

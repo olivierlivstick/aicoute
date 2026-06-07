@@ -16,11 +16,22 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const DEFAULT_GA_MODEL = 'gpt-realtime-2'
 const DEFAULT_VOICE    = 'cedar'
+const DEFAULT_GEMINI_VOICE = 'Aoede'
 
-const FEMININE_VOICES = ['marin', 'nova', 'shimmer', 'coral', 'sage']
+// ⚠️ Catalogues DUPLIQUÉS de packages/shared/src/voices.ts (Deno n'importe pas
+// packages/shared). À garder en phase.
+const OPENAI_VOICES = ['cedar', 'marin', 'coral', 'sage', 'echo', 'ballad']
+const GEMINI_VOICES = ['Aoede', 'Sulafat', 'Callirrhoe', 'Kore', 'Charon', 'Orus']
+const LEGACY_FEMININE = ['marin', 'nova', 'shimmer', 'coral', 'sage']
+
 function resolveVoice(aiVoice: string | null | undefined): string {
-  if (aiVoice === 'cedar' || aiVoice === 'marin') return aiVoice
-  return FEMININE_VOICES.includes(aiVoice ?? '') ? 'marin' : DEFAULT_VOICE
+  if (aiVoice && OPENAI_VOICES.includes(aiVoice)) return aiVoice
+  return LEGACY_FEMININE.includes(aiVoice ?? '') ? 'marin' : DEFAULT_VOICE
+}
+
+function resolveGeminiVoice(voice: string | null | undefined): string {
+  if (voice && GEMINI_VOICES.includes(voice)) return voice
+  return DEFAULT_GEMINI_VOICE
 }
 
 function normalizeModel(model: string | null | undefined): string {
@@ -48,7 +59,8 @@ export interface CallContext {
     id: string
   }
   model: string
-  voice: string
+  voice: string         // voix OpenAI (Realtime GA)
+  geminiVoice: string   // voix Gemini Live (lue par le bridge Gemini)
   instructions: string
   max_duration_minutes: number
 }
@@ -94,6 +106,7 @@ export async function loadCallContext(
     phone: string | null
     caregiver_id: string
     ai_voice: string | null
+    gemini_voice: string | null
     ai_persona_name: string
     language_preference: string
     birth_year: number | null
@@ -202,6 +215,7 @@ export async function loadCallContext(
     caregiver: { id: beneficiary.caregiver_id },
     model,
     voice:                resolveVoice(beneficiary.ai_voice),
+    geminiVoice:          resolveGeminiVoice(beneficiary.gemini_voice),
     instructions,
     max_duration_minutes: schedule.max_duration_minutes,
   }

@@ -17,8 +17,11 @@ export interface Profile {
 }
 
 export type Gender = 'male' | 'female' | 'other'
-// Voix de l'agent (Realtime GA) : cedar = masculine, marin = féminine
-export type AIVoice = 'cedar' | 'marin'
+// Voix OpenAI (Realtime GA) sélectionnables par bénéficiaire (stockées dans
+// beneficiaries.ai_voice). Catalogue détaillé + échantillons : ./voices.ts
+export type AIVoice = 'cedar' | 'marin' | 'coral' | 'sage' | 'echo' | 'ballad'
+// Voix Gemini Live sélectionnables par bénéficiaire (beneficiaries.gemini_voice).
+export type GeminiVoice = 'Aoede' | 'Sulafat' | 'Callirrhoe' | 'Kore' | 'Charon' | 'Orus'
 export type ConversationStyle = 'warm' | 'playful' | 'calm' | 'formal'
 
 export interface Beneficiary {
@@ -40,6 +43,7 @@ export interface Beneficiary {
   language_preference: string
   report_language: string
   ai_voice: AIVoice
+  gemini_voice: GeminiVoice
   ai_persona_name: string
   conversation_style: ConversationStyle
   custom_prompt: string | null

@@ -18,8 +18,9 @@ import { Label } from '@/components/ui/Label'
 import { Textarea } from '@/components/ui/Textarea'
 import { cn, formatDate } from '@/lib/utils'
 import { ScheduleEditor } from '@/pages/planning/ScheduleEditor'
-import { resolvePromptPlaceholders } from '@modect/shared'
-import type { Beneficiary, AIVoice, ConversationStyle, ConversationMemory, MemoryType, SessionSchedule } from '@modect/shared'
+import { resolvePromptPlaceholders, resolveOpenAIVoice, resolveGeminiVoice } from '@modect/shared'
+import type { Beneficiary, ConversationStyle, ConversationMemory, MemoryType, SessionSchedule } from '@modect/shared'
+import { VoicePicker } from '@/components/VoicePicker'
 
 type Tab = 'basics' | 'history' | 'tastes' | 'personality' | 'ai' | 'memory' | 'schedule'
 
@@ -656,7 +657,8 @@ function PersonalitySection({ beneficiary, onSaved }: { beneficiary: Beneficiary
 
 const aiSchema = z.object({
   ai_persona_name:     z.string().min(1, 'Prénom requis'),
-  ai_voice:            z.enum(['cedar', 'marin']),
+  ai_voice:            z.string(),
+  gemini_voice:        z.string(),
   conversation_style:  z.enum(['warm', 'playful', 'calm', 'formal']),
   language_preference: z.string().min(2),
   report_language:     z.string().min(2),
@@ -666,14 +668,9 @@ const aiSchema = z.object({
 
 type AIForm = z.infer<typeof aiSchema>
 
-const VOICES: { value: AIVoice; label: string; description: string }[] = [
-  { value: 'marin', label: 'Féminin',  description: 'Voix féminine, douce et chaleureuse' },
-  { value: 'cedar', label: 'Masculin', description: 'Voix masculine, posée et rassurante' },
-]
-
 const ENGINES: { value: 'openai' | 'gemini'; label: string; description: string }[] = [
-  { value: 'openai', label: 'OpenAI',        description: 'gpt-realtime-2 (voix cedar/marin)' },
-  { value: 'gemini', label: 'Google Gemini', description: 'Gemini Live (voix Aoede)' },
+  { value: 'openai', label: 'OpenAI',        description: 'gpt-realtime-2' },
+  { value: 'gemini', label: 'Google Gemini', description: 'Gemini Live' },
 ]
 
 const STYLES: { value: ConversationStyle; label: string; description: string; emoji: string }[] = [
@@ -691,20 +688,14 @@ const LANGUAGES = [
   { value: 'it', label: '🇮🇹 Italiano' },
 ]
 
-// Tolère les anciennes voix DB (nova, shimmer…) en les ramenant au bon genre.
-const FEMININE_VOICES = ['marin', 'nova', 'shimmer', 'coral', 'sage']
-const voiceToGenderValue = (v?: string | null): AIVoice =>
-  v === 'cedar' ? 'cedar'
-    : v === 'marin' ? 'marin'
-    : FEMININE_VOICES.includes(v ?? '') ? 'marin' : 'cedar'
-
 function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; onSaved: () => void }) {
   const { save, saving, saved, error } = useSection(beneficiary)
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<AIForm>({
     resolver: zodResolver(aiSchema),
     values: {
       ai_persona_name:     beneficiary.ai_persona_name ?? 'Marie',
-      ai_voice:            voiceToGenderValue(beneficiary.ai_voice),
+      ai_voice:            resolveOpenAIVoice(beneficiary.ai_voice),
+      gemini_voice:        resolveGeminiVoice((beneficiary as unknown as { gemini_voice?: string }).gemini_voice),
       conversation_style:  beneficiary.conversation_style ?? 'warm',
       language_preference: beneficiary.language_preference ?? 'fr',
       report_language:     (beneficiary as unknown as { report_language?: string }).report_language ?? 'fr',
@@ -716,6 +707,7 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
   })
 
   const selectedVoice  = watch('ai_voice')
+  const selectedGemini = watch('gemini_voice')
   const selectedStyle  = watch('conversation_style')
   const selectedEngine = watch('preferred_engine')
 
@@ -726,6 +718,7 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
     const ok = await save({
       ai_persona_name:     values.ai_persona_name,
       ai_voice:            values.ai_voice,
+      gemini_voice:        values.gemini_voice,
       conversation_style:  values.conversation_style,
       language_preference: values.language_preference,
       report_language:     values.report_language,
@@ -776,17 +769,21 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
           />
         </div>
 
+        {/* Moteur AVANT la voix : les voix disponibles dépendent du moteur. */}
         <div>
-          <Label>Genre de la voix</Label>
+          <Label>Moteur conversationnel</Label>
+          <p className="text-xs text-slate-400 mb-1">
+            Le modèle IA qui anime les appels. Vous pouvez en changer à tout moment.
+          </p>
           <div className="grid grid-cols-2 gap-2 mt-1">
-            {VOICES.map(({ value, label, description }) => (
+            {ENGINES.map(({ value, label, description }) => (
               <button
                 key={value}
                 type="button"
-                onClick={() => setValue('ai_voice', value)}
+                onClick={() => setValue('preferred_engine', value)}
                 className={cn(
                   'text-left px-3 py-2.5 rounded-xl border text-sm transition-all',
-                  selectedVoice === value
+                  selectedEngine === value
                     ? 'border-primary bg-primary-50 text-primary'
                     : 'border-slate-200 text-slate-600 hover:border-slate-300'
                 )}
@@ -796,6 +793,20 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <Label>Voix du compagnon</Label>
+          <p className="text-xs text-slate-400 mb-1">
+            Écoutez chaque voix puis choisissez celle qui appellera {beneficiary.first_name}.
+          </p>
+          <VoicePicker
+            engine={selectedEngine}
+            value={selectedEngine === 'gemini' ? selectedGemini : selectedVoice}
+            onChange={(id) =>
+              setValue(selectedEngine === 'gemini' ? 'gemini_voice' : 'ai_voice', id, { shouldDirty: true })
+            }
+          />
         </div>
 
         <div>
@@ -847,31 +858,6 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
                 <option key={value} value={value}>{label}</option>
               ))}
             </select>
-          </div>
-        </div>
-
-        <div>
-          <Label>Moteur conversationnel</Label>
-          <p className="text-xs text-slate-400 mb-1">
-            Le modèle IA qui anime les appels. Vous pouvez en changer à tout moment.
-          </p>
-          <div className="grid grid-cols-2 gap-2 mt-1">
-            {ENGINES.map(({ value, label, description }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setValue('preferred_engine', value)}
-                className={cn(
-                  'text-left px-3 py-2.5 rounded-xl border text-sm transition-all',
-                  selectedEngine === value
-                    ? 'border-primary bg-primary-50 text-primary'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                )}
-              >
-                <span className="font-semibold block">{label}</span>
-                <span className="text-xs opacity-70">{description}</span>
-              </button>
-            ))}
           </div>
         </div>
 

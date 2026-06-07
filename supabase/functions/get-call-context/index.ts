@@ -55,6 +55,7 @@ Deno.serve(async (req: Request) => {
       language:             ctx.beneficiary.language_preference,
       model:                ctx.model,
       voice:                ctx.voice,
+      gemini_voice:         ctx.geminiVoice,
       instructions:         ctx.instructions,
       max_duration_minutes: ctx.max_duration_minutes,
     })

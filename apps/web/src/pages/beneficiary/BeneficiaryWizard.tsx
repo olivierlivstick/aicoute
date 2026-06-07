@@ -13,7 +13,10 @@ import { Step5AIConfig } from './steps/Step5AIConfig'
 import type { Beneficiary } from '@modect/shared'
 import { cn } from '@/lib/utils'
 
+// preferred_engine n'est pas (encore) dans le type Beneficiary partagé (cf.
+// CLAUDE.md : types Database incomplets, accès par cast) → on l'ajoute ici.
 export type WizardData = Partial<Omit<Beneficiary, 'id' | 'created_at' | 'updated_at' | 'caregiver_id'>>
+  & { preferred_engine?: 'openai' | 'gemini' }
 
 const STEPS = [
   { label: 'Infos de base',    short: '1' },
@@ -31,7 +34,9 @@ export function BeneficiaryWizard() {
   const [data, setData] = useState<WizardData>({
     language_preference: 'fr',
     report_language: 'fr',
-    ai_voice: 'marin',
+    preferred_engine: 'openai',
+    ai_voice: 'cedar',
+    gemini_voice: 'Aoede',
     ai_persona_name: 'Marie',
     conversation_style: 'warm',
     is_active: true,
@@ -91,13 +96,16 @@ export function BeneficiaryWizard() {
       health_notes: final.health_notes ?? null,
       language_preference: final.language_preference ?? 'fr',
       report_language: final.report_language ?? 'fr',
-      ai_voice: final.ai_voice ?? 'marin',
+      ai_voice: final.ai_voice ?? 'cedar',
+      gemini_voice: final.gemini_voice ?? 'Aoede',
       ai_persona_name: final.ai_persona_name ?? 'Marie',
       conversation_style: final.conversation_style ?? 'warm',
       custom_prompt: customPrompt,
       is_active: true,
       onboarding_completed: true,
-    })
+      // preferred_engine absent du type Beneficiary partagé → cast (cf. WizardData)
+      ...(final.preferred_engine ? { preferred_engine: final.preferred_engine } : {}),
+    } as unknown as Parameters<typeof createBeneficiary>[0])
 
     setSaving(false)
     if (!result) {
