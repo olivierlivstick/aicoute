@@ -88,20 +88,27 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Réponse LLM illisible (JSON non parsé).', raw: text.slice(0, 1000) }, 502)
     }
 
+    // up_to_date DÉRIVÉ des is_latest par moteur → garantit la cohérence
+    // verdict/badges (le LLM ne le renvoie plus séparément).
+    const openaiOk = (parsed.openai as { is_latest?: boolean })?.is_latest !== false
+    const geminiOk = (parsed.gemini as { is_latest?: boolean })?.is_latest !== false
+    const upToDate = openaiOk && geminiOk
+
     const result = {
       checked_at: new Date().toISOString(),
       research_model: RESEARCH_MODEL,
       ...parsed,
+      up_to_date: upToDate,
       sources,
     }
 
     // Journalise pour réaffichage ultérieur (best-effort, non bloquant).
     await logEvent(admin, {
-      level: parsed.up_to_date === false ? 'warn' : 'info',
+      level: upToDate ? 'info' : 'warn',
       source: 'model-watch',
-      message: parsed.up_to_date === false
-        ? 'Veille : un modèle plus récent est disponible'
-        : 'Veille : à jour',
+      message: upToDate
+        ? 'Veille : à jour'
+        : 'Veille : une amélioration (modèle ou voix) est disponible',
       payload: result,
     })
 
@@ -120,17 +127,21 @@ function buildPrompt(today: string): string {
     `- OpenAI Realtime API : modèle « ${CURRENT.openai.model} », voix « ${CURRENT.openai.voices} ».`,
     `- Google Gemini Live API : modèle « ${CURRENT.gemini.model} », voix « ${CURRENT.gemini.voices} ».`,
     ``,
-    `Avec la RECHERCHE WEB, vérifie sur les sources officielles (docs/changelog OpenAI Realtime et Google Gemini Live, annonces) s'il existe AUJOURD'HUI un modèle de voix temps réel PLUS RÉCENT ou MEILLEUR que ceux ci-dessus, pour CHAQUE moteur. Mentionne aussi toute nouvelle voix pertinente pour le français.`,
+    `Avec la RECHERCHE WEB, vérifie sur les sources officielles (docs/changelog OpenAI Realtime et Google Gemini Live, annonces) s'il existe AUJOURD'HUI, pour CHAQUE moteur, soit un MODÈLE de voix temps réel plus récent/meilleur, soit de nouvelles VOIX sensiblement meilleures (notamment pour le français), que ce qu'on utilise.`,
     ``,
     `Réponds UNIQUEMENT par un objet JSON valide (aucun texte autour, aucune balise de code), avec EXACTEMENT cette forme :`,
     `{`,
-    `  "up_to_date": boolean,            // true si on utilise déjà le meilleur/plus récent sur les DEUX moteurs`,
-    `  "verdict": string,                // 1 à 2 phrases en français, synthèse claire`,
+    `  "verdict": string,                // 1 à 2 phrases FR, cohérentes avec les is_latest ci-dessous, mentionnant le levier concret`,
     `  "openai": { "in_use": string, "latest": string, "is_latest": boolean, "note": string },`,
     `  "gemini": { "in_use": string, "latest": string, "is_latest": boolean, "note": string },`,
-    `  "recommendations": string[]       // actions concrètes en français (vide si rien à faire)`,
+    `  "recommendations": string[]`,
     `}`,
-    `Les champs "note" et "verdict" sont en français, concis. "latest" = identifiant du modèle le plus récent trouvé.`,
+    ``,
+    `RÈGLES STRICTES :`,
+    `- "is_latest" (par moteur) = false dès qu'un MODÈLE plus récent OU des VOIX nettement meilleures/plus récentes existent ; true seulement si on est au mieux sur les deux plans (modèle + voix).`,
+    `- "note" (FR, concis) doit dire PRÉCISÉMENT ce qui est en jeu : soit "à jour", soit nommer le modèle plus récent et/ou les voix concernées (noms exacts). Ne reste jamais vague.`,
+    `- "recommendations" : liste d'actions concrètes en français. OBLIGATOIREMENT NON VIDE si au moins un "is_latest" est false (ex. « Tester la voix Gemini Flare en français avant bascule »). Tableau vide UNIQUEMENT si les deux moteurs sont parfaitement à jour.`,
+    `- "latest" = identifiant exact du modèle le plus récent trouvé (= "in_use" si déjà à jour).`,
   ].join('\n')
 }
 

@@ -291,7 +291,7 @@ function EngineRow({ label, data }: { label: string; data: EngineWatch }) {
       <div className="flex items-center gap-2 mb-1">
         <span className="font-medium text-brun-900 text-sm">{label}</span>
         <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full ${data.is_latest ? 'bg-sauge/15 text-sauge' : 'bg-accent-50 text-accent-700'}`}>
-          {data.is_latest ? 'À jour' : 'Plus récent dispo'}
+          {data.is_latest ? 'À jour' : 'Amélioration possible'}
         </span>
       </div>
       <p className="text-xs text-slate-500">
