@@ -252,6 +252,14 @@ app.post('/call', async (req, res) => {
     try {
       const { diagnosticEnabled, keepRecordingRemaining } = await readAppSettings()
       console.log(`• [diag] app_settings au moment de l'appel: enabled=${diagnosticEnabled} keepRec=${keepRecordingRemaining}`)
+      // Trace visible dans /admin/sante (« Événements système ») — indépendant des
+      // logs Render. Prouve que ce build lit bien app_settings et avec quelle valeur.
+      void logSystemEvent({
+        level:   'info',
+        source:  'voice-bridge/fluidity-diag',
+        message: `/call : app_settings lus — enabled=${diagnosticEnabled}, keepRec=${keepRecordingRemaining}`,
+        payload: { enabled: diagnosticEnabled, keepRec: keepRecordingRemaining },
+      })
       if (keepRecordingRemaining > 0) {
         callParams.record                       = true
         callParams.recordingChannels            = 'dual'
@@ -262,6 +270,11 @@ app.post('/call', async (req, res) => {
       }
     } catch (err) {
       console.error('⚠️  [diag] lecture app_settings échouée, pas d\'enregistrement:', err?.message || err)
+      void logSystemEvent({
+        level:   'error',
+        source:  'voice-bridge/fluidity-diag',
+        message: `/call : lecture app_settings échouée — ${err?.message || err}`,
+      })
     }
 
     const call = await twilioClient.calls.create(callParams)
