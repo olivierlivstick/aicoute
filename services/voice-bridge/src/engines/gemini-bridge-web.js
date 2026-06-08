@@ -29,6 +29,7 @@
 import { WebSocket } from 'ws'
 import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
 import { buildRealtimeInputConfig, vadSummary } from './vad.js'
+import { buildThinkingConfig, thinkingSummary } from './generation.js'
 import { createFluidityTracker, pcm16Ms } from './fluidity.js'
 import { GREETING_FALLBACK_MS, GREETING_PROTECT_MAX_MS } from './greeting.js'
 
@@ -233,12 +234,13 @@ export function createGeminiBridgeWeb({ clientWs, geminiApiKey, onEnd }) {
   function sendSetup() {
     const systemPrompt = buildSystemPrompt(opener, lang)
     const realtimeInputConfig = buildRealtimeInputConfig()
-    console.log(`📤 [web/gemini] setup (modèle=${MODEL}, voix=${VOICE}, VAD ${vadSummary()}, mode ${opener ? 'opener custom' : 'MODECT'})`)
+    console.log(`📤 [web/gemini] setup (modèle=${MODEL}, voix=${VOICE}, VAD ${vadSummary()}, thinking ${thinkingSummary()}, mode ${opener ? 'opener custom' : 'MODECT'})`)
     geminiWs.send(JSON.stringify({
       setup: {
         model: MODEL,
         generationConfig: {
           responseModalities: ['AUDIO'],
+          ...(buildThinkingConfig() ?? {}),
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: VOICE },

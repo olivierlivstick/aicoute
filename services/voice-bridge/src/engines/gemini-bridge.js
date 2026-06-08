@@ -16,6 +16,7 @@ import { WebSocket } from 'ws'
 import { buildSystemPrompt, buildFirstMessage } from '../prompt.js'
 import { mulawB64ToPcm16B64At16k, pcm24B64ToMulawB64At8k, mulawB64ToPcm8Samples } from './audio.js'
 import { buildRealtimeInputConfig, vadSummary } from './vad.js'
+import { buildThinkingConfig, thinkingSummary } from './generation.js'
 import { createFluidityTracker, mulaw8kMs } from './fluidity.js'
 import { createEndpointDetector, endpointSummary } from './endpointing.js'
 import { GREETING_FALLBACK_MS, GREETING_PROTECT_MAX_MS } from './greeting.js'
@@ -158,12 +159,13 @@ export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, 
   function sendSetup() {
     const systemPrompt = buildSystemPrompt(opener, lang)
     const realtimeInputConfig = buildRealtimeInputConfig()
-    console.log(`📤 [gemini] setup (modèle=${MODEL}, voix=${VOICE}, VAD ${vadSummary()}, endpoint ${endpointSummary()}, mode ${opener ? 'opener custom' : 'MODECT'}, lang=${lang})`)
+    console.log(`📤 [gemini] setup (modèle=${MODEL}, voix=${VOICE}, VAD ${vadSummary()}, endpoint ${endpointSummary()}, thinking ${thinkingSummary()}, mode ${opener ? 'opener custom' : 'MODECT'}, lang=${lang})`)
     geminiWs.send(JSON.stringify({
       setup: {
         model: MODEL,
         generationConfig: {
           responseModalities: ['AUDIO'],
+          ...(buildThinkingConfig() ?? {}),
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: VOICE },

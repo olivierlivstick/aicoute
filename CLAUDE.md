@@ -313,6 +313,12 @@ GEMINI_ENDPOINT_HANG_MS=     # défaut 350 : silence continu avant de déclarer 
 GEMINI_ENDPOINT_ONSET_MS=    # défaut 80 : parole continue avant de confirmer un début (rejette les clics)
 GEMINI_ENDPOINT_MIN_RMS=     # défaut 500 : plancher absolu d'énergie (PCM16) pour considérer une frame comme parole
 
+# --- Latence de génération Gemini (anti-« blanc » de ~2s, prouvé = génération, pas VAD) ---
+GEMINI_THINKING_BUDGET=      # non défini (défaut) = non envoyé. "0" = désactive le « thinking » (raisonnement
+                             #   interne avant de répondre) qui ajoute ~2s de latence avant le 1er son. "<n>" = budget
+                             #   de tokens de réflexion limité. OPT-IN : si le modèle Live n'accepte pas thinkingConfig,
+                             #   le setup échoue (1007) → à valider en test, OFF par défaut pour ne pas casser la prod.
+
 # --- VAD / fluidité OpenAI (optionnel — cf. « Fluidité de la conversation » plus haut) ---
 OPENAI_VAD_DISABLED=         # true → kill-switch, retour aux défauts OpenAI
 OPENAI_VAD_TYPE=             # défaut : semantic_vad (anti-« blanc ») | server_vad

@@ -18,6 +18,7 @@
 import { WebSocket } from 'ws'
 import { mulawB64ToPcm16B64At16k, pcm24B64ToMulawB64At8k, mulawB64ToPcm8Samples } from './audio.js'
 import { buildRealtimeInputConfig, vadSummary } from './vad.js'
+import { buildThinkingConfig, thinkingSummary } from './generation.js'
 import { createFluidityTracker, mulaw8kMs } from './fluidity.js'
 import { createEndpointDetector, endpointSummary } from './endpointing.js'
 import { GREETING_FALLBACK_MS, GREETING_PROTECT_MAX_MS } from './greeting.js'
@@ -262,12 +263,13 @@ export function createModectGeminiBridge(opts) {
     if (setupSent || !geminiReady || !contextFetched) return
     setupSent = true
     const realtimeInputConfig = buildRealtimeInputConfig()
-    console.log(`📤 [modect-gemini:${shortId(callId)}] setup (VAD ${vadSummary()} · endpoint ${endpointSummary()})`)
+    console.log(`📤 [modect-gemini:${shortId(callId)}] setup (VAD ${vadSummary()} · endpoint ${endpointSummary()} · thinking ${thinkingSummary()})`)
     geminiWs.send(JSON.stringify({
       setup: {
         model: MODEL,
         generationConfig: {
           responseModalities: ['AUDIO'],
+          ...(buildThinkingConfig() ?? {}),
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: voice },
