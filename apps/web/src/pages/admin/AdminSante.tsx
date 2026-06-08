@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Clock, RefreshCcw, Sparkles, ExternalLink } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock, RefreshCcw, Sparkles, ExternalLink, Activity, Mic, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface StuckCall {
@@ -113,6 +113,9 @@ export function AdminSantePage() {
 
           {/* Veille modèles voix (self-service, recherche web via Edge Fn) */}
           <ModelWatchSection />
+
+          {/* Diagnostic fluidité : enregistrement de calibration + analyse fine */}
+          <FluidityDiagnosticSection />
 
           {/* Alertes bloquages */}
           <StuckSection
@@ -302,6 +305,142 @@ function EngineRow({ label, data }: { label: string; data: EngineWatch }) {
       </p>
       {data.note && <p className="text-sm text-brun-900 mt-1">{data.note}</p>}
     </div>
+  )
+}
+
+interface FluidityRecording {
+  url:        string | null
+  duration_s: number | null
+  created_at: string
+}
+
+function FluidityDiagnosticSection() {
+  const [enabled, setEnabled]       = useState(false)
+  const [remaining, setRemaining]   = useState(0)
+  const [recordings, setRecordings] = useState<FluidityRecording[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [saving, setSaving]         = useState(false)
+
+  async function load() {
+    const [settings, events] = await Promise.all([
+      supabase.from('app_settings')
+        .select('fluidity_diagnostic_enabled, fluidity_keep_recording_remaining')
+        .eq('id', 1).maybeSingle(),
+      supabase.from('system_events')
+        .select('created_at, payload')
+        .eq('source', 'voice-bridge/fluidity-diag')
+        .order('created_at', { ascending: false }).limit(10),
+    ])
+    const s = settings.data as { fluidity_diagnostic_enabled: boolean; fluidity_keep_recording_remaining: number } | null
+    if (s) { setEnabled(!!s.fluidity_diagnostic_enabled); setRemaining(s.fluidity_keep_recording_remaining ?? 0) }
+    const evs = (events.data ?? []) as { created_at: string; payload: { recording_url?: string | null; duration_s?: number | null } | null }[]
+    setRecordings(evs.map((e) => ({
+      url:        e.payload?.recording_url ?? null,
+      duration_s: e.payload?.duration_s ?? null,
+      created_at: e.created_at,
+    })))
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function toggleEnabled() {
+    setSaving(true)
+    const next = !enabled
+    const { error } = await supabase.from('app_settings')
+      .update({ fluidity_diagnostic_enabled: next, updated_at: new Date().toISOString() }).eq('id', 1)
+    if (!error) setEnabled(next)
+    setSaving(false)
+  }
+
+  async function setRecordingsTo(next: number) {
+    setSaving(true)
+    const val = Math.max(0, next)
+    const { error } = await supabase.from('app_settings')
+      .update({ fluidity_keep_recording_remaining: val, updated_at: new Date().toISOString() }).eq('id', 1)
+    if (!error) setRemaining(val)
+    setSaving(false)
+  }
+
+  return (
+    <section className="mb-8">
+      <div className="flex items-center gap-2 mb-2">
+        <Activity size={16} className="text-accent-700" />
+        <h2 className="font-serif text-lg font-semibold text-brun-900">Diagnostic fluidité</h2>
+      </div>
+      <p className="text-xs text-slate-500 mb-3">
+        Mesure du « blanc » sur les appels <strong>démo / test</strong> uniquement (jamais les bénéficiaires).
+      </p>
+
+      <div className="bg-white rounded-xl border border-creme-sable divide-y divide-creme-sable">
+        {/* Enregistrement de calibration */}
+        <div className="px-4 py-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Mic size={15} className="text-primary" />
+            <span className="font-medium text-brun-900 text-sm">Enregistrement de calibration</span>
+            <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${remaining > 0 ? 'bg-accent-50 text-accent-700' : 'bg-slate-100 text-slate-500'}`}>
+              {remaining > 0 ? `${remaining} appel${remaining > 1 ? 's' : ''} à enregistrer` : 'inactif'}
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">
+            Les prochains appels démo seront enregistrés en stéréo (canal toi / canal IA), déposés ici en lien
+            téléchargeable, puis supprimés de Twilio. Ouvre le WAV dans Audacity pour mesurer le vrai blanc.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={() => setRecordingsTo(remaining + 1)} disabled={saving}
+              className="px-3 py-1.5 rounded-lg border border-creme-sable bg-white text-sm text-brun-700 hover:bg-creme disabled:opacity-50">+1 appel</button>
+            <button onClick={() => setRecordingsTo(remaining + 3)} disabled={saving}
+              className="px-3 py-1.5 rounded-lg border border-creme-sable bg-white text-sm text-brun-700 hover:bg-creme disabled:opacity-50">+3 appels</button>
+            {remaining > 0 && (
+              <button onClick={() => setRecordingsTo(0)} disabled={saving}
+                className="px-3 py-1.5 rounded-lg border border-brique/30 bg-white text-sm text-brique hover:bg-brique/5 disabled:opacity-50">Arrêter (0)</button>
+            )}
+          </div>
+
+          {/* Liens des enregistrements récents */}
+          <div className="mt-3">
+            {recordings.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">Aucun enregistrement pour l'instant.</p>
+            ) : (
+              <ul className="space-y-1">
+                {recordings.map((r, i) => (
+                  <li key={i} className="text-xs flex items-center gap-2">
+                    {r.url ? (
+                      <a href={r.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                        <Download size={12} /> WAV
+                      </a>
+                    ) : (
+                      <span className="text-slate-400">upload KO</span>
+                    )}
+                    <span className="text-slate-500">{r.duration_s != null ? `${r.duration_s}s` : '—'}</span>
+                    <span className="text-slate-400">· {formatRelative(r.created_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        {/* Analyse fine automatique (phase 2) */}
+        <div className="px-4 py-4 flex items-start gap-3">
+          <div className="flex-1">
+            <span className="font-medium text-brun-900 text-sm">Analyse fine automatique</span>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Quand activé, le bridge mesure le blanc en fin d'appel par analyse VAD offline (audio jeté, métriques
+              seules). <span className="italic">À calibrer d'abord via un enregistrement ci-dessus.</span>
+            </p>
+          </div>
+          <button
+            onClick={toggleEnabled}
+            disabled={saving || loading}
+            className={`shrink-0 w-12 h-6 rounded-full transition-colors relative ${enabled ? 'bg-sauge' : 'bg-slate-300'} disabled:opacity-50`}
+            aria-pressed={enabled}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : ''}`} />
+          </button>
+        </div>
+      </div>
+    </section>
   )
 }
 

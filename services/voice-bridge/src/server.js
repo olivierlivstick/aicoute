@@ -43,6 +43,7 @@ import {
   listCallsMissingTwilioCost,
 } from './persistence/modect-call.js'
 import { logEvent as logSystemEvent } from './persistence/system-events.js'
+import { readAppSettings, setKeepRecording, storeRecordingWav } from './persistence/fluidity-diagnostic.js'
 
 // --- Config ----------------------------------------------------------------
 
@@ -242,11 +243,27 @@ app.post('/call', async (req, res) => {
     queryParts.push(`lang=${encodeURIComponent(lang)}`)
     const outgoingUrl = `${publicBase}/outgoing?${queryParts.join('&')}`
 
-    const call = await twilioClient.calls.create({
-      to:   cleaned,
-      from: TWILIO_NUMBER,
-      url:  outgoingUrl,
-    })
+    // Diagnostic fluidité : si l'admin a demandé de garder des enregistrements de
+    // calibration (compteur > 0 dans app_settings), on enregistre CET appel démo
+    // en dual-channel (canal 1 = appelé, canal 2 = IA) et on décrémente. Le WAV
+    // est récupéré + déposé dans Storage par /recording-status. Best-effort : si la
+    // lecture des réglages échoue, on n'enregistre pas (comportement par défaut).
+    const callParams = { to: cleaned, from: TWILIO_NUMBER, url: outgoingUrl }
+    try {
+      const { keepRecordingRemaining } = await readAppSettings()
+      if (keepRecordingRemaining > 0) {
+        callParams.record                       = true
+        callParams.recordingChannels            = 'dual'
+        callParams.recordingStatusCallback      = `${publicBase}/recording-status`
+        callParams.recordingStatusCallbackEvent = ['completed']
+        await setKeepRecording(keepRecordingRemaining - 1)
+        console.log(`🎙️  [diag] enregistrement de calibration activé (restants après: ${keepRecordingRemaining - 1})`)
+      }
+    } catch (err) {
+      console.error('⚠️  [diag] lecture app_settings échouée, pas d\'enregistrement:', err?.message || err)
+    }
+
+    const call = await twilioClient.calls.create(callParams)
 
     console.log(`📞 Appel sortant initié vers ${maskNumber(cleaned)} engine=${engine} lang=${lang} (sid: ${call.sid}${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
     res.json({ ok: true, callSid: call.sid })
@@ -285,6 +302,57 @@ ${paramTags}    </Stream>
 function escapeXml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
+
+// --- Callback d'enregistrement (Diagnostic fluidité, calibration) ----------
+//
+// Twilio notifie ici quand un enregistrement dual-channel est prêt. On télécharge
+// le WAV (auth Twilio), on le dépose dans Storage (bucket privé) et on publie un
+// lien signé via system_events → visible/cliquable dans /admin/sante. RGPD : ne
+// concerne QUE les appels démo/test (cf. /call), jamais les bénéficiaires.
+app.post('/recording-status', async (req, res) => {
+  // Toujours acquitter vite : Twilio n'attend pas notre traitement.
+  res.sendStatus(204)
+  try {
+    const recordingSid = (req.body?.RecordingSid || '').toString()
+    const recordingUrl = (req.body?.RecordingUrl || '').toString()
+    const callSid      = (req.body?.CallSid || '').toString()
+    const duration     = (req.body?.RecordingDuration || '').toString()
+    const channels     = (req.body?.RecordingChannels || '').toString()
+    if (!recordingUrl || !recordingSid) {
+      console.error('⚠️  [diag] /recording-status sans RecordingUrl/Sid')
+      return
+    }
+
+    // Télécharge le WAV depuis Twilio (basic auth AccountSid:AuthToken).
+    const wavUrl = `${recordingUrl}.wav`
+    const authHeader = 'Basic ' + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')
+    const resp = await fetch(wavUrl, { headers: { Authorization: authHeader } })
+    if (!resp.ok) {
+      console.error(`⚠️  [diag] download WAV ${resp.status} pour ${recordingSid}`)
+      return
+    }
+    const bytes = Buffer.from(await resp.arrayBuffer())
+
+    const path      = `demo/${callSid || recordingSid}.wav`
+    const signedUrl = await storeRecordingWav(bytes, path)
+
+    // Supprime l'enregistrement côté Twilio (on l'a copié dans notre Storage) —
+    // best-effort, évite d'accumuler des médias chez Twilio.
+    twilioClient.recordings(recordingSid).remove().catch(() => { /* */ })
+
+    console.log(`🎙️  [diag] WAV calibration ${recordingSid} (${duration}s, ${channels}ch) → ${signedUrl ? 'Storage OK' : 'upload KO'}`)
+    await logSystemEvent({
+      level:   'info',
+      source:  'voice-bridge/fluidity-diag',
+      message: signedUrl
+        ? `Enregistrement de calibration prêt (${duration}s) — lien valable 7 jours`
+        : `Enregistrement de calibration capté (${duration}s) mais upload Storage échoué`,
+      payload: { recording_url: signedUrl, twilio_sid: recordingSid, call_sid: callSid, duration_s: Number(duration) || null, channels: Number(channels) || null },
+    })
+  } catch (err) {
+    console.error('❌ /recording-status :', err?.message || err)
+  }
+})
 
 // --- Appels planifiés Modect (Twilio sortant → bénéficiaire réel) ----------
 //
