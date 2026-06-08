@@ -1,54 +1,51 @@
-// SECTION 7 — Tarifs (3 cartes, centrale mise en avant)
+// SECTION 7 — Tarifs (3 packs de minutes, dégressif, carte centrale mise en avant)
 import { Icon } from '@/marketing/components/icons'
 import { SIGNUP_URL } from '@/config/links'
 
-type Plan = {
+type Pack = {
   name: string
-  price: string
-  tagline: string
-  features: string[]
+  minutes: string       // quantité achetée, ex. '50'
+  price: string         // prix du pack en €, ex. '25'
+  perMinute: string     // tarif unitaire, ex. '0,50 € / minute'
+  saving?: string        // badge d'économie à côté du prix, ex. '−10 %'
+  cadence: string       // rythme d'appels (mis en avant), ex. '≈ 1 appel par semaine'
+  detail: string        // équivalence en conversations (texte secondaire)
   cta: string
   featured: boolean
 }
 
 export function Pricing() {
-  const plans: Plan[] = [
+  const packs: Pack[] = [
     {
-      name: 'Découverte',
-      price: '22',
-      tagline: "Pour rester en lien sans s'engager.",
-      features: [
-        '1 appel par semaine',
-        'Résumé email après chaque appel',
-        'Support par email',
-      ],
-      cta: 'Choisir Découverte',
+      name: 'Le rendez-vous',
+      minutes: '50',
+      price: '25',
+      perMinute: '0,50 € / minute',
+      cadence: '≈ 1 appel par semaine',
+      detail: 'Soit 5 à 7 conversations, pendant environ un mois.',
+      cta: 'Choisir ce pack',
       featured: false,
     },
     {
-      name: 'Confort',
-      price: '65',
-      tagline: 'Pour une vraie régularité.',
-      features: [
-        '3 appels par semaine',
-        'Résumé + transcription complète',
-        'Personnalisation avancée',
-        'Support prioritaire',
-      ],
-      cta: 'Choisir Confort',
+      name: 'Le lien',
+      minutes: '100',
+      price: '45',
+      perMinute: '0,45 € / minute',
+      saving: '−10 %',
+      cadence: '≈ 2 à 3 appels par semaine',
+      detail: 'Soit 10 à 14 conversations, pendant environ un mois.',
+      cta: 'Choisir ce pack',
       featured: true,
     },
     {
-      name: 'Sérénité',
-      price: '150',
-      tagline: 'Pour un accompagnement quotidien.',
-      features: [
-        '1 appel par jour',
-        "Alertes en temps réel si point d'attention",
-        'Rapport mensuel détaillé',
-        'Accompagnement humain dédié',
-      ],
-      cta: 'Choisir Sérénité',
+      name: 'La présence',
+      minutes: '250',
+      price: '100',
+      perMinute: '0,40 € / minute',
+      saving: '−20 %',
+      cadence: '≈ presque 1 appel par jour',
+      detail: 'Soit 25 à 35 conversations, pendant environ un mois.',
+      cta: 'Choisir ce pack',
       featured: false,
     },
   ]
@@ -58,39 +55,32 @@ export function Pricing() {
       <div className="max-w-container mx-auto px-6 lg:px-8">
         <div className="text-center max-w-2xl mx-auto">
           <h2 className="font-serif font-normal text-3xl md:text-4xl text-brun-900 leading-[1.15] text-balance">
-            Choisissez la formule qui vous ressemble.
+            Choisissez votre temps de conversation.
           </h2>
-          <p className="mt-4 text-lg text-brun-700">
-            Sans engagement. Annulable à tout moment.
+          <p className="mt-4 text-lg text-brun-700 text-pretty">
+            Un tarif à la minute, dégressif. Vous achetez des minutes de
+            conversation, sans abonnement, sans engagement.
           </p>
         </div>
 
         <div className="mt-14 grid md:grid-cols-3 gap-6 items-stretch">
-          {plans.map((p) => (
-            <PlanCard key={p.name} plan={p} />
+          {packs.map((p) => (
+            <PackCard key={p.name} pack={p} />
           ))}
         </div>
 
-        <p className="mt-10 text-sm text-center text-brun-700 max-w-2xl mx-auto">
-          Tous les tarifs incluent l'accès à l'espace personnel et la mémoire
-          des conversations sur 12 mois glissants. Si vous souhaitez offrir ce
-          service à plusieurs proches, des tarifs dégressifs sont possibles —
-          contactez-nous à{' '}
-          <a
-            href="mailto:contact@aicoute.fr"
-            className="text-terracotta-dark link-underline font-medium"
-          >
-            contact@aicoute.fr
-          </a>
-          .
+        <p className="mt-10 text-sm text-center text-brun-700 max-w-2xl mx-auto leading-relaxed">
+          Une conversation dure en moyenne 7 à 10 minutes. Vos minutes restent
+          valables 6 mois — et vous pouvez activer la recharge automatique pour
+          ne jamais interrompre le lien.
         </p>
       </div>
     </section>
   )
 }
 
-function PlanCard({ plan }: { plan: Plan }) {
-  const { featured } = plan
+function PackCard({ pack }: { pack: Pack }) {
+  const { featured } = pack
   return (
     <div
       className={`relative bg-white rounded-xl p-8 flex flex-col ${
@@ -106,36 +96,49 @@ function PlanCard({ plan }: { plan: Plan }) {
       )}
 
       <p className="text-xs uppercase tracking-[0.18em] text-terracotta-dark">
-        {plan.name}
+        {pack.name}
       </p>
 
+      {/* Minutes achetées (mise en avant) */}
       <div className="mt-3 flex items-baseline gap-1.5">
-        <span className="font-serif text-5xl text-brun-900">{plan.price}</span>
-        <span className="text-base text-brun-700">€ / mois</span>
+        <span className="font-serif text-5xl text-brun-900">{pack.minutes}</span>
+        <span className="text-base text-brun-700">minutes</span>
       </div>
 
-      <p className="mt-2 text-brun-700 text-pretty">{plan.tagline}</p>
+      {/* Prix du pack + badge d'économie */}
+      <div className="mt-3 flex items-center gap-2.5">
+        <span className="font-serif text-2xl text-brun-900">{pack.price} €</span>
+        {pack.saving && (
+          <span className="bg-ocre text-creme rounded-full px-2 py-0.5 text-xs font-semibold tracking-wide">
+            {pack.saving}
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-sm text-brun-700">{pack.perMinute}</p>
 
-      <ul className="mt-7 space-y-3 flex-1">
-        {plan.features.map((f) => (
-          <li key={f} className="flex items-start gap-3 text-[15px] text-brun-900">
-            <span className="mt-0.5 shrink-0 w-5 h-5 rounded-full bg-creme flex items-center justify-center text-terracotta">
-              <Icon.Check size={12} />
-            </span>
-            <span className="leading-relaxed">{f}</span>
-          </li>
-        ))}
-      </ul>
+      {/* Rythme d'appels (mis en avant) + équivalence conversations */}
+      <div className="mt-7 flex-1">
+        <p className="flex items-center gap-2.5 text-[15px] font-semibold text-brun-900">
+          <span className="shrink-0 text-terracotta">
+            <Icon.Phone size={18} stroke="#C75D3A" />
+          </span>
+          {pack.cadence}
+        </p>
+        <p className="mt-2 text-sm text-brun-700 leading-relaxed text-pretty">
+          {pack.detail}
+        </p>
+      </div>
 
       <a
         href={SIGNUP_URL}
+        aria-label={`${pack.cta} — ${pack.name}, ${pack.minutes} minutes`}
         className={`mt-8 inline-flex items-center justify-center px-6 py-3 rounded-md font-medium transition-colors ${
           featured
             ? 'bg-terracotta hover:bg-terracotta-dark text-creme'
             : 'border border-terracotta text-terracotta-dark hover:bg-terracotta hover:text-creme'
         }`}
       >
-        {plan.cta}
+        {pack.cta}
       </a>
     </div>
   )
