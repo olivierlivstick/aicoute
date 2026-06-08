@@ -34,7 +34,7 @@ export function BeneficiaryWizard() {
   const [data, setData] = useState<WizardData>({
     language_preference: 'fr',
     report_language: 'fr',
-    preferred_engine: 'openai',
+    preferred_engine: 'gemini',
     ai_voice: 'cedar',
     gemini_voice: 'Aoede',
     ai_persona_name: 'Marie',
