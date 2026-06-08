@@ -116,12 +116,15 @@ const PERIOD_LABEL_UPCOMING: Record<Period, string> = {
   all:   'Tout',
 }
 
-type Tab = 'past' | 'upcoming' | 'demos'
+type Tab = 'past' | 'upcoming' | 'demos' | 'emitted'
 
 export function AdminAppelsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const tab         = (searchParams.get('tab') as Tab) ?? 'past'
+  // 'emitted' (Appels émis = entrants origin='inbound') se rend comme 'past' :
+  // mêmes colonnes (planifié/effectif, moteur, coûts, qualité), tri décroissant.
+  const pastLike    = pastLike || tab === 'emitted'
   const period      = (searchParams.get('period') as Period) ?? '7d'
   const severity    = searchParams.get('severity')    ?? 'all'   // 'all' | 'high'
   const beneficiary = searchParams.get('beneficiary') ?? 'all'
@@ -149,7 +152,7 @@ export function AdminAppelsPage() {
   async function load() {
     if (tab === 'demos') { setLoading(false); return }  // onglet démos = composant autonome
     setLoading(true)
-    const statuses = tab === 'past' ? PAST_STATUSES : UPCOMING_STATUSES
+    const statuses = pastLike ? PAST_STATUSES : UPCOMING_STATUSES
 
     // Tri : passés desc (plus récents en haut), prévus asc (prochain en haut)
     let q = supabase
@@ -159,7 +162,12 @@ export function AdminAppelsPage() {
       .order('scheduled_at', { ascending: tab === 'upcoming' })
       .limit(200)
 
-    if (tab === 'past') {
+    // Split par origine : « Appels émis » = entrants (bénéficiaire → AICOUTE) ;
+    // « Appels passés » = sortants uniquement (on en sort les entrants).
+    if (tab === 'emitted')   q = q.eq('origin', 'inbound')
+    else if (tab === 'past') q = q.neq('origin', 'inbound')
+
+    if (pastLike) {
       // Onglet passés : on remonte au plus jusqu'à now - X (sauf 'all').
       if (period !== 'all') {
         const sinceMs = period === 'today' ? Date.now() - 24 * 3600 * 1000
@@ -200,7 +208,7 @@ export function AdminAppelsPage() {
     // les échecs jamais connectés — surtout ceux datés dans le futur via
     // scheduled_at — remontent en tête. Le tri DB par scheduled_at ne sert plus
     // qu'à borner le limit(200) ; l'ordre d'affichage est décidé ici.
-    if (tab === 'past') {
+    if (pastLike) {
       const effTime = (r: CallRow): number | null => {
         const d = r.started_at ?? r.notified_at
         return d ? new Date(d).getTime() : null
@@ -332,12 +340,13 @@ export function AdminAppelsPage() {
       <header className="mb-6">
         <p className="text-xs uppercase tracking-widest text-accent-700 font-semibold mb-1">Administration</p>
         <h1 className="font-serif text-3xl font-semibold text-brun-900">Appels (tous comptes)</h1>
-        <p className="text-slate-500 mt-1">200 résultats max. {tab === 'past' ? 'Plus récents en premier.' : 'Plus proches dans le temps en premier.'}</p>
+        <p className="text-slate-500 mt-1">200 résultats max. {pastLike ? 'Plus récents en premier.' : 'Plus proches dans le temps en premier.'}</p>
       </header>
 
       {/* Onglets */}
       <div className="flex gap-1 mb-5 border-b border-creme-sable">
         <TabButton active={tab === 'past'}     onClick={() => setParam('tab', 'past')}>Appels passés</TabButton>
+        <TabButton active={tab === 'emitted'}  onClick={() => setParam('tab', 'emitted')}>Appels émis</TabButton>
         <TabButton active={tab === 'upcoming'} onClick={() => setParam('tab', 'upcoming')}>Appels prévus</TabButton>
         <TabButton active={tab === 'demos'}    onClick={() => setParam('tab', 'demos')}>Démos vitrine</TabButton>
       </div>
@@ -366,7 +375,7 @@ export function AdminAppelsPage() {
           }))}
           onChange={(v) => setParam('period', v)}
         />
-        {tab === 'past' && (
+        {pastLike && (
           <Filter
             label="Sévérité"
             value={severity}
@@ -389,7 +398,7 @@ export function AdminAppelsPage() {
           <table className="w-full text-sm">
             <thead className="bg-creme text-brun-700 text-left text-xs uppercase tracking-wider">
               <tr>
-                {tab === 'past' ? (
+                {pastLike ? (
                   <>
                     <th className="px-4 py-3">Planifié</th>
                     <th className="px-4 py-3">Effectif</th>
@@ -400,10 +409,10 @@ export function AdminAppelsPage() {
                 <th className="px-4 py-3">Bénéficiaire</th>
                 <th className="px-4 py-3">Aidant</th>
                 <th className="px-4 py-3">Statut</th>
-                {tab === 'past' && <th className="px-4 py-3 text-center">Moteur</th>}
-                {tab === 'past' && <th className="px-4 py-3 text-center">Durée</th>}
-                {tab === 'past' && <th className="px-4 py-3 text-right">Coût IA</th>}
-                {tab === 'past' && <th className="px-4 py-3 text-right">Coût Twilio</th>}
+                {pastLike && <th className="px-4 py-3 text-center">Moteur</th>}
+                {pastLike && <th className="px-4 py-3 text-center">Durée</th>}
+                {pastLike && <th className="px-4 py-3 text-right">Coût IA</th>}
+                {pastLike && <th className="px-4 py-3 text-right">Coût Twilio</th>}
                 <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
@@ -425,13 +434,14 @@ export function AdminAppelsPage() {
                   : c.duration_seconds != null
                     ? `~€${(c.duration_seconds * TWILIO_EUR_PER_SECOND).toFixed(4)}`
                     : '—'
-                const canRelaunch  = tab === 'past'     && (c.status === 'missed' || c.status === 'failed') && ben?.id
+                // « Relancer » = re-déclencher un appel SORTANT → n'a de sens que sur l'onglet passés (sortants), pas sur les entrants.
+                const canRelaunch  = tab === 'past' && (c.status === 'missed' || c.status === 'failed') && ben?.id
                 // Renvoi du mail : appels complétés avec un aidant joignable.
-                const canResend     = tab === 'past' && c.status === 'completed' && !!aidant?.email
+                const canResend     = pastLike && c.status === 'completed' && !!aidant?.email
                 const canTriggerNow = tab === 'upcoming' && c.status === 'scheduled'
                 // Suppression : appels prévus (résidus en base) + appels en échec
                 // (nettoyage des tentatives ratées qui polluent l'historique).
-                const canDelete     = tab === 'upcoming' || (tab === 'past' && c.status === 'failed')
+                const canDelete     = tab === 'upcoming' || (pastLike && c.status === 'failed')
                 const hasHighAlert = Array.isArray(c.alerts) && c.alerts.some((a) => a.severity === 'high')
                 return (
                   <tr key={c.id} className="hover:bg-creme/40 transition-colors">
@@ -443,7 +453,7 @@ export function AdminAppelsPage() {
                         </span>
                       )}
                     </td>
-                    {tab === 'past' && (
+                    {pastLike && (
                       <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
                         {effective
                           ? new Date(effective).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
@@ -472,7 +482,7 @@ export function AdminAppelsPage() {
                         </span>
                       )}
                     </td>
-                    {tab === 'past' && (
+                    {pastLike && (
                       <td className="px-4 py-3 text-center">
                         {c.engine ? (
                           <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${ENGINE_LABEL[c.engine].tone}`}>
@@ -483,15 +493,15 @@ export function AdminAppelsPage() {
                         )}
                       </td>
                     )}
-                    {tab === 'past' && (
+                    {pastLike && (
                       <td className="px-4 py-3 text-center text-brun-700">{dur}</td>
                     )}
-                    {tab === 'past' && (
+                    {pastLike && (
                       <td className="px-4 py-3 text-right text-brun-700 font-mono text-xs">
                         {c.ai_cost_eur_real != null ? `€${c.ai_cost_eur_real.toFixed(4)}` : '—'}
                       </td>
                     )}
-                    {tab === 'past' && (
+                    {pastLike && (
                       <td
                         className={`px-4 py-3 text-right font-mono text-xs ${twilioReal ? 'text-brun-700' : 'text-slate-400'}`}
                         title={twilioReal ? 'Coût réel facturé par Twilio' : 'Estimation à partir de la durée (≈ 0,0007 €/s) — coût réel pas encore remonté'}
@@ -507,7 +517,7 @@ export function AdminAppelsPage() {
                         >
                           <ExternalLink size={12} /> Détail
                         </Link>
-                        {tab === 'past' && c.fluidity_metrics && (
+                        {pastLike && c.fluidity_metrics && (
                           <button
                             onClick={() => setQualityFor(c.fluidity_metrics)}
                             className="inline-flex items-center gap-1 text-xs text-accent-700 hover:underline"
@@ -564,9 +574,9 @@ export function AdminAppelsPage() {
               })}
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={tab === 'past' ? 10 : 5} className="px-5 py-10 text-center text-slate-400 text-sm">
+                  <td colSpan={pastLike ? 10 : 5} className="px-5 py-10 text-center text-slate-400 text-sm">
                     <PhoneCall size={24} className="mx-auto mb-2 text-slate-300" />
-                    {tab === 'past'
+                    {pastLike
                       ? 'Aucun appel passé ne correspond aux filtres.'
                       : 'Aucun appel prévu ne correspond aux filtres.'}
                   </td>

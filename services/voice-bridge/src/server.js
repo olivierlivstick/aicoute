@@ -619,6 +619,9 @@ app.post('/inbound-voice', async (req, res) => {
           `<Parameter name="call_id" value="${escapeXml(callId)}" />` +
           `<Parameter name="engine" value="${escapeXml(engine)}" />` +
           `<Parameter name="max_seconds" value="${escapeXml(String(maxSeconds))}" />` +
+          // CallSid de l'appel entrant → captureTwilioCost à la fermeture (les
+          // entrants n'ont pas de statusCallback comme les sortants).
+          (twilioSid ? `<Parameter name="twilio_sid" value="${escapeXml(twilioSid)}" />` : '') +
         '</Stream>' +
       '</Connect>',
     )
@@ -917,6 +920,7 @@ function handleAicouteCallConnection(twilioWs, { label }) {
   let callId          = null
   let engine          = 'openai'
   let streamStartedAt = null
+  let twilioSid       = null   // entrants : sid passé en <Parameter> → captureTwilioCost à la fin
 
   // Filet de sécurité initial : borne dure tant qu'on n'a pas reçu 'start'
   // (un Stream qui s'ouvre sans jamais démarrer). Resserré sur 'start' à la
@@ -935,6 +939,7 @@ function handleAicouteCallConnection(twilioWs, { label }) {
       const params    = data.start.customParameters ?? {}
       callId          = params.call_id ?? null
       engine          = params.engine === 'gemini' ? 'gemini' : 'openai'
+      twilioSid       = params.twilio_sid ?? null
       streamStartedAt = Date.now()
 
       if (!callId) {
@@ -1020,6 +1025,11 @@ function handleAicouteCallConnection(twilioWs, { label }) {
     // Snapshot de fluidité (Étape 0 — observation, best-effort)
     const fluidity = session.getFluidityMetrics?.(durationSeconds) ?? null
     if (fluidity) await recordCallFluidity(callId, fluidity)
+
+    // Coût Twilio RÉEL des ENTRANTS : ils n'ont pas de statusCallback comme les
+    // sortants (cf. /scheduled-status) → on déclenche ici la capture différée à
+    // partir du sid reçu en <Parameter>. Fire-and-forget (best-effort, poll API).
+    if (twilioSid) void captureTwilioCost(twilioSid)
 
     session.close()
 
