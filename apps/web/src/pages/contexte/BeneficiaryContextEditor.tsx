@@ -665,6 +665,10 @@ const aiSchema = z.object({
   preferred_engine:    z.enum(['openai', 'gemini']),
   custom_prompt:       z.string().optional(),
   inbound_custom_prompt: z.string().optional(),
+  inbound_enabled:            z.boolean(),
+  inbound_max_minutes_per_day: z.coerce.number().int().min(1).max(240),
+  inbound_cooldown_minutes:    z.coerce.number().int().min(0).max(1440),
+  inbound_max_duration_minutes: z.coerce.number().int().min(1).max(30),
 })
 
 type AIForm = z.infer<typeof aiSchema>
@@ -691,6 +695,13 @@ const LANGUAGES = [
 
 function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; onSaved: () => void }) {
   const { save, saving, saved, error } = useSection(beneficiary)
+  // Colonnes inbound absentes du type Beneficiary partagé (cf. preferred_engine)
+  const inb = beneficiary as unknown as {
+    inbound_enabled?: boolean
+    inbound_max_minutes_per_day?: number
+    inbound_cooldown_minutes?: number
+    inbound_max_duration_seconds?: number
+  }
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<AIForm>({
     resolver: zodResolver(aiSchema),
     values: {
@@ -705,6 +716,10 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
       preferred_engine:    ((beneficiary as unknown as { preferred_engine?: string }).preferred_engine === 'gemini' ? 'gemini' : 'openai'),
       custom_prompt:       beneficiary.custom_prompt ?? '',
       inbound_custom_prompt: (beneficiary as unknown as { inbound_custom_prompt?: string }).inbound_custom_prompt ?? '',
+      inbound_enabled:             inb.inbound_enabled ?? false,
+      inbound_max_minutes_per_day: inb.inbound_max_minutes_per_day ?? 30,
+      inbound_cooldown_minutes:    inb.inbound_cooldown_minutes ?? 30,
+      inbound_max_duration_minutes: Math.round((inb.inbound_max_duration_seconds ?? 600) / 60),
     },
   })
 
@@ -712,6 +727,7 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
   const selectedGemini = watch('gemini_voice')
   const selectedStyle  = watch('conversation_style')
   const selectedEngine = watch('preferred_engine')
+  const inboundEnabled = watch('inbound_enabled')
 
   const [resetting, setResetting] = useState(false)
   const [resettingInbound, setResettingInbound] = useState(false)
@@ -731,6 +747,11 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
       custom_prompt:       trimmed ? trimmed : null,
       // idem pour l'ouverture des appels entrants
       inbound_custom_prompt: trimmedInbound ? trimmedInbound : null,
+      // Appels entrants : autorisation + garde-fous de coût (durée stockée en secondes)
+      inbound_enabled:             values.inbound_enabled,
+      inbound_max_minutes_per_day: values.inbound_max_minutes_per_day,
+      inbound_cooldown_minutes:    values.inbound_cooldown_minutes,
+      inbound_max_duration_seconds: values.inbound_max_duration_minutes * 60,
     } as unknown as Partial<Beneficiary>)
     if (ok) onSaved()
   }
@@ -913,6 +934,60 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
             className="font-mono text-sm leading-relaxed"
             {...register('custom_prompt')}
           />
+        </div>
+
+        <div className="pt-2 border-t border-slate-100">
+          <h3 className="font-title text-base font-semibold text-slate-800 mb-1">Appels entrants</h3>
+          <p className="text-xs text-slate-400 mb-3">
+            Autoriser {beneficiary.first_name} à <strong>appeler</strong> AICOUTE depuis son téléphone
+            (AICOUTE le/la reconnaît à son numéro et décroche avec tout son contexte).
+          </p>
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
+              {...register('inbound_enabled')}
+            />
+            <span className="text-sm text-slate-600 leading-snug">
+              Autoriser <strong>{beneficiary.first_name}</strong> à appeler AICOUTE.
+            </span>
+          </label>
+
+          {inboundEnabled && (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="inbound_max_minutes_per_day">Budget / jour (min)</Label>
+                <Input
+                  id="inbound_max_minutes_per_day"
+                  type="number" min={1} max={240}
+                  error={errors.inbound_max_minutes_per_day?.message}
+                  {...register('inbound_max_minutes_per_day')}
+                />
+                <p className="text-xs text-slate-400 mt-1">Durée totale d'appels entrants acceptée sur 24 h.</p>
+              </div>
+              <div>
+                <Label htmlFor="inbound_cooldown_minutes">Délai entre appels (min)</Label>
+                <Input
+                  id="inbound_cooldown_minutes"
+                  type="number" min={0} max={1440}
+                  error={errors.inbound_cooldown_minutes?.message}
+                  {...register('inbound_cooldown_minutes')}
+                />
+                <p className="text-xs text-slate-400 mt-1">Temps minimum entre deux appels entrants.</p>
+              </div>
+              <div>
+                <Label htmlFor="inbound_max_duration_minutes">Durée max / appel (min)</Label>
+                <Input
+                  id="inbound_max_duration_minutes"
+                  type="number" min={1} max={30}
+                  error={errors.inbound_max_duration_minutes?.message}
+                  {...register('inbound_max_duration_minutes')}
+                />
+                <p className="text-xs text-slate-400 mt-1">Coupe-circuit de durée d'un appel entrant.</p>
+              </div>
+            </div>
+          )}
         </div>
 
         <div>

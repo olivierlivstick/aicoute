@@ -27,6 +27,7 @@ interface CallRow {
   twilio_cost_eur:  number | null
   report_email_sent_at: string | null
   engine:           'openai' | 'gemini' | null
+  origin:           'scheduled' | 'inbound' | null
   alerts:           Array<{ severity: string }> | null
   fluidity_metrics: FluidityMetrics | null
   beneficiaries: {
@@ -153,7 +154,7 @@ export function AdminAppelsPage() {
     // Tri : passés desc (plus récents en haut), prévus asc (prochain en haut)
     let q = supabase
       .from('calls')
-      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, report_email_sent_at, engine, alerts, fluidity_metrics, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
+      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, report_email_sent_at, engine, origin, alerts, fluidity_metrics, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
       .in('status', statuses)
       .order('scheduled_at', { ascending: tab === 'upcoming' })
       .limit(200)
@@ -460,6 +461,11 @@ export function AdminAppelsPage() {
                       <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${STATUS_TONE[c.status]}`}>
                         {STATUS_LABEL[c.status]}
                       </span>
+                      {c.origin === 'inbound' && (
+                        <span className="ml-2 inline-block bg-accent-50 text-accent-700 px-2 py-1 rounded-full text-xs font-semibold" title="Le bénéficiaire a appelé AICOUTE">
+                          📞 Entrant
+                        </span>
+                      )}
                       {hasHighAlert && (
                         <span className="ml-2 inline-block bg-brique/15 text-brique px-2 py-1 rounded-full text-xs font-semibold">
                           ⚠ haute

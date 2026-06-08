@@ -171,6 +171,11 @@ function PastCallRow({ call }: { call: CallWithBeneficiary }) {
                 <AlertTriangle size={11} /> {call.alerts.length} signal{call.alerts.length > 1 ? 'aux' : ''}
               </span>
             )}
+            {(call as unknown as { origin?: string }).origin === 'inbound' && (
+              <span className="text-xs text-accent-700 bg-accent-50 px-2 py-0.5 rounded-full" title={`${call.beneficiary_first_name} a appelé AICOUTE`}>
+                📞 Entrant
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
