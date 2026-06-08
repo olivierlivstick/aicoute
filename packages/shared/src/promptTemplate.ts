@@ -33,6 +33,15 @@ TES INSTRUCTIONS
 9. Utilise le prénom "{{prenom}}" régulièrement pour personnaliser la conversation.
 10. Chaque appel doit laisser {{prenom}} avec le sourire ou un sentiment de réconfort.`
 
+/**
+ * Ouverture par défaut des appels ENTRANTS (le bénéficiaire appelle AICOUTE).
+ * Même rôle que DEFAULT_PROMPT_TEMPLATE mais pour le seul bloc d'OUVERTURE :
+ * baseline du « Réinitialiser » de /admin/prompt, snapshot wizard, et filet si
+ * prompt_templates.inbound_opening renvoie du vide.
+ * GARDER EN PHASE avec le seed migration (20260608000006) + CODE_DEFAULT_INBOUND_OPENING (edge).
+ */
+export const DEFAULT_INBOUND_OPENING = `C'est {{prenom}} qui T'APPELLE — ce n'est pas toi qui l'appelles. Montre une joie sincère et chaleureuse dès le tout premier mot, par exemple : « {{prenom}}, quel plaisir de t'entendre ! Comment vas-tu ? ». Ne dis jamais que c'est toi qui appelles, ni « je t'appelle ». Laisse ensuite {{prenom}} t'expliquer ce qui l'amène, et reste exactement le même compagnon chaleureux que d'habitude.`
+
 export const STYLE_DESCRIPTIONS: Record<string, string> = {
   warm:    'chaleureux, bienveillant et affectueux',
   playful: "enjoué, léger et plein d'humour doux",

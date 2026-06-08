@@ -88,6 +88,14 @@ TES INSTRUCTIONS
 10. Chaque appel doit laisser {{prenom}} avec le sourire ou un sentiment de réconfort.`
 
 /**
+ * Ouverture par défaut des appels ENTRANTS — FILET DE SÉCURITÉ si
+ * prompt_templates.inbound_opening est vide/inaccessible. Source de vérité = DB
+ * (seed migration 20260608000006). GARDER EN PHASE avec DEFAULT_INBOUND_OPENING
+ * (shared) + le seed.
+ */
+export const CODE_DEFAULT_INBOUND_OPENING = `C'est {{prenom}} qui T'APPELLE — ce n'est pas toi qui l'appelles. Montre une joie sincère et chaleureuse dès le tout premier mot, par exemple : « {{prenom}}, quel plaisir de t'entendre ! Comment vas-tu ? ». Ne dis jamais que c'est toi qui appelles, ni « je t'appelle ». Laisse ensuite {{prenom}} t'expliquer ce qui l'amène, et reste exactement le même compagnon chaleureux que d'habitude.`
+
+/**
  * Date relative en français pour le rappel du dernier appel :
  * "aujourd'hui" / "hier" / "il y a N jours" (< 7 j) / "le 29 mai".
  * Comparaison par jour calendaire (un appel à 23h "hier" reste "hier").
@@ -212,9 +220,34 @@ Tu parles avec ${first_name} EXCLUSIVEMENT en ${langName}, dès le tout premier 
 }
 
 /**
+ * OUVERTURE des appels ENTRANTS — bloc IMPÉRATIF appended en dernier (donc
+ * prioritaire, par récence, sur la règle d'ouverture sortante du template).
+ * La personnalité reste celle du template ; seule l'ouverture change.
+ * Cascade identique au prompt principal : custom (concret) → défaut DB → code.
+ */
+function buildInboundOpeningBlock(
+  beneficiary: BeneficiaryContext,
+  defaultOpening: string | null,
+  customOpening: string | null,
+): string {
+  const openingText = customOpening && customOpening.trim()
+    ? customOpening                                   // déjà concret → tel quel
+    : resolvePromptPlaceholders(
+        (defaultOpening && defaultOpening.trim()) ? defaultOpening : CODE_DEFAULT_INBOUND_OPENING,
+        beneficiary,
+      )
+  return `═══════════════════════════════════════
+OUVERTURE DE CET APPEL (IMPÉRATIF — PRIORITAIRE SUR LA RÈGLE D'OUVERTURE CI-DESSUS)
+═══════════════════════════════════════
+${openingText}`
+}
+
+/**
  * Assemble le system prompt complet.
  * @param defaultTemplate  template par défaut (DB `prompt_templates.template`), avec variables
  * @param customPrompt     copie concrète par bénéficiaire (déjà sans variables) ; prioritaire
+ * @param inbound          si fourni (appel ENTRANT), ajoute le bloc d'ouverture entrant
+ *                         qui prime sur la règle d'ouverture sortante du template.
  */
 export function buildSystemPrompt(
   beneficiary: BeneficiaryContext,
@@ -223,6 +256,7 @@ export function buildSystemPrompt(
   previousCall: PreviousCallContext | null = null,
   defaultTemplate: string | null = null,
   customPrompt: string | null = null,
+  inbound: { defaultOpening: string | null; customOpening: string | null } | null = null,
 ): string {
   const effectiveTemplate = customPrompt && customPrompt.trim()
     ? customPrompt                                    // déjà concret → tel quel
@@ -233,5 +267,9 @@ export function buildSystemPrompt(
 
   const contextBlock = buildContextBlock(beneficiary, memories, schedule, previousCall)
 
-  return `${effectiveTemplate}\n\n${contextBlock}`
+  const inboundBlock = inbound
+    ? `\n\n${buildInboundOpeningBlock(beneficiary, inbound.defaultOpening, inbound.customOpening)}`
+    : ''
+
+  return `${effectiveTemplate}\n\n${contextBlock}${inboundBlock}`
 }

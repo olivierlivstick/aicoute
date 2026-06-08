@@ -83,12 +83,14 @@ export async function loadCallContext(
     beneficiary_id: string
     schedule_id: string | null
     attempt_number: number
+    origin: string | null            // 'scheduled' (défaut) | 'inbound'
     session_schedules: {
       max_duration_minutes: number
       suggested_topics: string[] | null
       special_instructions: string | null
     } | null
   }
+  const isInbound = call.origin === 'inbound'
 
   // 2. Bénéficiaire
   const benRes = await supabase
@@ -120,6 +122,8 @@ export async function loadCallContext(
     health_notes: string | null
     conversation_style: string
     custom_prompt: string | null
+    inbound_custom_prompt: string | null
+    inbound_max_duration_seconds: number | null
   }
 
   // 3. Mémoires long-terme (top 20)
@@ -180,21 +184,32 @@ export async function loadCallContext(
   //     bypass la RLS. Si absent → buildSystemPrompt retombe sur CODE_DEFAULT_TEMPLATE.
   const tplRes = await supabase
     .from('prompt_templates')
-    .select('template')
+    .select('template, inbound_opening')
     .eq('id', 1)
     .maybeSingle()
-  const defaultTemplate = (tplRes.data as { template: string } | null)?.template ?? null
+  const tplRow          = tplRes.data as { template: string; inbound_opening: string | null } | null
+  const defaultTemplate = tplRow?.template ?? null
+  const defaultInboundOpening = tplRow?.inbound_opening ?? null
 
-  // 5. Planning (sinon défauts)
+  // 5. Planning (sinon défauts). Pour un appel ENTRANT il n'y a pas de schedule →
+  //    la durée cible suit le coupe-circuit entrant du bénéficiaire (sinon 10 min).
   const schedule = call.session_schedules ?? {
-    max_duration_minutes: 15,
+    max_duration_minutes: isInbound
+      ? Math.max(1, Math.round((beneficiary.inbound_max_duration_seconds ?? 600) / 60))
+      : 15,
     suggested_topics:     null,
     special_instructions: null,
   }
 
   // 6. Construction du prompt : custom_prompt (concret, par bénéficiaire) prioritaire,
-  //    sinon le template par défaut interpolé.
-  const basePrompt   = buildSystemPrompt(beneficiary, memories, schedule, previousCall, defaultTemplate, beneficiary.custom_prompt)
+  //    sinon le template par défaut interpolé. Pour un appel ENTRANT, on ajoute le
+  //    bloc d'ouverture (surcharge bénéficiaire concrète → défaut DB → filet code).
+  const basePrompt   = buildSystemPrompt(
+    beneficiary, memories, schedule, previousCall, defaultTemplate, beneficiary.custom_prompt,
+    isInbound
+      ? { defaultOpening: defaultInboundOpening, customOpening: beneficiary.inbound_custom_prompt }
+      : null,
+  )
   const instructions = agentExtraPrompt ? `${agentExtraPrompt}\n\n${basePrompt}` : basePrompt
 
   return {

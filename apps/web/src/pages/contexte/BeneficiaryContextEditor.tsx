@@ -664,6 +664,7 @@ const aiSchema = z.object({
   report_language:     z.string().min(2),
   preferred_engine:    z.enum(['openai', 'gemini']),
   custom_prompt:       z.string().optional(),
+  inbound_custom_prompt: z.string().optional(),
 })
 
 type AIForm = z.infer<typeof aiSchema>
@@ -703,6 +704,7 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
       // incomplets cf. CLAUDE.md "Build Netlify : utiliser vite build sans tsc")
       preferred_engine:    ((beneficiary as unknown as { preferred_engine?: string }).preferred_engine === 'gemini' ? 'gemini' : 'openai'),
       custom_prompt:       beneficiary.custom_prompt ?? '',
+      inbound_custom_prompt: (beneficiary as unknown as { inbound_custom_prompt?: string }).inbound_custom_prompt ?? '',
     },
   })
 
@@ -712,9 +714,11 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
   const selectedEngine = watch('preferred_engine')
 
   const [resetting, setResetting] = useState(false)
+  const [resettingInbound, setResettingInbound] = useState(false)
 
   const onSubmit = async (values: AIForm) => {
     const trimmed = values.custom_prompt?.trim()
+    const trimmedInbound = values.inbound_custom_prompt?.trim()
     const ok = await save({
       ai_persona_name:     values.ai_persona_name,
       ai_voice:            values.ai_voice,
@@ -725,6 +729,8 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
       preferred_engine:    values.preferred_engine,
       // vide → NULL : on retombe alors sur le prompt par défaut au moment de l'appel
       custom_prompt:       trimmed ? trimmed : null,
+      // idem pour l'ouverture des appels entrants
+      inbound_custom_prompt: trimmedInbound ? trimmedInbound : null,
     } as unknown as Partial<Beneficiary>)
     if (ok) onSaved()
   }
@@ -749,6 +755,28 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
       setValue('custom_prompt', resolved, { shouldDirty: true })
     }
     setResetting(false)
+  }
+
+  // Réinitialise l'ouverture entrante depuis le défaut admin, résolue pour ce bénéficiaire.
+  const resetInboundFromDefault = async () => {
+    setResettingInbound(true)
+    const { data: tpl } = await supabase
+      .from('prompt_templates')
+      .select('inbound_opening')
+      .eq('id', 1)
+      .maybeSingle()
+    const tplText = (tpl as { inbound_opening: string | null } | null)?.inbound_opening
+    if (tplText) {
+      const resolved = resolvePromptPlaceholders(tplText, {
+        first_name:          beneficiary.first_name,
+        ai_persona_name:     watch('ai_persona_name'),
+        conversation_style:  watch('conversation_style'),
+        language_preference: watch('language_preference'),
+        gender:              beneficiary.gender ?? null,
+      })
+      setValue('inbound_custom_prompt', resolved, { shouldDirty: true })
+    }
+    setResettingInbound(false)
   }
 
   return (
@@ -884,6 +912,32 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
             rows={14}
             className="font-mono text-sm leading-relaxed"
             {...register('custom_prompt')}
+          />
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between gap-3 mb-1">
+            <Label htmlFor="inbound_custom_prompt">Ouverture des appels entrants</Label>
+            <button
+              type="button"
+              onClick={resetInboundFromDefault}
+              disabled={resettingInbound}
+              className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-primary transition-colors disabled:opacity-50"
+            >
+              <RotateCcw size={12} className={resettingInbound ? 'animate-spin' : ''} />
+              Réinitialiser depuis le défaut
+            </button>
+          </div>
+          <p className="text-xs text-slate-400 mb-1">
+            Comment {beneficiary.first_name} est accueilli·e quand c'est {beneficiary.first_name} qui
+            appelle AICOUTE (et non l'inverse). Remplace la salutation habituelle pour ces appels —
+            la personnalité ci-dessus reste la même. Laisser vide pour utiliser le défaut de la plateforme.
+          </p>
+          <Textarea
+            id="inbound_custom_prompt"
+            rows={5}
+            className="font-mono text-sm leading-relaxed"
+            {...register('inbound_custom_prompt')}
           />
         </div>
       </div>

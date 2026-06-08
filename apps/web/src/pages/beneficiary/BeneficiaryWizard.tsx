@@ -61,22 +61,29 @@ export function BeneficiaryWizard() {
     setError(null)
 
     // Snapshot du prompt par défaut → copie CONCRÈTE (variables résolues) pour ce
-    // bénéficiaire. Si la lecture échoue, on laisse NULL → fallback sur le défaut au moment de l'appel.
+    // bénéficiaire : le prompt principal (sortant) ET l'ouverture des appels
+    // entrants. Si la lecture échoue, on laisse NULL → fallback sur le défaut au
+    // moment de l'appel.
     let customPrompt: string | null = null
+    let inboundCustomPrompt: string | null = null
     const { data: tpl } = await supabase
       .from('prompt_templates')
-      .select('template')
+      .select('template, inbound_opening')
       .eq('id', 1)
       .maybeSingle()
-    const tplText = (tpl as { template: string } | null)?.template
-    if (tplText) {
-      customPrompt = resolvePromptPlaceholders(tplText, {
-        first_name:          final.first_name ?? '',
-        ai_persona_name:     final.ai_persona_name ?? 'Marie',
-        conversation_style:  final.conversation_style ?? 'warm',
-        language_preference: final.language_preference ?? 'fr',
-        gender:              final.gender ?? null,
-      })
+    const tplRow = tpl as { template: string; inbound_opening: string | null } | null
+    const resolveInput = {
+      first_name:          final.first_name ?? '',
+      ai_persona_name:     final.ai_persona_name ?? 'Marie',
+      conversation_style:  final.conversation_style ?? 'warm',
+      language_preference: final.language_preference ?? 'fr',
+      gender:              final.gender ?? null,
+    }
+    if (tplRow?.template) {
+      customPrompt = resolvePromptPlaceholders(tplRow.template, resolveInput)
+    }
+    if (tplRow?.inbound_opening) {
+      inboundCustomPrompt = resolvePromptPlaceholders(tplRow.inbound_opening, resolveInput)
     }
 
     const result = await createBeneficiary({
@@ -101,6 +108,7 @@ export function BeneficiaryWizard() {
       ai_persona_name: final.ai_persona_name ?? 'Marie',
       conversation_style: final.conversation_style ?? 'warm',
       custom_prompt: customPrompt,
+      inbound_custom_prompt: inboundCustomPrompt,
       is_active: true,
       onboarding_completed: true,
       // preferred_engine absent du type Beneficiary partagé → cast (cf. WizardData)

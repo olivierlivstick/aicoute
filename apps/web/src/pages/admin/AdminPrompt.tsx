@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Info, RotateCcw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { DEFAULT_PROMPT_TEMPLATE } from '@modect/shared'
+import { DEFAULT_PROMPT_TEMPLATE, DEFAULT_INBOUND_OPENING } from '@modect/shared'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
 
@@ -26,6 +26,8 @@ const PLACEHOLDERS: Array<{ token: string; desc: string }> = [
 export function AdminPromptPage() {
   const [template, setTemplate]   = useState('')
   const [original, setOriginal]   = useState('')
+  const [inbound, setInbound]     = useState('')
+  const [inboundOriginal, setInboundOriginal] = useState('')
   const [loading, setLoading]     = useState(true)
   const [saving, setSaving]       = useState(false)
   const [saved, setSaved]         = useState(false)
@@ -35,15 +37,19 @@ export function AdminPromptPage() {
     (async () => {
       const { data, error: err } = await supabase
         .from('prompt_templates')
-        .select('template')
+        .select('template, inbound_opening')
         .eq('id', 1)
         .maybeSingle()
       if (err) setError(err.message)
-      const t = (data as { template: string } | null)?.template ?? ''
+      const row = data as { template: string; inbound_opening: string | null } | null
+      const t = row?.template ?? ''
+      const i = row?.inbound_opening ?? ''
       // Filet « jamais vide » : si la base ne renvoie rien, on pré-remplit avec le
       // canonique pour que l'écran soit utilisable (et qu'un Save le re-persiste).
       setTemplate(t.trim() ? t : DEFAULT_PROMPT_TEMPLATE)
       setOriginal(t)
+      setInbound(i.trim() ? i : DEFAULT_INBOUND_OPENING)
+      setInboundOriginal(i)
       setLoading(false)
     })()
   }, [])
@@ -56,6 +62,7 @@ export function AdminPromptPage() {
       .from('prompt_templates')
       .update({
         template,
+        inbound_opening: inbound,
         updated_at: new Date().toISOString(),
         updated_by: userRes.user?.id ?? null,
       })
@@ -63,6 +70,7 @@ export function AdminPromptPage() {
     setSaving(false)
     if (err) { setError(err.message); return }
     setOriginal(template)
+    setInboundOriginal(inbound)
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
@@ -75,7 +83,15 @@ export function AdminPromptPage() {
     setTemplate(DEFAULT_PROMPT_TEMPLATE)
   }
 
-  const dirty = template !== original
+  function resetInboundToDefault() {
+    if (!window.confirm(
+      'Remplacer l\'ouverture entrante par celle d\'origine ?\n' +
+      'Le changement n\'est appliqué qu\'après « Enregistrer ».'
+    )) return
+    setInbound(DEFAULT_INBOUND_OPENING)
+  }
+
+  const dirty = template !== original || inbound !== inboundOriginal
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
@@ -117,6 +133,33 @@ export function AdminPromptPage() {
             onChange={(e) => setTemplate(e.target.value)}
             className="font-mono text-sm leading-relaxed"
           />
+
+          <div className="mt-8 pt-6 border-t border-slate-100">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div>
+                <h2 className="font-serif text-lg font-semibold text-brun-900">Ouverture des appels entrants</h2>
+                <p className="text-sm text-slate-500">
+                  Salutation utilisée quand c'est le <strong>bénéficiaire qui appelle</strong> AICOUTE.
+                  Remplace la règle d'ouverture ci-dessus pour ces appels — le reste du prompt (personnalité,
+                  règles) est inchangé.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={resetInboundToDefault}
+                className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-primary transition-colors shrink-0"
+              >
+                <RotateCcw size={12} />
+                Réinitialiser
+              </button>
+            </div>
+            <Textarea
+              rows={6}
+              value={inbound}
+              onChange={(e) => setInbound(e.target.value)}
+              className="font-mono text-sm leading-relaxed"
+            />
+          </div>
 
           <div className="flex items-center justify-between pt-5 mt-4 border-t border-slate-100">
             <div className="flex-1">
