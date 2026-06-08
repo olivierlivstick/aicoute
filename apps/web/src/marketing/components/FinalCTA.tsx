@@ -18,7 +18,7 @@ export function FinalCTA() {
 
       <div className="relative max-w-container mx-auto px-6 lg:px-8">
         <h2 className="font-serif font-normal text-creme text-4xl md:text-5xl leading-[1.1] text-balance max-w-3xl mx-auto">
-          Et si ce soir, vous offriez une voix à votre maman ?
+          Et si vous offriez à votre maman une voix qui appelle — et qui répond ?
         </h2>
         <p className="mt-5 text-xl text-creme/85 max-w-2xl mx-auto text-pretty">
           Créez son profil en moins de 5 minutes. Le premier appel est offert.

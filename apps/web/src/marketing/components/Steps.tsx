@@ -13,9 +13,9 @@ export function Steps() {
     {
       num: '02',
       Icon: Icon.Phone,
-      title: 'Aicoute appelle à la fréquence choisie',
+      title: 'Aicoute appelle — et reste joignable',
       text:
-        "Une à plusieurs fois par semaine, à l'heure que vous avez définie, votre proche reçoit un appel chaleureux. Une voix douce, attentive, qui se souvient de la dernière conversation.",
+        "Une à plusieurs fois par semaine, à l'heure que vous avez définie, votre proche reçoit un appel chaleureux. Et entre deux rendez-vous, s'il a simplement envie de parler, il peut appeler Aicoute lui-même. Une voix douce, attentive, qui se souvient de la dernière conversation.",
     },
     {
       num: '03',

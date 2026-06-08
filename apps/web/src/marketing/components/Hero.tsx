@@ -13,7 +13,7 @@ export function Hero() {
           <div className="order-2 md:order-1">
             <span className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-terracotta-dark mb-6">
               <span className="w-6 h-px bg-terracotta-dark/40" />
-              Une présence régulière, par téléphone
+              Une présence régulière — et toujours à l'écoute
             </span>
 
             <h1 className="font-serif font-normal text-brun-900 text-4xl md:text-5xl leading-[1.1] text-balance">
@@ -22,9 +22,11 @@ export function Hero() {
             </h1>
 
             <p className="mt-6 text-xl text-brun-700 leading-relaxed max-w-xl text-pretty">
-              Aicoute appelle régulièrement vos parents, prend de leurs
-              nouvelles, et vous envoie un résumé chaleureux après chaque
-              échange. Pour que la distance n'efface jamais la présence.
+              Aicoute appelle régulièrement vos parents et prend de leurs
+              nouvelles. Et quand l'envie de parler les prend, ils peuvent
+              désormais l'appeler à leur tour. Après chaque échange, vous
+              recevez un résumé chaleureux — pour que la distance n'efface
+              jamais la présence.
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">

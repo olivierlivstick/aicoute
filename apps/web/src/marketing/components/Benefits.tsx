@@ -10,6 +10,12 @@ export function Benefits() {
         "Notre IA se souvient des conversations passées, du nom du chat, du jardin, du dernier rendez-vous chez le médecin. Pas un assistant générique : une présence qui s'inscrit dans la vie de votre proche.",
     },
     {
+      Icon: Icon.Phone,
+      title: "Disponible quand l'envie de parler arrive",
+      text:
+        "La solitude ne suit pas d'agenda. Entre deux appels planifiés, un dimanche soir un peu long ou un souvenir à partager, votre proche peut désormais appeler Aicoute de lui-même — et retrouver une conversation patiente, qui le connaît déjà.",
+    },
+    {
       Icon: Icon.CalendarCheck,
       title: "La régularité qu'on n'arrive pas toujours à tenir",
       text:

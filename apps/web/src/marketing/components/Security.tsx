@@ -19,7 +19,7 @@ export function Security() {
       Icon: Icon.Hand,
       title: 'Vous gardez le contrôle',
       text:
-        "Fréquence, sujets à privilégier, sujets à éviter, arrêt immédiat : tout est ajustable depuis votre espace personnel. Et votre proche peut demander à arrêter à tout moment.",
+        "Fréquence, sujets à privilégier, sujets à éviter, arrêt immédiat : tout est ajustable depuis votre espace personnel. Et parce que votre proche peut aussi appeler de lui-même, le lien ne dépend plus seulement de ce que les autres programment pour lui — il en garde, lui aussi, l'initiative.",
     },
   ]
 
