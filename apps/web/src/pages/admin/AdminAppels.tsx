@@ -430,9 +430,9 @@ export function AdminAppelsPage() {
                 // sinon estimation par la durée (préfixée « ~ »).
                 const twilioReal = c.twilio_cost_eur != null
                 const twilioCost = twilioReal
-                  ? `€${c.twilio_cost_eur!.toFixed(4)}`
+                  ? `€${c.twilio_cost_eur!.toFixed(2)}`
                   : c.duration_seconds != null
-                    ? `~€${(c.duration_seconds * TWILIO_EUR_PER_SECOND).toFixed(4)}`
+                    ? `~€${(c.duration_seconds * TWILIO_EUR_PER_SECOND).toFixed(2)}`
                     : '—'
                 // « Relancer » = re-déclencher un appel SORTANT → n'a de sens que sur l'onglet passés (sortants), pas sur les entrants.
                 const canRelaunch  = tab === 'past' && (c.status === 'missed' || c.status === 'failed') && ben?.id
@@ -498,7 +498,7 @@ export function AdminAppelsPage() {
                     )}
                     {pastLike && (
                       <td className="px-4 py-3 text-right text-brun-700 font-mono text-xs">
-                        {c.ai_cost_eur_real != null ? `€${c.ai_cost_eur_real.toFixed(4)}` : '—'}
+                        {c.ai_cost_eur_real != null ? `€${c.ai_cost_eur_real.toFixed(2)}` : '—'}
                       </td>
                     )}
                     {pastLike && (
