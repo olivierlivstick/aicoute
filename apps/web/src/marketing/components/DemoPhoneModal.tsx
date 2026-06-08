@@ -33,17 +33,17 @@ const OPENER_MAX_LENGTH = 500
 // saisi au format national ; on reconstruit l'E.164 (+indicatif) à l'envoi.
 type Country = { code: string; label: string; dial: string; flag: string }
 const COUNTRIES: Country[] = [
-  { code: 'FR', label: 'France',        dial: '33',  flag: '🇫🇷' },
-  { code: 'BE', label: 'Belgique',      dial: '32',  flag: '🇧🇪' },
-  { code: 'CH', label: 'Suisse',        dial: '41',  flag: '🇨🇭' },
-  { code: 'LU', label: 'Luxembourg',    dial: '352', flag: '🇱🇺' },
-  { code: 'ES', label: 'Espagne',       dial: '34',  flag: '🇪🇸' },
   { code: 'DE', label: 'Allemagne',     dial: '49',  flag: '🇩🇪' },
+  { code: 'BE', label: 'Belgique',      dial: '32',  flag: '🇧🇪' },
+  { code: 'CA', label: 'Canada',        dial: '1',   flag: '🇨🇦' },
+  { code: 'ES', label: 'Espagne',       dial: '34',  flag: '🇪🇸' },
+  { code: 'US', label: 'États-Unis',    dial: '1',   flag: '🇺🇸' },
+  { code: 'FR', label: 'France',        dial: '33',  flag: '🇫🇷' },
   { code: 'IT', label: 'Italie',        dial: '39',  flag: '🇮🇹' },
+  { code: 'LU', label: 'Luxembourg',    dial: '352', flag: '🇱🇺' },
   { code: 'PT', label: 'Portugal',      dial: '351', flag: '🇵🇹' },
   { code: 'GB', label: 'Royaume-Uni',   dial: '44',  flag: '🇬🇧' },
-  { code: 'CA', label: 'Canada',        dial: '1',   flag: '🇨🇦' },
-  { code: 'US', label: 'États-Unis',    dial: '1',   flag: '🇺🇸' },
+  { code: 'CH', label: 'Suisse',        dial: '41',  flag: '🇨🇭' },
 ]
 
 type State =
