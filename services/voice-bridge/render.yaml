@@ -33,6 +33,10 @@ services:
         value: "900"            # appels Modect : 15 min max (cf. CLAUDE.md)
       - key: SCHEDULED_RING_TIMEOUT
         value: "30"             # sonnerie max avant que Twilio raccroche → passe B no-answer prend le relais
+      - key: MAX_CONCURRENT_CALLS
+        value: "0"              # contrôle d'admission : nb max d'appels vocaux simultanés. 0 = illimité (désarmé).
+                               #   La MESURE du pic tourne quoi qu'il arrive (system_events, source voice-bridge/admission)
+                               #   → monter à une valeur réelle (ex. 20) une fois le plafond de l'instance Render connu.
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY

@@ -44,6 +44,13 @@ import {
 } from './persistence/modect-call.js'
 import { logEvent as logSystemEvent } from './persistence/system-events.js'
 import { readAppSettings, setKeepRecording, storeRecordingWav } from './persistence/fluidity-diagnostic.js'
+import { acquireCallSlot, releaseCallSlot } from './concurrency.js'
+import {
+  findBeneficiaryForInbound,
+  evaluateInboundQuota,
+  createInboundCall,
+  normalizePhone,
+} from './persistence/inbound-call.js'
 
 // --- Config ----------------------------------------------------------------
 
@@ -531,6 +538,96 @@ app.all('/scheduled-outgoing', (req, res) => {
   res.type('text/xml').send(twiml)
 })
 
+// --- Webhook Twilio APPEL ENTRANT (le bénéficiaire appelle AICOUTE) ---------
+// Configuré comme « A CALL COMES IN » sur le numéro Twilio. Twilio POSTe
+// From/To/CallSid. On identifie le bénéficiaire à son numéro, on applique les
+// garde-fous (activé + cooldown + budget minutes/jour), et on répond en TwiML :
+//   - autorisé → <Connect><Stream .../inbound-media-stream> (la conversation démarre,
+//                même bridge que les appels planifiés via le call_id)
+//   - refusé   → <Reject> (inconnu/désactivé : ne décroche pas → coût ~0) ou
+//                <Say>+<Hangup> court (connu mais quota/cooldown atteint)
+//
+// Sécurité : la signature X-Twilio-Signature n'est PAS encore vérifiée.
+// L'exposition est bornée par les garde-fous (seul un numéro opt-in connu
+// déclenche une session ; quota + cooldown + durée max + concurrence). Un
+// spoofeur devrait connaître le numéro exact d'un bénéficiaire activé.
+// Durcissement possible : twilio.validateRequest (cf. CLAUDE.md).
+app.post('/inbound-voice', async (req, res) => {
+  const xml = (body) =>
+    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<Response>${body}</Response>`)
+
+  if (!SCHEDULED_CALLS_ENABLED) {
+    // Persistance indispo → on ne peut ni identifier ni tracer : on raccroche.
+    return xml('<Reject reason="rejected" />')
+  }
+
+  const from      = String(req.body?.From ?? '')
+  const twilioSid = req.body?.CallSid ?? null
+
+  // Filet anti-martèlement AVANT toute requête DB (in-memory, par numéro source).
+  const rl = rateLimit({ key: `inbound:${normalizePhone(from) || 'unknown'}`, ...LIMITS.perInbound })
+  if (!rl.ok) {
+    console.warn(`⛔ [inbound] rate-limit ${maskNumber(from)}`)
+    return xml('<Reject reason="rejected" />')
+  }
+
+  try {
+    const beneficiary = await findBeneficiaryForInbound(from)
+    if (!beneficiary) {
+      console.log(`📵 [inbound] numéro non reconnu / canal désactivé : ${maskNumber(from)}`)
+      return xml('<Reject reason="rejected" />')
+    }
+
+    const quota = await evaluateInboundQuota(beneficiary)
+    if (!quota.ok) {
+      console.log(`🚧 [inbound] ${maskNumber(from)} refusé (${quota.reason})`, quota.detail ?? '')
+      void logSystemEvent({
+        level:   'info',
+        source:  'voice-bridge/inbound',
+        message: `Appel entrant refusé (${quota.reason})`,
+        payload: { beneficiary_id: beneficiary.id, reason: quota.reason, ...(quota.detail ?? {}) },
+      })
+      return xml('<Say language="fr-FR">Je ne suis pas disponible pour le moment. Je vous rappellerai très bientôt. À très vite.</Say><Hangup />')
+    }
+
+    // Moteur effectif : préférence bénéficiaire, repli OpenAI si Gemini non
+    // configuré sur ce serveur (pour que la ligne calls.engine soit exacte dès
+    // la création — le WS ne pourra plus la corriger, déjà in_progress).
+    let engine = beneficiary.preferred_engine === 'gemini' ? 'gemini' : 'openai'
+    if (engine === 'gemini' && !GOOGLE_API_KEY) engine = 'openai'
+
+    const callId = await createInboundCall(beneficiary.id, engine, twilioSid)
+    if (!callId) {
+      console.error('❌ [inbound] création du call échouée — raccrochage')
+      return xml('<Reject reason="rejected" />')
+    }
+
+    void logSystemEvent({
+      level:   'info',
+      source:  'voice-bridge/inbound',
+      call_id: callId,
+      message: `Appel entrant accepté (engine=${engine})`,
+      payload: { beneficiary_id: beneficiary.id, twilio_sid: twilioSid, engine },
+    })
+    console.log(`📞 [inbound] ${maskNumber(from)} → ${beneficiary.first_name ?? '?'} accepté (callId: ${callId.slice(0, 8)}…, engine=${engine})`)
+
+    const host       = req.headers['x-forwarded-host'] || req.headers.host
+    const maxSeconds = Number(beneficiary.inbound_max_duration_seconds) || 600
+    return xml(
+      '<Connect>' +
+        `<Stream url="wss://${host}/inbound-media-stream">` +
+          `<Parameter name="call_id" value="${escapeXml(callId)}" />` +
+          `<Parameter name="engine" value="${escapeXml(engine)}" />` +
+          `<Parameter name="max_seconds" value="${escapeXml(String(maxSeconds))}" />` +
+        '</Stream>' +
+      '</Connect>',
+    )
+  } catch (err) {
+    console.error('❌ /inbound-voice :', err)
+    return xml('<Reject reason="rejected" />')
+  }
+})
+
 // --- Démarrage HTTP + WebSocket --------------------------------------------
 
 const server = app.listen(PORT, () => {
@@ -560,7 +657,8 @@ const server = app.listen(PORT, () => {
 
 const wss          = new WebSocketServer({ noServer: true })  // Twilio /media-stream (démo vitrine)
 const wssWeb       = new WebSocketServer({ noServer: true })  // browser /ws/gemini-web (démo vitrine)
-const wssScheduled = new WebSocketServer({ noServer: true })  // Twilio /scheduled-media-stream (appels Modect)
+const wssScheduled = new WebSocketServer({ noServer: true })  // Twilio /scheduled-media-stream (appels AICOUTE sortants)
+const wssInbound   = new WebSocketServer({ noServer: true })  // Twilio /inbound-media-stream (le bénéficiaire appelle)
 
 function abortHandshake(socket, code, message = '') {
   socket.write(
@@ -587,6 +685,15 @@ server.on('upgrade', (req, socket, head) => {
       return
     }
     wssScheduled.handleUpgrade(req, socket, head, (ws) => wssScheduled.emit('connection', ws, req))
+    return
+  }
+
+  if (pathname === '/inbound-media-stream') {
+    if (!SCHEDULED_CALLS_ENABLED) {
+      abortHandshake(socket, 503, 'Inbound calls not configured')
+      return
+    }
+    wssInbound.handleUpgrade(req, socket, head, (ws) => wssInbound.emit('connection', ws, req))
     return
   }
 
@@ -622,6 +729,13 @@ server.on('upgrade', (req, socket, head) => {
 
 wss.on('connection', (twilioWs) => {
   console.log('🔌 Stream Twilio connecté')
+
+  // Contrôle d'admission : si la capacité est atteinte, on raccroche plutôt que
+  // de dégrader tous les appels en cours. No-op tant que MAX_CONCURRENT_CALLS=0.
+  if (!acquireCallSlot({ label: 'demo-phone' })) {
+    try { twilioWs.close() } catch { /* */ }
+    return
+  }
 
   let session         = null   // engine bridge ({ handleTwilioEvent, close, getTokens })
   let engine          = 'openai'
@@ -681,6 +795,7 @@ wss.on('connection', (twilioWs) => {
 
   twilioWs.on('close', () => {
     console.log('🔌 Stream Twilio fermé')
+    releaseCallSlot()
     clearTimeout(safetyTimer)
     session?.close()
 
@@ -723,6 +838,12 @@ wss.on('connection', (twilioWs) => {
 // plus.
 
 wssWeb.on('connection', (clientWs, req) => {
+  // Contrôle d'admission (cf. demo-phone). No-op tant que MAX_CONCURRENT_CALLS=0.
+  if (!acquireCallSlot({ label: 'demo-web' })) {
+    try { clientWs.close() } catch { /* */ }
+    return
+  }
+
   // demoId transmis par le client en query (?demoId=…) pour pouvoir écrire le
   // coût IA RÉEL : les tokens Gemini ne sont visibles que côté serveur (ici),
   // alors que ended_at/duration/estimation sont écrits par le client via log-demo.
@@ -764,28 +885,44 @@ wssWeb.on('connection', (clientWs, req) => {
 
   clientWs.on('close', () => {
     console.log('🔌 [web] gemini-web fermé')
+    releaseCallSlot()
     clearTimeout(safetyTimer)
     bridge.close()
   })
 })
 
-// --- WSS /scheduled-media-stream : appels planifiés Modect -----------------
-// Twilio ouvre la WS quand le bénéficiaire DÉCROCHE (Stream démarre côté
-// destinataire, pas à la sonnerie). On marque alors le call 'in_progress'
-// dans Supabase, on instancie modect-call-bridge qui fetche le contexte +
-// négocie OpenAI Realtime, et on accumule transcript + tokens pour le flush
-// final via save-transcript.
+// --- WSS appels AICOUTE (planifiés sortants + entrants) --------------------
+// Twilio ouvre la WS quand le bénéficiaire est EN LIGNE (décroche pour un appel
+// sortant ; appelle lui-même pour un entrant). On marque le call 'in_progress'
+// dans Supabase, on instancie le bridge moteur (qui fetche le contexte via
+// get-call-context + le call_id), et on accumule transcript + tokens pour le
+// flush final via save-transcript (qui chaîne generate-summary + email aidant).
+//
+// Le MÊME handler sert les deux canaux — seule la coupure de durée diffère :
+//   - planifié : MAX_SCHEDULED_CALL_SECONDS (900s)
+//   - entrant  : max_seconds par bénéficiaire (inbound_max_duration_seconds),
+//                transmis via <Parameter name="max_seconds"> par /inbound-voice.
+// Pas de tracking demo_calls ici (c'est wss/wssWeb) ; c'est la table `calls`.
 
-wssScheduled.on('connection', (twilioWs) => {
-  console.log('🔌 [scheduled] Stream Twilio connecté')
+function handleAicouteCallConnection(twilioWs, { label }) {
+  console.log(`🔌 [${label}] Stream Twilio connecté`)
+
+  // Contrôle d'admission (cf. demo-phone). No-op tant que MAX_CONCURRENT_CALLS=0.
+  if (!acquireCallSlot({ label })) {
+    try { twilioWs.close() } catch { /* */ }
+    return
+  }
 
   let session         = null
   let callId          = null
   let engine          = 'openai'
   let streamStartedAt = null
 
-  const safetyTimer = setTimeout(() => {
-    console.log(`⏱  [scheduled] Limite ${MAX_SCHEDULED_CALL_SECONDS}s atteinte — raccrochage`)
+  // Filet de sécurité initial : borne dure tant qu'on n'a pas reçu 'start'
+  // (un Stream qui s'ouvre sans jamais démarrer). Resserré sur 'start' à la
+  // limite propre au canal entrant si elle est plus courte.
+  let safetyTimer = setTimeout(() => {
+    console.log(`⏱  [${label}] Limite ${MAX_SCHEDULED_CALL_SECONDS}s atteinte — raccrochage`)
     try { twilioWs.close() } catch { /* */ }
   }, MAX_SCHEDULED_CALL_SECONDS * 1000)
 
@@ -801,21 +938,34 @@ wssScheduled.on('connection', (twilioWs) => {
       streamStartedAt = Date.now()
 
       if (!callId) {
-        console.error('❌ [scheduled] Stream démarré sans call_id — raccrochage')
+        console.error(`❌ [${label}] Stream démarré sans call_id — raccrochage`)
         try { twilioWs.close() } catch { /* */ }
         return
+      }
+
+      // Coupe-circuit propre au canal entrant : si max_seconds est fourni et
+      // plus court que la limite par défaut, on resserre le timer.
+      const maxSeconds = Number(params.max_seconds) || 0
+      if (maxSeconds > 0 && maxSeconds < MAX_SCHEDULED_CALL_SECONDS) {
+        clearTimeout(safetyTimer)
+        safetyTimer = setTimeout(() => {
+          console.log(`⏱  [${label}:${callId.slice(0, 8)}…] Limite ${maxSeconds}s atteinte — raccrochage`)
+          try { twilioWs.close() } catch { /* */ }
+        }, maxSeconds * 1000)
       }
 
       // Garde-fou : Gemini demandé mais pas configuré → on tombe sur OpenAI
       // (au lieu de raccrocher) pour ne pas pénaliser le bénéficiaire.
       if (engine === 'gemini' && !GOOGLE_API_KEY) {
-        console.error(`❌ [scheduled:${callId.slice(0, 8)}…] engine=gemini demandé mais GOOGLE_API_KEY absent — fallback openai`)
+        console.error(`❌ [${label}:${callId.slice(0, 8)}…] engine=gemini demandé mais GOOGLE_API_KEY absent — fallback openai`)
         engine = 'openai'
       }
 
-      console.log(`✅ [scheduled] Stream démarré callId=${callId.slice(0, 8)}… engine=${engine} (sid: ${streamSid.slice(0, 12)}…)`)
+      console.log(`✅ [${label}] Stream démarré callId=${callId.slice(0, 8)}… engine=${engine} (sid: ${streamSid.slice(0, 12)}…)`)
 
-      // Marquer le call en cours côté Supabase avec le moteur effectif
+      // Marquer le call en cours côté Supabase avec le moteur effectif.
+      // (Entrant : la ligne est déjà 'in_progress' → markCallInProgress no-op,
+      //  cf. son filtre .in('status', ['scheduled','notified']). Inoffensif.)
       void markCallInProgress(callId, engine)
 
       if (engine === 'gemini') {
@@ -846,7 +996,8 @@ wssScheduled.on('connection', (twilioWs) => {
   })
 
   twilioWs.on('close', async () => {
-    console.log(`🔌 [scheduled] Stream Twilio fermé${callId ? ` (callId=${callId.slice(0, 8)}…)` : ''}`)
+    console.log(`🔌 [${label}] Stream Twilio fermé${callId ? ` (callId=${callId.slice(0, 8)}…)` : ''}`)
+    releaseCallSlot()
     clearTimeout(safetyTimer)
 
     if (!session || !callId || !streamStartedAt) {
@@ -858,7 +1009,7 @@ wssScheduled.on('connection', (twilioWs) => {
     const tokens          = session.getTokens()
     const totalAudioIn    = (tokens.input_audio ?? 0) + (tokens.input_audio_cached ?? 0)
 
-    // Flush transcript → save-transcript (chaîne generate-summary)
+    // Flush transcript → save-transcript (chaîne generate-summary + email aidant)
     await session.flushFinal(durationSeconds, 'completed')
 
     // Écrire tokens + coût IA réel (tarifs différents selon engine)
@@ -873,12 +1024,15 @@ wssScheduled.on('connection', (twilioWs) => {
     session.close()
 
     console.log(
-      `💰 [scheduled:${callId.slice(0, 8)}…] engine=${engine} tokens audio_in=${totalAudioIn} audio_out=${tokens.output_audio ?? 0}` +
+      `💰 [${label}:${callId.slice(0, 8)}…] engine=${engine} tokens audio_in=${totalAudioIn} audio_out=${tokens.output_audio ?? 0}` +
       ` text_in=${tokens.input_text ?? 0} text_out=${tokens.output_text ?? 0}` +
       ` durée=${durationSeconds.toFixed(1)}s`,
     )
   })
-})
+}
+
+wssScheduled.on('connection', (twilioWs) => handleAicouteCallConnection(twilioWs, { label: 'scheduled' }))
+wssInbound.on('connection',   (twilioWs) => handleAicouteCallConnection(twilioWs, { label: 'inbound' }))
 
 // --- Helpers ---------------------------------------------------------------
 
