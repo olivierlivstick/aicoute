@@ -250,7 +250,8 @@ app.post('/call', async (req, res) => {
     // lecture des réglages échoue, on n'enregistre pas (comportement par défaut).
     const callParams = { to: cleaned, from: TWILIO_NUMBER, url: outgoingUrl }
     try {
-      const { keepRecordingRemaining } = await readAppSettings()
+      const { diagnosticEnabled, keepRecordingRemaining } = await readAppSettings()
+      console.log(`• [diag] app_settings au moment de l'appel: enabled=${diagnosticEnabled} keepRec=${keepRecordingRemaining}`)
       if (keepRecordingRemaining > 0) {
         callParams.record                       = true
         callParams.recordingChannels            = 'dual'
@@ -523,6 +524,11 @@ const server = app.listen(PORT, () => {
   console.log(`✅ voice-bridge écoute sur :${PORT}`)
   console.log(`   engines : openai=on gemini=${GOOGLE_API_KEY ? 'on' : 'off'}`)
   console.log(`   maxCall=${MAX_CALL_SECONDS}s`)
+  // Self-test diagnostic fluidité : prouve que ce build a le code diag ET que le
+  // service role peut lire app_settings (sinon on verra l'erreur juste au-dessus).
+  readAppSettings()
+    .then((s) => console.log(`   diagnostic fluidité : lecture app_settings OK (enabled=${s.diagnosticEnabled}, keepRec=${s.keepRecordingRemaining})`))
+    .catch((e) => console.log(`   diagnostic fluidité : lecture app_settings KO (${e?.message || e})`))
   if (ALLOWED_ORIGINS.length) {
     console.log(`   CORS autorisé pour : ${ALLOWED_ORIGINS.join(', ')}`)
   } else {
