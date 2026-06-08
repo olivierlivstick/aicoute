@@ -29,6 +29,23 @@ const DEFAULT_OPENER =
 
 const OPENER_MAX_LENGTH = 500
 
+// Indicatifs pays proposés pour la saisie. France par défaut. Le numéro est
+// saisi au format national ; on reconstruit l'E.164 (+indicatif) à l'envoi.
+type Country = { code: string; label: string; dial: string; flag: string }
+const COUNTRIES: Country[] = [
+  { code: 'FR', label: 'France',        dial: '33',  flag: '🇫🇷' },
+  { code: 'BE', label: 'Belgique',      dial: '32',  flag: '🇧🇪' },
+  { code: 'CH', label: 'Suisse',        dial: '41',  flag: '🇨🇭' },
+  { code: 'LU', label: 'Luxembourg',    dial: '352', flag: '🇱🇺' },
+  { code: 'ES', label: 'Espagne',       dial: '34',  flag: '🇪🇸' },
+  { code: 'DE', label: 'Allemagne',     dial: '49',  flag: '🇩🇪' },
+  { code: 'IT', label: 'Italie',        dial: '39',  flag: '🇮🇹' },
+  { code: 'PT', label: 'Portugal',      dial: '351', flag: '🇵🇹' },
+  { code: 'GB', label: 'Royaume-Uni',   dial: '44',  flag: '🇬🇧' },
+  { code: 'CA', label: 'Canada',        dial: '1',   flag: '🇨🇦' },
+  { code: 'US', label: 'États-Unis',    dial: '1',   flag: '🇺🇸' },
+]
+
 type State =
   | { kind: 'idle' }
   | { kind: 'calling' }
@@ -36,10 +53,13 @@ type State =
   | { kind: 'error'; message: string }
 
 export function DemoPhoneModal({ onClose, engine, lang }: Props) {
+  const [countryCode, setCountryCode] = useState('FR')
   const [phone,  setPhone]  = useState('')
   const [opener, setOpener] = useState(DEFAULT_OPENER)
   const [accept, setAccept] = useState(false)
   const [state,  setState]  = useState<State>({ kind: 'idle' })
+
+  const country = COUNTRIES.find((c) => c.code === countryCode) ?? COUNTRIES[0]
 
   // Échap pour fermer
   useEffect(() => {
@@ -48,7 +68,7 @@ export function DemoPhoneModal({ onClose, engine, lang }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const cleaned = sanitizePhone(phone)
+  const cleaned = toE164(country.dial, phone)
   const isValid = /^\+\d{8,15}$/.test(cleaned)
 
   const handleCall = async (e: React.FormEvent) => {
@@ -133,19 +153,37 @@ export function DemoPhoneModal({ onClose, engine, lang }: Props) {
                 <label htmlFor="phone" className="block text-sm font-medium text-brun-900 mb-1.5">
                   Votre numéro
                 </label>
-                <input
-                  id="phone"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  placeholder="+33 6 12 34 56 78"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  disabled={state.kind === 'calling'}
-                  className="w-full px-4 py-3 rounded-md border border-creme-sable bg-white text-brun-900 placeholder:text-brun-700/40 focus:outline-none focus:border-terracotta focus:ring-2 focus:ring-terracotta/20 disabled:opacity-60"
-                />
+                <div className="flex gap-2">
+                  <select
+                    aria-label="Indicatif pays"
+                    value={countryCode}
+                    onChange={(e) => setCountryCode(e.target.value)}
+                    disabled={state.kind === 'calling'}
+                    className="shrink-0 px-3 py-3 rounded-md border border-creme-sable bg-white text-brun-900 focus:outline-none focus:border-terracotta focus:ring-2 focus:ring-terracotta/20 disabled:opacity-60 cursor-pointer"
+                  >
+                    {COUNTRIES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {c.label} +{c.dial}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    id="phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel-national"
+                    placeholder="6 12 34 56 78"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    disabled={state.kind === 'calling'}
+                    className="flex-1 min-w-0 px-4 py-3 rounded-md border border-creme-sable bg-white text-brun-900 placeholder:text-brun-700/40 focus:outline-none focus:border-terracotta focus:ring-2 focus:ring-terracotta/20 disabled:opacity-60"
+                  />
+                </div>
                 <p className="mt-1.5 text-xs text-brun-700/70">
-                  Format international, commençant par +. Exemple France : +33 6 12 34 56 78
+                  Sans l'indicatif pays (déjà sélectionné à gauche).
+                  {cleaned && (
+                    <> Appel vers <span className="font-mono">{cleaned}</span></>
+                  )}
                 </p>
               </div>
 
@@ -257,9 +295,10 @@ function Ringing({ phone, onClose }: { phone: string; onClose: () => void }) {
   )
 }
 
-function sanitizePhone(input: string): string {
-  // Garde le + initial s'il existe, supprime tout le reste sauf les chiffres.
-  const trimmed = input.trim()
-  const plus    = trimmed.startsWith('+') ? '+' : ''
-  return plus + trimmed.replace(/\D/g, '')
+// Reconstruit un numéro E.164 à partir de l'indicatif pays choisi et du numéro
+// national saisi. On retire les zéros de tête (préfixe interurbain : « 06… » FR
+// → « 6… ») avant de préfixer l'indicatif.
+function toE164(dial: string, national: string): string {
+  const digits = national.replace(/\D/g, '').replace(/^0+/, '')
+  return digits ? `+${dial}${digits}` : ''
 }
