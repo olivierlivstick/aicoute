@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Clock, RefreshCcw, Sparkles, ExternalLink, Activity, Mic, Download } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock, RefreshCcw, Sparkles, ExternalLink, Activity, Mic, Download, Phone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface StuckCall {
@@ -113,6 +113,9 @@ export function AdminSantePage() {
 
           {/* Veille modèles voix (self-service, recherche web via Edge Fn) */}
           <ModelWatchSection />
+
+          {/* Test d'appel comparatif OpenAI / Gemini (téléphone uniquement) */}
+          <PhoneTestSection />
 
           {/* Diagnostic fluidité : enregistrement de calibration + analyse fine */}
           <FluidityDiagnosticSection />
@@ -305,6 +308,167 @@ function EngineRow({ label, data }: { label: string; data: EngineWatch }) {
       </p>
       {data.note && <p className="text-sm text-brun-900 mt-1">{data.note}</p>}
     </div>
+  )
+}
+
+// --- Test d'appel comparatif (téléphone uniquement, admin) ------------------
+// Réutilise l'endpoint /call du voice-bridge (même chemin que la démo vitrine,
+// tracé dans demo_calls) mais en laissant le choix du moteur OpenAI / Gemini,
+// pour pouvoir continuer à comparer les deux après que la vitrine ait figé Gemini.
+
+const PHONE_TEST_LANGUAGES = [
+  { value: 'fr', label: '🇫🇷 Français' },
+  { value: 'en', label: '🇬🇧 English' },
+  { value: 'es', label: '🇪🇸 Español' },
+  { value: 'de', label: '🇩🇪 Deutsch' },
+  { value: 'it', label: '🇮🇹 Italiano' },
+]
+const PHONE_TEST_DEFAULT_OPENER =
+  "Bonjour, c'est Olivier, je vous appelle pour prendre de vos nouvelles, comment allez-vous ?"
+const PHONE_TEST_OPENER_MAX = 500
+const VOICE_BRIDGE_URL = import.meta.env.VITE_VOICE_BRIDGE_URL as string | undefined
+
+function sanitizePhone(input: string): string {
+  const trimmed = input.trim()
+  const plus    = trimmed.startsWith('+') ? '+' : ''
+  return plus + trimmed.replace(/\D/g, '')
+}
+
+function PhoneTestSection() {
+  const [engine, setEngine] = useState<'openai' | 'gemini'>('gemini')
+  const [lang,   setLang]   = useState('fr')
+  const [phone,  setPhone]  = useState('')
+  const [opener, setOpener] = useState(PHONE_TEST_DEFAULT_OPENER)
+  const [state,  setState]  = useState<'idle' | 'calling' | 'ringing'>('idle')
+  const [error,  setError]  = useState<string | null>(null)
+
+  const cleaned = sanitizePhone(phone)
+  const isValid = /^\+\d{8,15}$/.test(cleaned)
+
+  async function call(e: React.FormEvent) {
+    e.preventDefault()
+    if (!isValid || state === 'calling') return
+    setError(null)
+    if (!VOICE_BRIDGE_URL) {
+      setError('Service téléphonique non configuré (VITE_VOICE_BRIDGE_URL manquant).')
+      return
+    }
+    setState('calling')
+    try {
+      const res = await fetch(`${VOICE_BRIDGE_URL.replace(/\/$/, '')}/call`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          phoneNumber: cleaned,
+          opener:      opener.trim().slice(0, PHONE_TEST_OPENER_MAX) || undefined,
+          engine,
+          lang,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? `Erreur ${res.status}`)
+      setState('ringing')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Impossible de lancer l\'appel')
+      setState('idle')
+    }
+  }
+
+  const toggleBase = 'flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors'
+
+  return (
+    <section className="mb-8">
+      <div className="flex items-center gap-2 mb-2">
+        <Phone size={16} className="text-accent-700" />
+        <h2 className="font-serif text-lg font-semibold text-brun-900">Test d'appel OpenAI / Gemini</h2>
+      </div>
+      <p className="text-xs text-slate-500 mb-3">
+        Lance un appel téléphonique de test avec le moteur de ton choix, pour comparer les deux voix.
+        Même tuyau que la démo vitrine (tracé dans « Démos vitrine », coupé à 2 min).
+      </p>
+
+      <div className="bg-white rounded-xl border border-creme-sable p-4">
+        {state === 'ringing' ? (
+          <div className="flex flex-col items-center text-center gap-3 py-4">
+            <div className="relative w-14 h-14 rounded-full bg-accent-50 flex items-center justify-center">
+              <span className="absolute w-14 h-14 rounded-full bg-accent-200/40 animate-ping" />
+              <Phone size={22} className="text-accent-700 animate-pulse" />
+            </div>
+            <p className="font-medium text-brun-900">Ton téléphone sonne</p>
+            <p className="text-sm text-slate-500">
+              Appel <span className="font-medium text-brun-700">{cleaned}</span> via{' '}
+              <span className="font-mono">{engine}</span>. Décroche pour discuter.
+            </p>
+            <button
+              onClick={() => { setState('idle'); setError(null) }}
+              className="mt-1 px-4 py-2 rounded-lg border border-creme-sable bg-white text-sm text-brun-700 hover:bg-creme"
+            >
+              Nouveau test
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={call} className="space-y-4">
+            <div className="grid sm:grid-cols-2 gap-4">
+              {/* Moteur */}
+              <div>
+                <label className="block text-xs uppercase tracking-wider text-brun-700 font-semibold mb-1.5">Moteur</label>
+                <div className="flex p-1 bg-creme border border-creme-sable rounded-lg">
+                  <button type="button" onClick={() => setEngine('gemini')}
+                    className={`${toggleBase} ${engine === 'gemini' ? 'bg-accent-600 text-white shadow-sm' : 'text-brun-700 hover:text-brun-900'}`}>
+                    Gemini
+                  </button>
+                  <button type="button" onClick={() => setEngine('openai')}
+                    className={`${toggleBase} ${engine === 'openai' ? 'bg-accent-600 text-white shadow-sm' : 'text-brun-700 hover:text-brun-900'}`}>
+                    OpenAI
+                  </button>
+                </div>
+              </div>
+              {/* Langue */}
+              <div>
+                <label htmlFor="pt-lang" className="block text-xs uppercase tracking-wider text-brun-700 font-semibold mb-1.5">Langue</label>
+                <select id="pt-lang" value={lang} onChange={(e) => setLang(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-creme-sable rounded-lg text-sm text-brun-900 focus:outline-none focus:border-accent-600 focus:ring-2 focus:ring-accent-600/20 cursor-pointer">
+                  {PHONE_TEST_LANGUAGES.map(({ value, label }) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Numéro */}
+            <div>
+              <label htmlFor="pt-phone" className="block text-xs uppercase tracking-wider text-brun-700 font-semibold mb-1.5">Numéro à appeler</label>
+              <input id="pt-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+33 6 12 34 56 78"
+                value={phone} onChange={(e) => setPhone(e.target.value)} disabled={state === 'calling'}
+                className="w-full px-3 py-2 rounded-lg border border-creme-sable bg-white text-brun-900 placeholder:text-brun-700/40 focus:outline-none focus:border-accent-600 focus:ring-2 focus:ring-accent-600/20 disabled:opacity-60" />
+              <p className="mt-1 text-xs text-slate-500">Format international, commençant par +.</p>
+            </div>
+
+            {/* Ouverture */}
+            <div>
+              <label htmlFor="pt-opener" className="block text-xs uppercase tracking-wider text-brun-700 font-semibold mb-1.5">Phrase d'ouverture</label>
+              <textarea id="pt-opener" rows={2} value={opener}
+                onChange={(e) => setOpener(e.target.value.slice(0, PHONE_TEST_OPENER_MAX))} disabled={state === 'calling'}
+                className="w-full px-3 py-2 rounded-lg border border-creme-sable bg-white text-brun-900 focus:outline-none focus:border-accent-600 focus:ring-2 focus:ring-accent-600/20 disabled:opacity-60 resize-none" />
+              <p className="mt-1 text-xs text-slate-500 flex justify-between gap-2">
+                <span>L'IA dira exactement cette phrase au décroché.</span>
+                <span className="font-mono tabular-nums">{opener.length}/{PHONE_TEST_OPENER_MAX}</span>
+              </p>
+            </div>
+
+            {error && (
+              <p className="text-sm text-brique bg-brique/10 border border-brique/20 rounded-md px-3 py-2">{error}</p>
+            )}
+
+            <button type="submit" disabled={!isValid || state === 'calling'}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent-600 text-white text-sm hover:bg-accent-700 transition-colors disabled:opacity-50">
+              <Phone size={14} />
+              {state === 'calling' ? 'Appel en cours…' : 'M\'appeler maintenant'}
+            </button>
+          </form>
+        )}
+      </div>
+    </section>
   )
 }
 

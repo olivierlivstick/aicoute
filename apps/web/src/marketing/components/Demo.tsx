@@ -19,9 +19,11 @@ const DEMO_LANGUAGES = [
 ]
 
 export function Demo() {
-  const [mode,   setMode]   = useState<Mode>(null)
-  const [engine, setEngine] = useState<Engine>('gemini')
-  const [lang,   setLang]   = useState<string>('fr')
+  const [mode, setMode] = useState<Mode>(null)
+  const [lang, setLang] = useState<string>('fr')
+  // Moteur figé : après tests, on retient Gemini pour la vitrine (le choix
+  // OpenAI/Gemini reste possible côté admin /admin/sante pour comparer).
+  const engine: Engine = 'gemini'
 
   return (
     <section id="essai" className="bg-creme py-20 md:py-28">
@@ -40,8 +42,7 @@ export function Demo() {
           </p>
         </div>
 
-        <div className="mt-10 flex flex-col sm:flex-row sm:items-start sm:justify-center gap-8">
-          <EngineToggle engine={engine} onChange={setEngine} />
+        <div className="mt-10 flex justify-center">
           <LanguageSelect lang={lang} onChange={setLang} />
         </div>
 
@@ -128,42 +129,10 @@ export function Demo() {
   )
 }
 
-// --- Toggle moteur conversationnel ------------------------------------------
-// Phase 1 : Gemini activé pour le mode téléphone (voice-bridge le supporte).
-// Mode web Gemini : encore en phase 2, sera désactivé côté DemoWebModal si besoin.
-function EngineToggle({ engine, onChange }: { engine: Engine; onChange: (e: Engine) => void }) {
-  const base    = 'flex-1 px-4 py-2.5 rounded-md text-sm font-medium transition-colors'
-  const active  = 'bg-terracotta text-creme shadow-sm'
-  const passive = 'text-brun-700 hover:text-brun-900'
-  return (
-    <div className="w-full max-w-xs mx-auto sm:mx-0">
-      <p className="text-center text-[11px] uppercase tracking-[0.18em] text-brun-700/70 mb-2.5">
-        Moteur conversationnel
-      </p>
-      <div className="flex p-1 bg-white border border-creme-sable rounded-lg">
-        <button
-          type="button"
-          onClick={() => onChange('gemini')}
-          className={`${base} ${engine === 'gemini' ? active : passive}`}
-        >
-          Gemini
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange('openai')}
-          className={`${base} ${engine === 'openai' ? active : passive}`}
-        >
-          OpenAI
-        </button>
-      </div>
-    </div>
-  )
-}
-
 // --- Sélecteur de langue de la conversation ---------------------------------
 function LanguageSelect({ lang, onChange }: { lang: string; onChange: (l: string) => void }) {
   return (
-    <div className="w-full max-w-xs mx-auto sm:mx-0">
+    <div className="w-full max-w-xs">
       <p className="text-center text-[11px] uppercase tracking-[0.18em] text-brun-700/70 mb-2.5">
         Langue de la conversation
       </p>
