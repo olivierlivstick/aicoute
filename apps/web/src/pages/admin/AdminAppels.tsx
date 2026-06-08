@@ -124,7 +124,7 @@ export function AdminAppelsPage() {
   const tab         = (searchParams.get('tab') as Tab) ?? 'past'
   // 'emitted' (Appels émis = entrants origin='inbound') se rend comme 'past' :
   // mêmes colonnes (planifié/effectif, moteur, coûts, qualité), tri décroissant.
-  const pastLike    = pastLike || tab === 'emitted'
+  const pastLike    = tab === 'past' || tab === 'emitted'
   const period      = (searchParams.get('period') as Period) ?? '7d'
   const severity    = searchParams.get('severity')    ?? 'all'   // 'all' | 'high'
   const beneficiary = searchParams.get('beneficiary') ?? 'all'
