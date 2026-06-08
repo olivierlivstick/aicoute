@@ -53,7 +53,7 @@ export function VoicePicker({ engine, value, onChange }: Props) {
   }
 
   return (
-    <div className="grid sm:grid-cols-2 gap-2 mt-1">
+    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-1">
       {voices.map(({ id, label, gender, description, sample }) => {
         const selected = value === id
         const isPlaying = playing === id
@@ -61,8 +61,9 @@ export function VoicePicker({ engine, value, onChange }: Props) {
         return (
           <div
             key={id}
+            title={description}
             className={cn(
-              'flex items-center gap-2 rounded-xl border text-sm transition-all',
+              'flex flex-col items-center gap-1.5 rounded-xl border px-1.5 py-2 text-center transition-all',
               selected
                 ? 'border-primary bg-primary-50'
                 : 'border-slate-200 hover:border-slate-300'
@@ -71,42 +72,41 @@ export function VoicePicker({ engine, value, onChange }: Props) {
             <button
               type="button"
               onClick={() => onChange(id)}
-              className={cn(
-                'flex-1 text-left px-3 py-2.5 min-w-0',
-                selected ? 'text-primary' : 'text-slate-600'
-              )}
+              className="w-full min-w-0"
             >
-              <span className="font-semibold flex items-center gap-2">
+              <span
+                className={cn(
+                  'block font-semibold text-sm truncate',
+                  selected ? 'text-primary' : 'text-slate-700'
+                )}
+              >
                 {label}
-                <span
-                  className={cn(
-                    'text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded-full',
-                    gender === 'female'
-                      ? 'bg-accent-100 text-accent-700'
-                      : 'bg-slate-100 text-slate-500'
-                  )}
-                >
-                  {gender === 'female' ? 'Féminine' : 'Masculine'}
-                </span>
               </span>
-              <span className="text-xs opacity-70 block">{description}</span>
+              <span
+                className={cn(
+                  'block text-[10px] font-medium uppercase tracking-wide',
+                  gender === 'female' ? 'text-accent-700' : 'text-slate-400'
+                )}
+              >
+                {gender === 'female' ? 'Féminine' : 'Masculine'}
+              </span>
             </button>
             <button
               type="button"
               onClick={() => togglePlay(id, sample)}
               aria-label={isPlaying ? `Arrêter l'écoute de ${label}` : `Écouter ${label}`}
               className={cn(
-                'shrink-0 mr-2 w-9 h-9 rounded-full flex items-center justify-center transition-colors',
+                'shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-colors',
                 isPlaying
                   ? 'bg-primary text-white'
                   : 'bg-white border border-slate-200 text-primary hover:bg-primary-50'
               )}
             >
               {isLoading
-                ? <Loader2 size={16} className="animate-spin" />
+                ? <Loader2 size={15} className="animate-spin" />
                 : isPlaying
-                  ? <Pause size={16} />
-                  : <Play size={16} className="ml-0.5" />}
+                  ? <Pause size={15} />
+                  : <Play size={15} className="ml-0.5" />}
             </button>
           </div>
         )

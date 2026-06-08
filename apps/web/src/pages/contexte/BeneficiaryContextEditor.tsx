@@ -673,11 +673,6 @@ const aiSchema = z.object({
 
 type AIForm = z.infer<typeof aiSchema>
 
-const ENGINES: { value: 'openai' | 'gemini'; label: string; description: string }[] = [
-  { value: 'openai', label: 'OpenAI',        description: 'gpt-realtime-2' },
-  { value: 'gemini', label: 'Google Gemini', description: 'Gemini Live' },
-]
-
 const STYLES: { value: ConversationStyle; label: string; description: string; emoji: string }[] = [
   { value: 'warm',    label: 'Chaleureux',  description: 'Bienveillant et affectueux', emoji: '🤗' },
   { value: 'calm',    label: 'Calme',       description: 'Posé, serein et rassurant',  emoji: '😌' },
@@ -711,9 +706,10 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
       conversation_style:  beneficiary.conversation_style ?? 'warm',
       language_preference: beneficiary.language_preference ?? 'fr',
       report_language:     (beneficiary as unknown as { report_language?: string }).report_language ?? 'fr',
-      // preferred_engine vient de la DB (cast pour contourner les types Database
-      // incomplets cf. CLAUDE.md "Build Netlify : utiliser vite build sans tsc")
-      preferred_engine:    ((beneficiary as unknown as { preferred_engine?: string }).preferred_engine === 'gemini' ? 'gemini' : 'openai'),
+      // Produit Gemini-only pour l'instant : le sélecteur OpenAI/Gemini a été
+      // retiré de la config IA, on force donc le moteur. Une éventuelle voix
+      // OpenAI (ai_voice) reste en base mais n'est plus exposée ni utilisée.
+      preferred_engine:    'gemini',
       custom_prompt:       beneficiary.custom_prompt ?? '',
       inbound_custom_prompt: (beneficiary as unknown as { inbound_custom_prompt?: string }).inbound_custom_prompt ?? '',
       inbound_enabled:             inb.inbound_enabled ?? false,
@@ -723,10 +719,8 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
     },
   })
 
-  const selectedVoice  = watch('ai_voice')
   const selectedGemini = watch('gemini_voice')
   const selectedStyle  = watch('conversation_style')
-  const selectedEngine = watch('preferred_engine')
   const inboundEnabled = watch('inbound_enabled')
 
   const [resetting, setResetting] = useState(false)
@@ -818,49 +812,21 @@ function AIConfigSection({ beneficiary, onSaved }: { beneficiary: Beneficiary; o
           />
         </div>
 
-        {/* Moteur AVANT la voix : les voix disponibles dépendent du moteur. */}
-        <div>
-          <Label>Moteur conversationnel</Label>
-          <p className="text-xs text-slate-400 mb-1">
-            Le modèle IA qui anime les appels. Vous pouvez en changer à tout moment.
-          </p>
-          <div className="grid grid-cols-2 gap-2 mt-1">
-            {ENGINES.map(({ value, label, description }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setValue('preferred_engine', value)}
-                className={cn(
-                  'text-left px-3 py-2.5 rounded-xl border text-sm transition-all',
-                  selectedEngine === value
-                    ? 'border-primary bg-primary-50 text-primary'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                )}
-              >
-                <span className="font-semibold block">{label}</span>
-                <span className="text-xs opacity-70">{description}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div>
           <Label>Voix du compagnon</Label>
           <p className="text-xs text-slate-400 mb-1">
             Écoutez chaque voix puis choisissez celle qui appellera {beneficiary.first_name}.
           </p>
           <VoicePicker
-            engine={selectedEngine}
-            value={selectedEngine === 'gemini' ? selectedGemini : selectedVoice}
-            onChange={(id) =>
-              setValue(selectedEngine === 'gemini' ? 'gemini_voice' : 'ai_voice', id, { shouldDirty: true })
-            }
+            engine="gemini"
+            value={selectedGemini}
+            onChange={(id) => setValue('gemini_voice', id, { shouldDirty: true })}
           />
         </div>
 
         <div>
           <Label>Style de conversation</Label>
-          <div className="grid grid-cols-2 gap-2 mt-1">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
             {STYLES.map(({ value, label, description, emoji }) => (
               <button
                 key={value}
