@@ -117,7 +117,7 @@ La fluidité est un axe produit prioritaire. Trois symptômes traités, chacun v
 ### Observabilité fluidité (Étape 0 — observation pure)
 Avant tout réglage automatique, on **mesure**. Un tracker engine-agnostique [`engines/fluidity.js`](services/voice-bridge/src/engines/fluidity.js) accumule pendant l'appel des signaux bruts et écrit un snapshot agrégé en fin d'appel :
 - **`calls.fluidity_metrics`** (appels planifiés OpenAI + Gemini) via `recordCallFluidity` ; **`demo_calls.fluidity_metrics`** (démos tél OpenAI/Gemini + web Gemini) via `recordDemoEnd`/`recordDemoRealCost`. Câblé dans les **5 bridges** (`getFluidityMetrics(durationSeconds)`). Pas le web OpenAI WebRTC (hors boucle voice-bridge — différé).
-- Contenu : `blank` (latence prise de parole : `start_ms` + `turn_avg/p90/max_ms` + `samples_ms` bruts ; **`approx=true` pour Gemini** = proxy transcript, faute d'event de fin de parole — précis pour OpenAI via `speech_stopped`), `barge_in` (`total`/`per_min`/`suspected_false` = barge-in non suivi de parole = bruit probable), `presence_checks` (« allô ? » regex multilingue, null si pas de transcript), `turns` + `assistant_speech_ms` + `speech_ratio`.
+- Contenu : `blank` (latence prise de parole : `start_ms` + `turn_avg/p90/max_ms` + `samples_ms` bruts ; **précis pour OpenAI** via `speech_stopped` ET **pour Gemini TÉLÉPHONE** via une ancre acoustique de fin de parole — détecteur d'énergie local [`engines/endpointing.js`](services/voice-bridge/src/engines/endpointing.js) qui écoute l'audio entrant µ-law et appelle `fluidity.onUserSpeechStop(at)`, **lecture seule** sans toucher au flux Gemini ni à sa VAD ; **`approx=true` ne reste que pour Gemini SANS ancre** = démo web ou kill-switch `GEMINI_ENDPOINT_DISABLED` → proxy transcript qui **SOUS-ESTIME** le « blanc » car la transcription Gemini arrive en retard, collée à la réponse IA. Pourquoi cette ancre : sans elle, /admin/qualite affichait un « blanc » Gemini ~64 ms — artefact, pas la latence perçue. Réglages env endpoint : `GEMINI_ENDPOINT_HANG_MS` (défaut 350, silence→fin de tour) · `GEMINI_ENDPOINT_ONSET_MS` (80) · `GEMINI_ENDPOINT_MIN_RMS` (500)), `barge_in` (`total`/`per_min`/`suspected_false` = barge-in non suivi de parole = bruit probable), `presence_checks` (« allô ? » regex multilingue, null si pas de transcript), `turns` + `assistant_speech_ms` + `speech_ratio`.
 - Lecture : CTA « **Qualité** » par appel → modal partagé [`components/FluidityModal.tsx`](apps/web/src/components/FluidityModal.tsx), dans `/admin/appels` onglets passés (si métriques présentes) et Démos vitrine. Aucun ajustement auto — on analyse les chiffres à la main pour décider de l'étape 1 (profil de fluidité par bénéficiaire).
 
 ## Back-office aidant (app.aicoute.fr)
@@ -306,6 +306,12 @@ GEMINI_VAD_START_SENSITIVITY=   # défaut : START_SENSITIVITY_LOW
 GEMINI_VAD_PREFIX_PADDING_MS=   # défaut : 300 (ms de parole soutenue requis avant interruption ; ↑ = rejette + le bruit)
 GEMINI_VAD_END_SENSITIVITY=     # anti-« blanc » (optionnel, non envoyé par défaut ; END_SENSITIVITY_HIGH = fin détectée + tôt)
 GEMINI_VAD_SILENCE_DURATION_MS= # anti-« blanc » (optionnel, non envoyé par défaut ; ex. 600-800)
+
+# --- Endpointing Gemini (MESURE du « blanc » téléphone — observation, ne change rien à ce que Gemini entend) ---
+GEMINI_ENDPOINT_DISABLED=    # true → kill-switch : retour au proxy transcript (blank approx=true, sous-estimé)
+GEMINI_ENDPOINT_HANG_MS=     # défaut 350 : silence continu avant de déclarer la fin de parole
+GEMINI_ENDPOINT_ONSET_MS=    # défaut 80 : parole continue avant de confirmer un début (rejette les clics)
+GEMINI_ENDPOINT_MIN_RMS=     # défaut 500 : plancher absolu d'énergie (PCM16) pour considérer une frame comme parole
 
 # --- VAD / fluidité OpenAI (optionnel — cf. « Fluidité de la conversation » plus haut) ---
 OPENAI_VAD_DISABLED=         # true → kill-switch, retour aux défauts OpenAI

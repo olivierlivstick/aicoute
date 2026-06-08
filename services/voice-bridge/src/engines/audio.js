@@ -114,3 +114,13 @@ export function pcm24B64ToMulawB64At8k(b64) {
   const pcm8  = downsample24to8(pcm24)
   return encodeMulaw(pcm8).toString('base64')
 }
+
+/**
+ * Twilio µ-law base64 (8 kHz) → Int16Array PCM 8 kHz (sans upsample).
+ * Utilisé par le détecteur d'énergie (endpointing.js) pour mesurer la fin de
+ * parole acoustique de l'interlocuteur sans repasser par les 16 kHz envoyés à
+ * Gemini. Lecture seule : ne change RIEN à ce que le moteur entend.
+ */
+export function mulawB64ToPcm8Samples(b64) {
+  return decodeMulaw(Buffer.from(b64, 'base64'))
+}

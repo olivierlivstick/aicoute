@@ -16,9 +16,10 @@
 //   }
 
 import { WebSocket } from 'ws'
-import { mulawB64ToPcm16B64At16k, pcm24B64ToMulawB64At8k } from './audio.js'
+import { mulawB64ToPcm16B64At16k, pcm24B64ToMulawB64At8k, mulawB64ToPcm8Samples } from './audio.js'
 import { buildRealtimeInputConfig, vadSummary } from './vad.js'
 import { createFluidityTracker, mulaw8kMs } from './fluidity.js'
+import { createEndpointDetector, endpointSummary } from './endpointing.js'
 import { GREETING_FALLBACK_MS, GREETING_PROTECT_MAX_MS } from './greeting.js'
 import { logEvent } from '../persistence/system-events.js'
 
@@ -78,8 +79,17 @@ export function createModectGeminiBridge(opts) {
 
   // Métriques de fluidité (Étape 0 — observation). Gemini fournit
   // inputTranscription → presence_checks + suspected_false mesurables. Pas
-  // d'event de fin de parole → latence du « blanc » approximative (approx=true).
+  // d'event de fin de parole côté Gemini → on mesure la fin de parole
+  // acoustiquement (détecteur d'énergie ci-dessous) pour une latence du « blanc »
+  // PRÉCISE (approx=false), au lieu du proxy transcript qui la sous-estime.
   const fluidity = createFluidityTracker({ hasUserTranscription: true })
+
+  // Détecteur de fin de parole acoustique sur l'audio entrant (lecture seule —
+  // ne change rien à ce que Gemini reçoit). Fournit l'ancre précise du « blanc ».
+  const endpoint = createEndpointDetector({
+    onSpeechStop: (at) => fluidity.onUserSpeechStop(at),
+    sampleRate:   8000,
+  })
 
   // --- Connexion Gemini Live ------------------------------------------------
   const url = `${ENDPOINT}?key=${encodeURIComponent(geminiApiKey)}`
@@ -252,7 +262,7 @@ export function createModectGeminiBridge(opts) {
     if (setupSent || !geminiReady || !contextFetched) return
     setupSent = true
     const realtimeInputConfig = buildRealtimeInputConfig()
-    console.log(`📤 [modect-gemini:${shortId(callId)}] setup (VAD ${vadSummary()})`)
+    console.log(`📤 [modect-gemini:${shortId(callId)}] setup (VAD ${vadSummary()} · endpoint ${endpointSummary()})`)
     geminiWs.send(JSON.stringify({
       setup: {
         model: MODEL,
@@ -353,6 +363,9 @@ export function createModectGeminiBridge(opts) {
           // Porte micro fermée tant que le bonjour d'ouverture n'est pas fini →
           // on DROP l'audio (un « allô » réflexe ne coupe pas le bonjour).
           if (setupAcked && micGateOpen && geminiWs.readyState === WebSocket.OPEN) {
+            // Mesure de fin de parole acoustique (avant l'envoi à Gemini) →
+            // ancre précise du « blanc ». Lecture seule, n'altère pas le flux.
+            endpoint.feed(mulawB64ToPcm8Samples(data.media.payload))
             const pcm16B64 = mulawB64ToPcm16B64At16k(data.media.payload)
             geminiWs.send(JSON.stringify({
               realtimeInput: {

@@ -18,8 +18,13 @@
 //
 // ⚠️ Fiabilité variable selon le moteur :
 //   - OpenAI émet `speech_stopped` → latence de tour PRÉCISE (approx=false).
-//   - Gemini n'a pas d'event de fin de parole → on prend comme ancre le dernier
-//     fragment de transcript user (proxy) → latence APPROXIMATIVE (approx=true).
+//   - Gemini TÉLÉPHONE : pas d'event de fin de parole, MAIS le bridge fournit une
+//     ancre acoustique via un détecteur d'énergie local (endpointing.js) qui
+//     appelle onUserSpeechStop(at) → latence PRÉCISE (approx=false) elle aussi.
+//   - Gemini sans ancre acoustique (ex. démo web, ou kill-switch endpointing) →
+//     on retombe sur le dernier fragment de transcript user (proxy) → latence
+//     APPROXIMATIVE (approx=true). Le proxy SOUS-ESTIME le « blanc » (la
+//     transcription Gemini arrive en retard, collée à la réponse de l'IA).
 
 /**
  * @param {object} [opts]
@@ -83,9 +88,15 @@ export function createFluidityTracker({ hasUserTranscription = false } = {}) {
   /** VAD : l'utilisateur a commencé à parler (non utilisé pour l'instant, réservé). */
   function onUserSpeechStart() { /* réservé */ }
 
-  /** VAD : l'utilisateur a fini de parler (OpenAI) → ancre précise du « blanc ». */
-  function onUserSpeechStop() {
-    userStopAt = Date.now()
+  /**
+   * Fin de parole user → ancre PRÉCISE du « blanc ».
+   * @param {number} [at] timestamp (Date.now-style) de l'arrêt. Par défaut now.
+   *   OpenAI appelle sans argument (sur `speech_stopped`). Gemini téléphone passe
+   *   le timestamp du détecteur d'énergie (endpointing.js), légèrement dans le
+   *   passé (= début du silence) → ancre au plus proche de l'arrêt réel.
+   */
+  function onUserSpeechStop(at) {
+    userStopAt = at ?? Date.now()
     hasPreciseStop = true
     userSpeechStops++
   }
