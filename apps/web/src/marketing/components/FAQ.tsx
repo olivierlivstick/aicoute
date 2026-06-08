@@ -27,7 +27,7 @@ const CATEGORIES: Category[] = [
       {
         q: 'Mon proche peut-il appeler Aicoute lui-même ?',
         a:
-          "Bientôt, oui. Aujourd'hui, Aicoute appelle votre proche à la fréquence que vous avez définie. Prochainement, votre proche pourra aussi appeler Aicoute de lui-même, lorsqu'il en ressent le besoin — un soir un peu solitaire, une envie de raconter sa journée, un moment sans visite. La présence ne dépendra plus seulement du calendrier : elle sera là aussi quand l'envie vient.",
+          "Aicoute appelle votre proche à la fréquence que vous avez définie. Mais, votre proche peut aussi appeler Aicoute de lui-même, lorsqu'il en ressent le besoin — un soir un peu solitaire, une envie de raconter sa journée, un moment sans visite. La présence ne dépendra plus seulement du calendrier : elle sera là aussi quand l'envie vient.",
       },
       {
         q: 'Puis-je suivre plusieurs proches depuis un seul compte ?',
