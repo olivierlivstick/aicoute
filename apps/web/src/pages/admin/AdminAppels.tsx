@@ -336,7 +336,7 @@ export function AdminAppelsPage() {
   }
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 py-8">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       <header className="mb-6">
         <p className="text-xs uppercase tracking-widest text-accent-700 font-semibold mb-1">Administration</p>
         <h1 className="font-serif text-3xl font-semibold text-brun-900">Appels (tous comptes)</h1>

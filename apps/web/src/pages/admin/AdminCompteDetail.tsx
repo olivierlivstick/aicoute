@@ -95,12 +95,12 @@ export function AdminCompteDetailPage() {
   }
 
   if (loading) {
-    return <div className="max-w-5xl mx-auto px-6 py-12 text-slate-400 text-sm">Chargement…</div>
+    return <div className="max-w-[1400px] mx-auto px-4 py-12 text-slate-400 text-sm">Chargement…</div>
   }
 
   if (notFound || !profile) {
     return (
-      <div className="max-w-5xl mx-auto px-6 py-12">
+      <div className="max-w-[1400px] mx-auto px-4 py-12">
         <p className="text-slate-500">Compte introuvable.</p>
         <Link to="/admin/comptes" className="text-primary text-sm mt-2 inline-block">← Retour à la liste</Link>
       </div>
@@ -112,7 +112,7 @@ export function AdminCompteDetailPage() {
   const canDelete = !hasBeneficiaries && confirmText.trim().toLowerCase() === confirmTarget.toLowerCase()
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       <Link to="/admin/comptes" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brun-700 mb-4">
         <ArrowLeft size={15} /> Tous les comptes
       </Link>

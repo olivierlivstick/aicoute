@@ -74,7 +74,7 @@ export function AdminSantePage() {
   }, [])
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-widest text-accent-700 font-semibold mb-1">Administration</p>
