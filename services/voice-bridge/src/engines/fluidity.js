@@ -11,8 +11,11 @@
 //
 // Trois symptômes ciblés (cf. encart « Fluidité de la conversation » de CLAUDE.md) :
 //   - « le blanc » → latence entre la fin de parole de l'utilisateur et la
-//     reprise de l'IA (blank.*).
-//   - barge-in → l'utilisateur coupe l'IA (barge_in.total/per_min).
+//     prise de parole de l'IA, sur les tours de parole PROPRES (blank.*). Les
+//     reprises après une interruption en sont EXCLUES (cf. barge_in.recovery_*)
+//     car elles mélangent une latence d'abandon+régénération, pas un tour normal.
+//   - barge-in → l'utilisateur coupe l'IA (barge_in.total/per_min) + latence de
+//     reprise après interruption (barge_in.recovery_*).
 //   - bruit d'ambiance → barge-in non suivi de parole = bruit probable
 //     (barge_in.suspected_false) ; « allô ? » répétés (presence_checks).
 //
@@ -46,11 +49,13 @@ export function createFluidityTracker({ hasUserTranscription = false } = {}) {
   let userTextAt     = null    // proxy : dernier fragment de transcript user (Gemini)
   let hasPreciseStop = false   // a-t-on reçu au moins un speech_stopped ?
   let userSpeechStops = 0
-  const turnGapsMs   = []
+  const turnGapsMs   = []    // blancs de fin de tour PROPRES (hors reprise post-barge-in)
+  const resumeGapsMs = []    // latence de REPRISE après un barge-in (comptée à part)
 
   // --- barge-in -------------------------------------------------------------
   let bargeInTotal        = 0
   let bargeInAwaitingText = false  // armé à chaque barge-in, désarmé par onUserText
+  let afterBargeIn        = false  // le prochain départ de parole IA est une reprise post-interruption
   let suspectedFalse      = 0
 
   // --- transcript user accumulé (pour presence_checks « allô ? ») -----------
@@ -69,8 +74,16 @@ export function createFluidityTracker({ hasUserTranscription = false } = {}) {
       const anchor = userStopAt ?? userTextAt
       if (anchor != null) {
         const gap = now - anchor
-        if (gap >= 0 && gap < 30000) turnGapsMs.push(Math.round(gap))
+        if (gap >= 0 && gap < 30000) {
+          // Un gap qui suit immédiatement un barge-in n'est PAS un blanc de fin
+          // de tour : c'est la latence de REPRISE après interruption (le moteur
+          // doit abandonner sa génération en cours puis repartir, c'est lent).
+          // On le range à part pour ne pas gonfler le « blanc » de tour propre.
+          if (afterBargeIn) resumeGapsMs.push(Math.round(gap))
+          else              turnGapsMs.push(Math.round(gap))
+        }
       }
+      afterBargeIn = false
       userStopAt = null
       userTextAt = null
       // Un barge-in qui n'a PAS été suivi de parole avant que l'IA reprenne →
@@ -113,8 +126,9 @@ export function createFluidityTracker({ hasUserTranscription = false } = {}) {
   function onBargeIn() {
     bargeInTotal++
     // L'IA a été coupée → son tour est terminé de fait : le prochain audio IA
-    // comptera comme un nouveau tour (et mesurera le « blanc » de reprise).
-    aiSpeaking = false
+    // comptera comme une REPRISE (gap rangé dans resumeGapsMs, pas dans le blanc).
+    aiSpeaking   = false
+    afterBargeIn = true
     if (hasUserTranscription) bargeInAwaitingText = true
   }
 
@@ -127,6 +141,12 @@ export function createFluidityTracker({ hasUserTranscription = false } = {}) {
     const avg  = gaps.length ? Math.round(gaps.reduce((s, x) => s + x, 0) / gaps.length) : null
     const p90  = gaps.length ? gaps[Math.ceil(0.9 * gaps.length) - 1] : null
     const max  = gaps.length ? gaps[gaps.length - 1] : null
+
+    // Latence de reprise après barge-in — mesurée à part (pas un blanc de tour).
+    const rgaps = resumeGapsMs.slice().sort((a, b) => a - b)
+    const ravg  = rgaps.length ? Math.round(rgaps.reduce((s, x) => s + x, 0) / rgaps.length) : null
+    const rp90  = rgaps.length ? rgaps[Math.ceil(0.9 * rgaps.length) - 1] : null
+    const rmax  = rgaps.length ? rgaps[rgaps.length - 1] : null
 
     // presence_checks : « allô ? », « vous êtes là ? » dans le transcript user.
     let presence = null
@@ -158,6 +178,11 @@ export function createFluidityTracker({ hasUserTranscription = false } = {}) {
         total:           bargeInTotal,
         per_min:         +(bargeInTotal / (durSec / 60)).toFixed(2),
         suspected_false: hasUserTranscription ? suspectedFalse : null,
+        // Reprise après interruption (latence séparée du « blanc » de tour propre).
+        recovery_avg_ms:  ravg,
+        recovery_p90_ms:  rp90,
+        recovery_max_ms:  rmax,
+        recovery_samples: rgaps.length,
       },
       presence_checks:     presence,
       assistant_speech_ms: Math.round(assistantSpeechMs),
