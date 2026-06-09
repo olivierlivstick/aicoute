@@ -479,7 +479,7 @@ function InboundCard({ beneficiary, onSaved }: CardProps) {
   const maxDurationMin = Math.round((f.inbound_max_duration_seconds ?? 600) / 60)
   return (
     <EditableCard
-      title="Appels entrants"
+      title="Appels émis"
       icon={Phone}
       renderEdit={(close) => <InboundEdit beneficiary={beneficiary} onSaved={onSaved} close={close} />}
     >
