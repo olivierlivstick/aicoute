@@ -147,7 +147,7 @@ export function DashboardPage() {
             <Link to="/beneficiary/new">
               <Button>
                 <Plus size={18} />
-                Créer le profil de mon bénéficiaire
+                Créer le profil de mon proche
               </Button>
             </Link>
           </div>
