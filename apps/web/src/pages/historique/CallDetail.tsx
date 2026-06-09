@@ -71,7 +71,7 @@ export function CallDetailPage() {
 
   if (!call) {
     return (
-      <div className="p-8 text-center">
+      <div className="max-w-[1400px] mx-auto px-4 py-8 text-center">
         <p className="text-slate-500">Appel introuvable.</p>
         <Link to="/historique" className="text-primary mt-2 inline-block hover:underline">← Retour</Link>
       </div>
@@ -85,7 +85,7 @@ export function CallDetailPage() {
   const transcript  = (call.transcript ?? []) as TranscriptEntry[]
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       {/* Header */}
       <div className="flex items-center gap-4 mb-8">
         <Link to="/historique" className="text-slate-400 hover:text-slate-600 transition-colors">

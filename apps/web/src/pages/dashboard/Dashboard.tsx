@@ -81,7 +81,7 @@ export function DashboardPage() {
   const firstName = profile?.full_name?.split(' ')[0] ?? 'aidant'
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>

@@ -5,7 +5,7 @@ export function VeillePage() {
   const { selected } = useSelectedBeneficiary()
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       <div className="mb-6">
         <h1 className="font-title text-3xl font-bold text-slate-800">Veille</h1>
         <p className="text-slate-500 mt-1">

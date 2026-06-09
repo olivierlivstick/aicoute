@@ -25,7 +25,7 @@ export function ComptePage() {
   const [tab, setTab] = useState<Tab>('profil')
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       <h1 className="font-title text-3xl font-bold text-slate-800 mb-1">Mon compte</h1>
       <p className="text-slate-500 mb-6">Profil, abonnement et facturation</p>
 

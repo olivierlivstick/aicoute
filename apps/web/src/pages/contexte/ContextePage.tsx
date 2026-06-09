@@ -12,7 +12,7 @@ export function ContextePage() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       <div className="mb-6">
         <h1 className="font-title text-3xl font-bold text-slate-800">Contexte</h1>
         <p className="text-slate-500 mt-1">
@@ -27,7 +27,7 @@ export function ContextePage() {
 
 function EmptyState() {
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
         <div className="text-5xl mb-4">👋</div>
         <h2 className="font-title text-xl font-semibold text-slate-700 mb-2">

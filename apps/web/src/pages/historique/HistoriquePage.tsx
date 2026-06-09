@@ -33,7 +33,7 @@ export function HistoriquePage() {
 
   if (!selected) {
     return (
-      <div className="p-8 max-w-7xl mx-auto">
+      <div className="max-w-[1400px] mx-auto px-4 py-8">
         <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
           <FileText size={40} className="mx-auto text-slate-200 mb-3" />
           <p className="text-slate-400">Sélectionnez un bénéficiaire pour voir son historique.</p>
@@ -45,7 +45,7 @@ export function HistoriquePage() {
   const pastCalls = calls.filter((c) => PAST_STATUSES.includes(c.status))
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="font-title text-3xl font-bold text-slate-800">Historique</h1>
