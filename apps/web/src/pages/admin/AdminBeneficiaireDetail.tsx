@@ -81,7 +81,7 @@ export function AdminBeneficiaireDetailPage() {
   const canDelete = confirmText.trim().toLowerCase() === confirmTarget.toLowerCase()
 
   return (
-    <div className="max-w-[1180px] mx-auto px-4 sm:px-6 py-8">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       <BeneficiaryAdminHeader beneficiary={beneficiary} caregiver={caregiver} />
 
       <BeneficiaryContextEditor beneficiary={beneficiary} onSaved={load} withSchedule withCalls />

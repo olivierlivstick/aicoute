@@ -15,7 +15,6 @@ interface TabDef {
   id: Tab
   label: string
   icon: React.ElementType
-  badge?: string
 }
 
 /**
@@ -44,7 +43,7 @@ export function BeneficiaryContextEditor({
   const { memories, loading: memoriesLoading } = useMemories(beneficiary.id)
 
   const tabs: TabDef[] = [
-    { id: 'profil', label: 'Profil', icon: IdCard, badge: '4-en-1' },
+    { id: 'profil', label: 'Profil', icon: IdCard },
     { id: 'ai', label: 'Compagnon IA', icon: Bot },
     { id: 'memory', label: 'Mémoire', icon: Notebook },
     ...(withSchedule ? [{ id: 'schedule' as Tab, label: 'Planning', icon: CalendarClock }] : []),
@@ -55,7 +54,7 @@ export function BeneficiaryContextEditor({
     <div>
       {/* Barre d'onglets */}
       <div className="flex gap-1 mb-6 border-b border-creme-sable overflow-x-auto">
-        {tabs.map(({ id, label, icon: Icon, badge }) => (
+        {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
@@ -67,11 +66,6 @@ export function BeneficiaryContextEditor({
           >
             <Icon size={16} />
             {label}
-            {badge && (
-              <span className="hidden sm:inline text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-50 text-accent-700">
-                {badge}
-              </span>
-            )}
             {tab === id && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full" />}
           </button>
         ))}
