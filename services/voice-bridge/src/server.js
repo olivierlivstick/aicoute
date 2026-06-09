@@ -200,10 +200,13 @@ function sanitizeLang(raw) {
 // (env GEMINI_MODEL > version prod). Le 1er = défaut prod. À garder en phase
 // avec le menu déroulant de /admin/sante (PhoneTestSection, GEMINI_TEST_MODELS).
 const ALLOWED_GEMINI_MODELS = [
-  'models/gemini-3.1-flash-live-preview',
-  'models/gemini-live-2.5-flash-preview',
-  'models/gemini-2.5-flash-native-audio-preview-09-2025',
+  'models/gemini-3.1-flash-live-preview',                  // PROD — native audio A2A, le + récent (mars 2026)
+  'models/gemini-2.5-flash-native-audio-preview-12-2025',  // native audio génération précédente (déc. 2025) — test comparatif
 ]
+// NB : le half-cascade gemini-live-2.5-flash-preview a été COUPÉ par Google le
+// 2025-12-09 (toute la ligne « live » half-cascade) → ne plus le proposer, il
+// rejette le setup (silence). Pour ajouter un futur modèle : l'ajouter ici ET
+// dans GEMINI_TEST_MODELS (AdminSante.tsx).
 function sanitizeGeminiModel(raw) {
   const v = String(raw ?? '').trim()
   return ALLOWED_GEMINI_MODELS.includes(v) ? v : null

@@ -344,9 +344,8 @@ const PHONE_TEST_OPENER_MAX = 500
 // Doit rester aligné avec ALLOWED_GEMINI_MODELS (voice-bridge server.js) : une
 // valeur hors de cette whitelist serveur retombe sur le défaut prod.
 const GEMINI_TEST_MODELS = [
-  { value: 'models/gemini-3.1-flash-live-preview',                 label: '3.1 Flash Live · en prod' },
-  { value: 'models/gemini-live-2.5-flash-preview',                 label: '2.5 Flash · half-cascade (plus rapide ?)' },
-  { value: 'models/gemini-2.5-flash-native-audio-preview-09-2025', label: '2.5 Native Audio (plus expressif)' },
+  { value: 'models/gemini-3.1-flash-live-preview',                 label: '3.1 Flash Live · en prod (le + récent)' },
+  { value: 'models/gemini-2.5-flash-native-audio-preview-12-2025', label: '2.5 Native Audio · génération précédente' },
 ]
 const VOICE_BRIDGE_URL = import.meta.env.VITE_VOICE_BRIDGE_URL as string | undefined
 
