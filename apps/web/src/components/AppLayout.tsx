@@ -3,7 +3,7 @@ import {
   LayoutDashboard,
   BookHeart,
   CalendarDays,
-  History,
+  Phone,
   Radar,
   UserCog,
   ShieldCheck,
@@ -20,7 +20,7 @@ const mainNav = [
   { to: '/dashboard',  icon: LayoutDashboard, label: 'Tableau de bord' },
   { to: '/contexte',   icon: BookHeart,       label: 'Contexte' },
   { to: '/planning',   icon: CalendarDays,    label: 'Planning' },
-  { to: '/historique', icon: History,         label: 'Historique' },
+  { to: '/historique', icon: Phone,           label: 'Appels' },
   { to: '/veille',     icon: Radar,           label: 'Veille' },
 ]
 

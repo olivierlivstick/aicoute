@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
   FileText, AlertTriangle, Clock, CheckCircle, XCircle, Phone, CalendarClock,
+  PhoneIncoming, PhoneOutgoing,
 } from 'lucide-react'
 import { useSelectedBeneficiary } from '@/hooks/useSelectedBeneficiary'
 import { useCalls } from '@/hooks/useCalls'
@@ -11,7 +12,11 @@ import { cn } from '@/lib/utils'
 import type { CallWithBeneficiary } from '@/hooks/useCalls'
 import type { CallStatus, SessionSchedule } from '@modect/shared'
 
-type Tab = 'past' | 'upcoming'
+type Tab = 'past' | 'emitted' | 'upcoming'
+
+/** Un appel ENTRANT (« émis » par le bénéficiaire vers AICOUTE). */
+const isInbound = (c: CallWithBeneficiary) =>
+  (c as unknown as { origin?: string }).origin === 'inbound'
 
 const STATUS_CONFIG: Record<CallStatus, { label: string; icon: React.ElementType; color: string }> = {
   completed:   { label: 'Terminé',  icon: CheckCircle, color: 'text-green-600' },
@@ -42,18 +47,21 @@ export function HistoriquePage() {
     )
   }
 
-  const pastCalls = calls.filter((c) => PAST_STATUSES.includes(c.status))
+  // Reçus = sortants AICOUTE → bénéficiaire ; Émis = entrants (le bénéficiaire a appelé).
+  const allPast = calls.filter((c) => PAST_STATUSES.includes(c.status))
+  const receivedCalls = allPast.filter((c) => !isInbound(c))
+  const emittedCalls = allPast.filter((c) => isInbound(c))
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 py-8">
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="font-title text-3xl font-bold text-slate-800">Historique</h1>
+          <h1 className="font-title text-3xl font-bold text-slate-800">Appels</h1>
           <p className="text-slate-500 mt-1">
             Appels avec <strong>{selected.first_name}</strong>
           </p>
         </div>
-        {unreadCount > 0 && tab === 'past' && (
+        {unreadCount > 0 && tab !== 'upcoming' && (
           <div className="bg-accent text-white text-sm font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5">
             <FileText size={14} />
             {unreadCount} nouveau{unreadCount > 1 ? 'x' : ''}
@@ -62,41 +70,18 @@ export function HistoriquePage() {
       </div>
 
       {/* Onglets */}
-      <div className="flex gap-1 mb-6 border-b border-slate-200">
-        <button
-          onClick={() => setTab('past')}
-          className={cn(
-            'flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative',
-            tab === 'past' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'
-          )}
-        >
-          <FileText size={16} />
-          Appels passés
-          {pastCalls.length > 0 && (
-            <span className="text-xs text-slate-400 font-normal">({pastCalls.length})</span>
-          )}
-          {tab === 'past' && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full" />
-          )}
-        </button>
-
-        <button
-          onClick={() => setTab('upcoming')}
-          className={cn(
-            'flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative',
-            tab === 'upcoming' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'
-          )}
-        >
-          <CalendarClock size={16} />
-          Appels prévus
-          {tab === 'upcoming' && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full" />
-          )}
-        </button>
+      <div className="flex gap-1 mb-6 border-b border-slate-200 overflow-x-auto">
+        <TabButton active={tab === 'past'} onClick={() => setTab('past')} icon={PhoneIncoming} label="Appels reçus" count={receivedCalls.length} />
+        <TabButton active={tab === 'emitted'} onClick={() => setTab('emitted')} icon={PhoneOutgoing} label="Appels émis" count={emittedCalls.length} />
+        <TabButton active={tab === 'upcoming'} onClick={() => setTab('upcoming')} icon={CalendarClock} label="Appels prévus" />
       </div>
 
       {tab === 'past' && (
-        <PastCallsTab calls={pastCalls} loading={loadingCalls} />
+        <PastCallsTab calls={receivedCalls} loading={loadingCalls} emptyLabel="Aucun appel reçu pour l'instant." />
+      )}
+
+      {tab === 'emitted' && (
+        <PastCallsTab calls={emittedCalls} loading={loadingCalls} emptyLabel={`Aucun appel émis par ${selected.first_name} pour l'instant.`} />
       )}
 
       {tab === 'upcoming' && (
@@ -106,11 +91,38 @@ export function HistoriquePage() {
   )
 }
 
+function TabButton({
+  active, onClick, icon: Icon, label, count,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: React.ElementType
+  label: string
+  count?: number
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative whitespace-nowrap',
+        active ? 'text-primary' : 'text-slate-500 hover:text-slate-700',
+      )}
+    >
+      <Icon size={16} />
+      {label}
+      {count !== undefined && count > 0 && (
+        <span className="text-xs text-slate-400 font-normal">({count})</span>
+      )}
+      {active && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full" />}
+    </button>
+  )
+}
+
 // ============================================================================
 // Onglet 1 — Appels passés
 // ============================================================================
 
-function PastCallsTab({ calls, loading }: { calls: CallWithBeneficiary[]; loading: boolean }) {
+function PastCallsTab({ calls, loading, emptyLabel }: { calls: CallWithBeneficiary[]; loading: boolean; emptyLabel: string }) {
   if (loading) {
     return (
       <div className="flex justify-center py-16">
@@ -123,7 +135,7 @@ function PastCallsTab({ calls, loading }: { calls: CallWithBeneficiary[]; loadin
     return (
       <div className="text-center py-16 bg-white rounded-2xl border border-slate-100">
         <FileText size={40} className="mx-auto text-slate-200 mb-3" />
-        <p className="text-slate-400">Aucun appel passé pour l'instant.</p>
+        <p className="text-slate-400">{emptyLabel}</p>
       </div>
     )
   }
