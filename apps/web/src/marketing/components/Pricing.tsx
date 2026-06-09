@@ -1,54 +1,12 @@
 // SECTION 7 — Tarifs (3 packs de minutes, dégressif, carte centrale mise en avant)
 import { Icon } from '@/marketing/components/icons'
 import { SIGNUP_URL } from '@/config/links'
+import { MINUTE_PACKS, type MinutePack } from '@modect/shared'
 
-type Pack = {
-  name: string
-  minutes: string       // quantité achetée, ex. '50'
-  price: string         // prix du pack en €, ex. '25'
-  perMinute: string     // tarif unitaire, ex. '0,50 € / minute'
-  saving?: string        // badge d'économie à côté du prix, ex. '−10 %'
-  cadence: string       // rythme d'appels (mis en avant), ex. '≈ 1 appel par semaine'
-  detail: string        // équivalence en conversations (texte secondaire)
-  cta: string
-  featured: boolean
-}
+const PACK_CTA = 'Choisir ce pack'
 
 export function Pricing() {
-  const packs: Pack[] = [
-    {
-      name: 'Le rendez-vous',
-      minutes: '50',
-      price: '25',
-      perMinute: '0,50 € / minute',
-      cadence: '≈ 1 appel par semaine',
-      detail: 'Soit 5 à 7 conversations, pendant environ un mois.',
-      cta: 'Choisir ce pack',
-      featured: false,
-    },
-    {
-      name: 'Le lien',
-      minutes: '100',
-      price: '45',
-      perMinute: '0,45 € / minute',
-      saving: '−10 %',
-      cadence: '≈ 2 à 3 appels par semaine',
-      detail: 'Soit 10 à 14 conversations, pendant environ un mois.',
-      cta: 'Choisir ce pack',
-      featured: true,
-    },
-    {
-      name: 'La présence',
-      minutes: '250',
-      price: '100',
-      perMinute: '0,40 € / minute',
-      saving: '−20 %',
-      cadence: '≈ presque 1 appel par jour',
-      detail: 'Soit 25 à 35 conversations, pendant environ un mois.',
-      cta: 'Choisir ce pack',
-      featured: false,
-    },
-  ]
+  const packs = MINUTE_PACKS
 
   return (
     <section id="tarifs" className="bg-creme-sable py-20 md:py-28">
@@ -79,7 +37,7 @@ export function Pricing() {
   )
 }
 
-function PackCard({ pack }: { pack: Pack }) {
+function PackCard({ pack }: { pack: MinutePack }) {
   const { featured } = pack
   return (
     <div
@@ -131,14 +89,14 @@ function PackCard({ pack }: { pack: Pack }) {
 
       <a
         href={SIGNUP_URL}
-        aria-label={`${pack.cta} — ${pack.name}, ${pack.minutes} minutes`}
+        aria-label={`${PACK_CTA} — ${pack.name}, ${pack.minutes} minutes`}
         className={`mt-8 inline-flex items-center justify-center px-6 py-3 rounded-md font-medium transition-colors ${
           featured
             ? 'bg-terracotta hover:bg-terracotta-dark text-creme'
             : 'border border-terracotta text-terracotta-dark hover:bg-terracotta hover:text-creme'
         }`}
       >
-        {pack.cta}
+        {PACK_CTA}
       </a>
     </div>
   )

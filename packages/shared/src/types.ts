@@ -204,3 +204,54 @@ export const PLAN_TIERS: Record<PlanTier, PlanDef> = {
   comfort:   { tier: 'comfort',   name: 'Confort',       callsPerWeek: 3, priceEur: 65,  tagline: 'Pour une vraie régularité.' },
   serenity:  { tier: 'serenity',  name: 'Sérénité',      callsPerWeek: 7, priceEur: 150, tagline: 'Pour un accompagnement quotidien.' },
 }
+
+// Packs de minutes (nouveau modèle : achat de minutes, dégressif, sans abonnement).
+// SOURCE UNIQUE partagée entre la vitrine (#tarifs) et le back-office (PlanChooser).
+export type MinutePackId = 'rendezvous' | 'lien' | 'presence'
+
+export interface MinutePack {
+  id: MinutePackId
+  name: string
+  minutes: string       // quantité achetée, ex. '50'
+  price: string         // prix du pack en €, ex. '25'
+  perMinute: string     // tarif unitaire, ex. '0,50 € / minute'
+  saving?: string       // badge d'économie, ex. '−10 %'
+  cadence: string       // rythme d'appels mis en avant, ex. '≈ 1 appel par semaine'
+  detail: string        // équivalence en conversations
+  featured: boolean
+}
+
+export const MINUTE_PACKS: MinutePack[] = [
+  {
+    id: 'rendezvous',
+    name: 'Le rendez-vous',
+    minutes: '50',
+    price: '25',
+    perMinute: '0,50 € / minute',
+    cadence: '≈ 1 appel par semaine',
+    detail: 'Soit 5 à 7 conversations, pendant environ un mois.',
+    featured: false,
+  },
+  {
+    id: 'lien',
+    name: 'Le lien',
+    minutes: '100',
+    price: '45',
+    perMinute: '0,45 € / minute',
+    saving: '−10 %',
+    cadence: '≈ 2 à 3 appels par semaine',
+    detail: 'Soit 10 à 14 conversations, pendant environ un mois.',
+    featured: true,
+  },
+  {
+    id: 'presence',
+    name: 'La présence',
+    minutes: '250',
+    price: '100',
+    perMinute: '0,40 € / minute',
+    saving: '−20 %',
+    cadence: '≈ presque 1 appel par jour',
+    detail: 'Soit 25 à 35 conversations, pendant environ un mois.',
+    featured: false,
+  },
+]
