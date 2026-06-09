@@ -9,11 +9,12 @@ import {
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
 import { Button } from '@/components/ui/Button'
+import { PhoneInput } from '@/components/PhoneInput'
 import { cn } from '@/lib/utils'
 import type { Beneficiary } from '@modect/shared'
 import {
   EditableCard, Field, Chip, InfoRow, EditLabel, EditFooter, useSection,
-  splitList, currentAge, langLabel,
+  splitList, computeAge, formatBirthDate, langLabel,
 } from '../cards'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -261,27 +262,28 @@ function PersonalityEdit({ beneficiary, onSaved, close }: EditProps) {
 // Identité & contact
 // ────────────────────────────────────────────────────────────────────────────
 
+const TODAY = new Date().toISOString().slice(0, 10)
+
 const identitySchema = z.object({
   first_name: z.string().min(1, 'Prénom requis'),
   last_name: z.string().min(1, 'Nom requis'),
-  birth_year: z.coerce.number().int().min(1900).max(new Date().getFullYear() - 50).optional().or(z.literal('')),
-  gender: z.enum(['male', 'female', 'other']).optional(),
-  phone: z.string().optional(),
+  birth_date: z.string().optional().or(z.literal('')),
+  gender: z.enum(['male', 'female']).optional(),
 })
 type IdentityForm = z.infer<typeof identitySchema>
 
-const GENDERS: Array<{ value: 'male' | 'female' | 'other'; label: string }> = [
+const GENDERS = [
   { value: 'female', label: 'Femme' },
   { value: 'male', label: 'Homme' },
-  { value: 'other', label: 'Autre' },
-]
+] as const
 
 function genderLabel(g: Beneficiary['gender']): string {
   return g === 'female' ? 'Femme' : g === 'male' ? 'Homme' : g === 'other' ? 'Autre' : '—'
 }
 
 function IdentityCard({ beneficiary, onSaved }: CardProps) {
-  const age = currentAge(beneficiary.birth_year)
+  const age = computeAge(beneficiary.birth_date, beneficiary.birth_year)
+  const born = formatBirthDate(beneficiary.birth_date)
   return (
     <EditableCard
       title="Identité & contact"
@@ -293,7 +295,7 @@ function IdentityCard({ beneficiary, onSaved }: CardProps) {
           icon={Cake}
           label="Âge"
           value={age ? `${age} ans` : 'Non renseigné'}
-          sub={beneficiary.birth_year ? `né·e en ${beneficiary.birth_year}` : undefined}
+          sub={born ? `né·e le ${born}` : beneficiary.birth_year ? `né·e en ${beneficiary.birth_year}` : undefined}
         />
         <InfoRow icon={Users} label="Genre" value={genderLabel(beneficiary.gender)} />
         <InfoRow
@@ -318,19 +320,22 @@ function IdentityEdit({ beneficiary, onSaved, close }: EditProps) {
     values: {
       first_name: beneficiary.first_name,
       last_name: beneficiary.last_name,
-      birth_year: beneficiary.birth_year ?? ('' as unknown as number),
-      gender: beneficiary.gender ?? undefined,
-      phone: beneficiary.phone ?? '',
+      birth_date: beneficiary.birth_date ?? '',
+      gender: (beneficiary.gender === 'male' || beneficiary.gender === 'female') ? beneficiary.gender : undefined,
     },
   })
+  const [phone, setPhone] = useState(beneficiary.phone ?? '')
   const selectedGender = watch('gender')
   const submit = handleSubmit(async (v) => {
+    const birthDate = v.birth_date || null
     const ok = await save({
       first_name: v.first_name,
       last_name: v.last_name,
-      birth_year: v.birth_year ? Number(v.birth_year) : null,
+      birth_date: birthDate,
+      // birth_year synchronisé à partir de la date (prompt edge + repli âge).
+      birth_year: birthDate ? Number(birthDate.slice(0, 4)) : null,
       gender: v.gender ?? null,
-      phone: v.phone || null,
+      phone: phone || null,
     })
     if (ok) { onSaved(); close() }
   })
@@ -348,33 +353,33 @@ function IdentityEdit({ beneficiary, onSaved, close }: EditProps) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <EditLabel>Année de naissance</EditLabel>
-          <Input type="number" min={1900} max={new Date().getFullYear() - 50} error={errors.birth_year?.message} {...register('birth_year')} />
+          <EditLabel>Date de naissance</EditLabel>
+          <Input type="date" min="1900-01-01" max={TODAY} error={errors.birth_date?.message} {...register('birth_date')} />
         </div>
         <div>
-          <EditLabel>Téléphone</EditLabel>
-          <Input type="tel" placeholder="+33 6 00 00 00 00" {...register('phone')} />
+          <EditLabel>Genre</EditLabel>
+          <div className="flex gap-2">
+            {GENDERS.map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setValue('gender', value, { shouldDirty: true })}
+                className={cn(
+                  'flex-1 h-10 rounded-xl border text-sm font-medium transition-all',
+                  selectedGender === value
+                    ? 'border-primary bg-primary-50 text-primary'
+                    : 'border-creme-sable text-slate-600 hover:border-slate-300',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <div>
-        <EditLabel>Genre</EditLabel>
-        <div className="flex gap-2">
-          {GENDERS.map(({ value, label }) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setValue('gender', value, { shouldDirty: true })}
-              className={cn(
-                'flex-1 py-2 rounded-xl border text-sm font-medium transition-all',
-                selectedGender === value
-                  ? 'border-primary bg-primary-50 text-primary'
-                  : 'border-creme-sable text-slate-600 hover:border-slate-300',
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <EditLabel>Téléphone</EditLabel>
+        <PhoneInput value={phone} onChange={setPhone} />
       </div>
       <EditFooter onCancel={close} saving={saving} error={error} />
     </form>

@@ -6,9 +6,7 @@ import { useSelectedBeneficiary } from '@/hooks/useSelectedBeneficiary'
 import { supabase } from '@/lib/supabase'
 import { resolvePromptPlaceholders } from '@modect/shared'
 import { Step1BasicInfo } from './steps/Step1BasicInfo'
-import { Step2History } from './steps/Step2History'
-import { Step3Tastes } from './steps/Step3Tastes'
-import { Step4Personality } from './steps/Step4Personality'
+import { Step2Personality } from './steps/Step2Personality'
 import { Step5AIConfig } from './steps/Step5AIConfig'
 import type { Beneficiary } from '@modect/shared'
 import { cn } from '@/lib/utils'
@@ -20,10 +18,8 @@ export type WizardData = Partial<Omit<Beneficiary, 'id' | 'created_at' | 'update
 
 const STEPS = [
   { label: 'Infos de base',    short: '1' },
-  { label: 'Son histoire',     short: '2' },
-  { label: 'Ses goûts',        short: '3' },
-  { label: 'Personnalité',     short: '4' },
-  { label: 'Configuration IA', short: '5' },
+  { label: 'Sa personnalité',  short: '2' },
+  { label: 'Configuration IA', short: '3' },
 ]
 
 export function BeneficiaryWizard() {
@@ -90,7 +86,9 @@ export function BeneficiaryWizard() {
       caregiver_id: user.id,
       first_name: final.first_name ?? '',
       last_name: final.last_name ?? '',
-      birth_year: final.birth_year ?? null,
+      birth_date: final.birth_date ?? null,
+      // birth_year synchronisé à partir de la date (prompt edge + repli âge).
+      birth_year: final.birth_date ? Number(final.birth_date.slice(0, 4)) : (final.birth_year ?? null),
       gender: final.gender ?? null,
       phone: final.phone ?? null,
       push_token: null,
@@ -130,10 +128,10 @@ export function BeneficiaryWizard() {
   const stepProps = { data, onNext: next, onPrev: prev, onSubmit: submit, saving }
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="max-w-[1400px] mx-auto px-4 py-8">
       {/* Titre */}
       <div className="mb-8">
-        <h1 className="font-title text-3xl font-bold text-slate-800">Ajouter un bénéficiaire</h1>
+        <h1 className="font-title text-3xl font-bold text-slate-800">Ajouter un proche</h1>
         <p className="text-slate-500 mt-1">Remplissez le profil pour personnaliser les conversations IA</p>
       </div>
 
@@ -182,10 +180,8 @@ export function BeneficiaryWizard() {
           <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-4">{error}</p>
         )}
         {step === 0 && <Step1BasicInfo {...stepProps} />}
-        {step === 1 && <Step2History {...stepProps} />}
-        {step === 2 && <Step3Tastes {...stepProps} />}
-        {step === 3 && <Step4Personality {...stepProps} />}
-        {step === 4 && <Step5AIConfig {...stepProps} />}
+        {step === 1 && <Step2Personality {...stepProps} />}
+        {step === 2 && <Step5AIConfig {...stepProps} />}
       </div>
     </div>
   )

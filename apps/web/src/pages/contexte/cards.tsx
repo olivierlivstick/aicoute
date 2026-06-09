@@ -28,8 +28,30 @@ export const STYLES: { value: ConversationStyle; label: string; description: str
   { value: 'formal', label: 'Respectueux', description: 'Poli et traditionnel', emoji: '🎩' },
 ]
 
-export function currentAge(birthYear: number | null | undefined): number | null {
+/** Âge à partir de la date de naissance (précis) avec repli sur l'année seule. */
+export function computeAge(
+  birthDate: string | null | undefined,
+  birthYear: number | null | undefined,
+): number | null {
+  if (birthDate) {
+    const d = new Date(birthDate)
+    if (!Number.isNaN(d.getTime())) {
+      const now = new Date()
+      let age = now.getFullYear() - d.getFullYear()
+      const m = now.getMonth() - d.getMonth()
+      if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--
+      return age
+    }
+  }
   return birthYear ? new Date().getFullYear() - birthYear : null
+}
+
+/** Formate une date de naissance pour l'affichage (ex. « 14 mars 1942 »). */
+export function formatBirthDate(birthDate: string | null | undefined): string | null {
+  if (!birthDate) return null
+  const d = new Date(birthDate)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
 // ============================================================================

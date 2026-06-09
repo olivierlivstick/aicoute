@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft, Phone, Check, Calendar, Notebook, Wallet } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
-import { currentAge } from './cards'
+import { computeAge } from './cards'
 import type { Beneficiary } from '@modect/shared'
 
 interface CaregiverInfo { id: string; full_name: string; email: string }
@@ -44,7 +44,7 @@ export function BeneficiaryAdminHeader({
   caregiver: CaregiverInfo | null
 }) {
   const [stats, setStats] = useState<HeaderStats | null>(null)
-  const age = currentAge(beneficiary.birth_year)
+  const age = computeAge(beneficiary.birth_date, beneficiary.birth_year)
   const nowIso = new Date().toISOString()
 
   useEffect(() => {

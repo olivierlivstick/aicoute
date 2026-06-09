@@ -30,6 +30,8 @@ export interface Beneficiary {
   first_name: string
   last_name: string
   birth_year: number | null
+  /** Date de naissance complète (YYYY-MM-DD). birth_year reste synchronisé à partir d'elle. */
+  birth_date: string | null
   gender: Gender | null
   phone: string | null
   push_token: string | null
