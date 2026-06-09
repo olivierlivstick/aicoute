@@ -34,7 +34,7 @@ export function Hero() {
                 href={SIGNUP_URL}
                 className="inline-flex items-center justify-center bg-terracotta hover:bg-terracotta-dark text-creme px-6 py-3.5 rounded-md font-medium transition-colors"
               >
-                Créer un compte pour mes parents
+                Créer un compte pour un proche
               </a>
               <a
                 href="#comment"
