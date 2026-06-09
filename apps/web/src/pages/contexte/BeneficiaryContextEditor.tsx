@@ -31,6 +31,7 @@ export function BeneficiaryContextEditor({
   onSaved,
   withSchedule = false,
   withCalls = false,
+  onDeleted,
 }: {
   beneficiary: Beneficiary
   onSaved: () => void
@@ -38,6 +39,9 @@ export function BeneficiaryContextEditor({
   withSchedule?: boolean
   /** Onglet « Appels » (graphe minutes + coûts). Réservé à l'admin. */
   withCalls?: boolean
+  /** Si fourni, affiche une zone danger « Effacer » en bas de l'onglet Profil
+   *  (vue aidant). L'admin a sa propre zone danger au niveau de la page. */
+  onDeleted?: () => void
 }) {
   const [tab, setTab] = useState<Tab>('profil')
   const { memories, loading: memoriesLoading } = useMemories(beneficiary.id)
@@ -77,6 +81,7 @@ export function BeneficiaryContextEditor({
           onSaved={onSaved}
           onGoToMemory={() => setTab('memory')}
           memoryCount={memoriesLoading ? null : memories.length}
+          onDeleted={onDeleted}
         />
       )}
       {tab === 'ai' && <CompagnonIATab beneficiary={beneficiary} onSaved={onSaved} />}

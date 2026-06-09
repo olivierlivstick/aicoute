@@ -18,7 +18,7 @@ import { SelectedBeneficiaryProvider } from '@/hooks/useSelectedBeneficiary'
 
 const mainNav = [
   { to: '/dashboard',  icon: LayoutDashboard, label: 'Tableau de bord' },
-  { to: '/contexte',   icon: BookHeart,       label: 'Contexte' },
+  { to: '/contexte',   icon: BookHeart,       label: 'Bénéficiaires' },
   { to: '/planning',   icon: CalendarDays,    label: 'Planning' },
   { to: '/historique', icon: Phone,           label: 'Appels' },
   { to: '/veille',     icon: Radar,           label: 'Veille' },

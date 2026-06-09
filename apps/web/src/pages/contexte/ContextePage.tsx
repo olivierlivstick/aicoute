@@ -14,13 +14,13 @@ export function ContextePage() {
   return (
     <div className="max-w-[1400px] mx-auto px-4 py-8">
       <div className="mb-6">
-        <h1 className="font-title text-3xl font-bold text-slate-800">Contexte</h1>
+        <h1 className="font-title text-3xl font-bold text-slate-800">Bénéficiaire</h1>
         <p className="text-slate-500 mt-1">
           Profil et préférences de <strong>{selected.first_name} {selected.last_name}</strong>
         </p>
       </div>
 
-      <BeneficiaryContextEditor beneficiary={selected} onSaved={refetch} />
+      <BeneficiaryContextEditor beneficiary={selected} onSaved={refetch} onDeleted={refetch} />
     </div>
   )
 }

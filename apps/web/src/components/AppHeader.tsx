@@ -96,16 +96,9 @@ export function AppHeader() {
         )}
       </div>
 
-      {/* Bouton nouveau bénéficiaire — désactivé pour l'instant (un seul
-          bénéficiaire par compte ; la création initiale passe par l'écran d'accueil). */}
+      {/* Bouton nouveau bénéficiaire (masqué sur le wizard, déjà sur cet écran). */}
       {!isWizard && (
-        <Button
-          onClick={handleNew}
-          variant="ghost"
-          size="sm"
-          disabled
-          title="Bientôt disponible — un bénéficiaire par compte pour le moment"
-        >
+        <Button onClick={handleNew} variant="ghost" size="sm">
           <UserPlus size={16} />
           Nouveau bénéficiaire
         </Button>

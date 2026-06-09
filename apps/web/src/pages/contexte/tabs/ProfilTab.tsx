@@ -4,12 +4,13 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   BookOpen, Heart, Sparkles, IdCard, Mail, Notebook, ChevronRight,
-  AlertTriangle, Lock, Cake, Users, Phone, Globe, Shield, X, Plus,
+  AlertTriangle, Lock, Cake, Users, Phone, Globe, Shield, X, Plus, Trash2,
 } from 'lucide-react'
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
 import { Button } from '@/components/ui/Button'
 import { PhoneInput } from '@/components/PhoneInput'
+import { useBeneficiary } from '@/hooks/useBeneficiary'
 import { cn } from '@/lib/utils'
 import type { Beneficiary } from '@modect/shared'
 import {
@@ -30,28 +31,86 @@ export function ProfilTab({
   onSaved,
   onGoToMemory,
   memoryCount,
+  onDeleted,
 }: {
   beneficiary: Beneficiary
   onSaved: () => void
   onGoToMemory: () => void
   memoryCount: number | null
+  /** Si fourni, affiche une zone danger « Effacer » en bas (vue aidant). */
+  onDeleted?: () => void
 }) {
   return (
-    <div className="grid lg:grid-cols-3 gap-5 items-start">
-      {/* Colonne principale — portrait narratif */}
-      <div className="lg:col-span-2 space-y-5">
-        <HistoryCard beneficiary={beneficiary} onSaved={onSaved} />
-        <TastesCard beneficiary={beneficiary} onSaved={onSaved} />
-        <PersonalityCard beneficiary={beneficiary} onSaved={onSaved} />
+    <div className="space-y-5">
+      <div className="grid lg:grid-cols-3 gap-5 items-start">
+        {/* Colonne principale — portrait narratif */}
+        <div className="lg:col-span-2 space-y-5">
+          <HistoryCard beneficiary={beneficiary} onSaved={onSaved} />
+          <TastesCard beneficiary={beneficiary} onSaved={onSaved} />
+          <PersonalityCard beneficiary={beneficiary} onSaved={onSaved} />
+        </div>
+
+        {/* Colonne latérale — identité & contact */}
+        <div className="space-y-5">
+          <IdentityCard beneficiary={beneficiary} onSaved={onSaved} />
+          <RecipientsCard beneficiary={beneficiary} onSaved={onSaved} />
+          <MemoryGateway onGoToMemory={onGoToMemory} memoryCount={memoryCount} />
+        </div>
       </div>
 
-      {/* Colonne latérale — identité & contact */}
-      <div className="space-y-5">
-        <IdentityCard beneficiary={beneficiary} onSaved={onSaved} />
-        <RecipientsCard beneficiary={beneficiary} onSaved={onSaved} />
-        <MemoryGateway onGoToMemory={onGoToMemory} memoryCount={memoryCount} />
-      </div>
+      {onDeleted && <DangerZone beneficiary={beneficiary} onDeleted={onDeleted} />}
     </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Zone danger (vue aidant) — suppression définitive du bénéficiaire
+// ────────────────────────────────────────────────────────────────────────────
+
+function DangerZone({ beneficiary, onDeleted }: { beneficiary: Beneficiary; onDeleted: () => void }) {
+  const { deleteBeneficiary } = useBeneficiary(beneficiary.id)
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const target = beneficiary.last_name.trim()
+  const canDelete = confirm.trim().toLowerCase() === target.toLowerCase()
+
+  const handleDelete = async () => {
+    setBusy(true)
+    setError(null)
+    const ok = await deleteBeneficiary()
+    setBusy(false)
+    if (!ok) { setError('Impossible de supprimer ce bénéficiaire. Réessayez.'); return }
+    onDeleted()
+  }
+
+  return (
+    <section className="rounded-2xl border border-brique/25 bg-brique/[0.04] p-6">
+      <h2 className="flex items-center gap-2 font-title text-[16px] font-semibold text-brique mb-1">
+        <AlertTriangle size={17} /> Zone danger
+      </h2>
+      <p className="text-[13px] text-slate-500 mb-3">
+        Supprime <strong className="text-brun-900">{beneficiary.first_name} {beneficiary.last_name}</strong> et
+        <strong> tout son historique</strong> (appels, comptes-rendus, planning, mémoire). Action irréversible.
+      </p>
+      <p className="text-xs text-slate-500 mb-1.5">
+        Pour confirmer, saisissez le nom de famille : <strong className="text-brun-900">{target}</strong>
+      </p>
+      <div className="flex items-center gap-3 max-w-md">
+        <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={target} />
+        <Button
+          variant="destructive"
+          disabled={!canDelete || busy}
+          loading={busy}
+          onClick={handleDelete}
+          className="shrink-0"
+        >
+          <Trash2 size={15} /> Effacer
+        </Button>
+      </div>
+      {error && <p className="text-sm text-brique bg-brique/10 rounded-lg px-3 py-2 mt-3">{error}</p>}
+    </section>
   )
 }
 
