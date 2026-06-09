@@ -24,12 +24,15 @@ import { GREETING_FALLBACK_MS, GREETING_PROTECT_MAX_MS } from './greeting.js'
 // Modèle et voix surchargeables par env pour itérer sans redéploiement de code.
 // Valeur par défaut validée en test réel le 2026-05-28 (Aoede sonne mieux en
 // français que cedar côté OpenAI, conversation fluide).
-const MODEL = process.env.GEMINI_MODEL || 'models/gemini-3.1-flash-live-preview'
+const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'models/gemini-3.1-flash-live-preview'
 const VOICE = process.env.GEMINI_VOICE || 'Aoede'
 
 const ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
 
-export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, lang = 'fr' }) {
+// `model` : override par appel (test admin /admin/sante → /call). Repli sur le
+// défaut env/prod si absent. Priorité : override > GEMINI_MODEL > version prod.
+export function createGeminiBridge({ twilioWs, streamSid, opener, geminiApiKey, lang = 'fr', model }) {
+  const MODEL = (typeof model === 'string' && model.trim()) || DEFAULT_MODEL
   let setupAcked      = false
   let greetingHandled = false  // bonjour proactif envoyé
   let greetingTimer   = null

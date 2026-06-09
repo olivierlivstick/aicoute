@@ -35,6 +35,7 @@ export function AdminSantePage() {
   const [snap, setSnap] = useState<HealthSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [tab, setTab] = useState<'sante' | 'veille'>('sante')
 
   async function load() {
     setRefreshing(true)
@@ -95,53 +96,65 @@ export function AdminSantePage() {
         <p className="text-slate-400 text-sm">Chargement…</p>
       ) : (
         <>
-          {/* Pulse */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-            <PulseCard
-              icon={Clock}
-              label="Appels créés la dernière heure"
-              value={snap.callsLastHour}
-              tone={snap.callsLastHour > 0 ? 'ok' : 'idle'}
-            />
-            <PulseCard
-              icon={CheckCircle2}
-              label="Dernier appel terminé"
-              value={snap.lastCallEndedAt ? formatRelative(snap.lastCallEndedAt) : 'jamais'}
-              tone={snap.lastCallEndedAt && (Date.now() - new Date(snap.lastCallEndedAt).getTime() < 60 * 60 * 1000) ? 'ok' : 'idle'}
-            />
-          </section>
+          {/* Onglets : Santé (monitoring) / Veille (modèles + tests) */}
+          <div className="flex gap-1 mb-6 border-b border-creme-sable">
+            <TabButton active={tab === 'sante'}  onClick={() => setTab('sante')}  icon={Activity}  label="Santé" />
+            <TabButton active={tab === 'veille'} onClick={() => setTab('veille')} icon={Sparkles}  label="Veille" />
+          </div>
 
-          {/* Veille modèles voix (self-service, recherche web via Edge Fn) */}
-          <ModelWatchSection />
+          {tab === 'sante' ? (
+            <>
+              {/* Pulse */}
+              <section className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                <PulseCard
+                  icon={Clock}
+                  label="Appels créés la dernière heure"
+                  value={snap.callsLastHour}
+                  tone={snap.callsLastHour > 0 ? 'ok' : 'idle'}
+                />
+                <PulseCard
+                  icon={CheckCircle2}
+                  label="Dernier appel terminé"
+                  value={snap.lastCallEndedAt ? formatRelative(snap.lastCallEndedAt) : 'jamais'}
+                  tone={snap.lastCallEndedAt && (Date.now() - new Date(snap.lastCallEndedAt).getTime() < 60 * 60 * 1000) ? 'ok' : 'idle'}
+                />
+              </section>
 
-          {/* Test d'appel comparatif OpenAI / Gemini (téléphone uniquement) */}
-          <PhoneTestSection />
+              {/* Alertes bloquages */}
+              <StuckSection
+                title="Calls bloqués en « notified » (> 5 min)"
+                hint="Devraient être détectés par la passe B de schedule-calls. Si non vidé, le worker est en panne."
+                rows={snap.stuckNotified}
+                timeField="notified_at"
+              />
+              <StuckSection
+                title="Calls bloqués en « in_progress » (> 30 min)"
+                hint="Le bridge n'a jamais flushé save-transcript. Probable crash voice-bridge ou WS coupée sans close."
+                rows={snap.stuckInProgress}
+                timeField="scheduled_at"
+              />
+              <StuckSection
+                title="Retries planifiés en retard (passe C)"
+                hint="Calls scheduled avec attempt > 1 et scheduled_at < now - 5 min. Si non vidé, la passe C ne tourne pas."
+                rows={snap.stuckScheduled}
+                timeField="scheduled_at"
+              />
 
-          {/* Diagnostic fluidité : enregistrement de calibration + analyse fine */}
-          <FluidityDiagnosticSection />
+              {/* Diagnostic fluidité : enregistrement de calibration + analyse fine */}
+              <FluidityDiagnosticSection />
 
-          {/* Alertes bloquages */}
-          <StuckSection
-            title="Calls bloqués en « notified » (> 5 min)"
-            hint="Devraient être détectés par la passe B de schedule-calls. Si non vidé, le worker est en panne."
-            rows={snap.stuckNotified}
-            timeField="notified_at"
-          />
-          <StuckSection
-            title="Calls bloqués en « in_progress » (> 30 min)"
-            hint="Le bridge n'a jamais flushé save-transcript. Probable crash voice-bridge ou WS coupée sans close."
-            rows={snap.stuckInProgress}
-            timeField="scheduled_at"
-          />
-          <StuckSection
-            title="Retries planifiés en retard (passe C)"
-            hint="Calls scheduled avec attempt > 1 et scheduled_at < now - 5 min. Si non vidé, la passe C ne tourne pas."
-            rows={snap.stuckScheduled}
-            timeField="scheduled_at"
-          />
+              {/* Événements système — flux des 50 derniers logs structurés */}
+              <SystemEventsSection events={snap.events} />
+            </>
+          ) : (
+            <>
+              {/* Veille modèles voix (self-service, recherche web via Edge Fn) */}
+              <ModelWatchSection />
 
-          {/* Événements système — flux des 50 derniers logs structurés */}
-          <SystemEventsSection events={snap.events} />
+              {/* Test d'appel comparatif OpenAI / Gemini (téléphone uniquement) */}
+              <PhoneTestSection />
+            </>
+          )}
         </>
       )}
     </div>
@@ -326,6 +339,15 @@ const PHONE_TEST_LANGUAGES = [
 const PHONE_TEST_DEFAULT_OPENER =
   "Bonjour, c'est Olivier, je vous appelle pour prendre de vos nouvelles, comment allez-vous ?"
 const PHONE_TEST_OPENER_MAX = 500
+
+// Versions de Gemini Live testables par téléphone. Le 1er = celle EN PROD.
+// Doit rester aligné avec ALLOWED_GEMINI_MODELS (voice-bridge server.js) : une
+// valeur hors de cette whitelist serveur retombe sur le défaut prod.
+const GEMINI_TEST_MODELS = [
+  { value: 'models/gemini-3.1-flash-live-preview',                 label: '3.1 Flash Live · en prod' },
+  { value: 'models/gemini-live-2.5-flash-preview',                 label: '2.5 Flash · half-cascade (plus rapide ?)' },
+  { value: 'models/gemini-2.5-flash-native-audio-preview-09-2025', label: '2.5 Native Audio (plus expressif)' },
+]
 const VOICE_BRIDGE_URL = import.meta.env.VITE_VOICE_BRIDGE_URL as string | undefined
 
 function sanitizePhone(input: string): string {
@@ -337,6 +359,7 @@ function sanitizePhone(input: string): string {
 function PhoneTestSection() {
   const [engine, setEngine] = useState<'openai' | 'gemini'>('gemini')
   const [lang,   setLang]   = useState('fr')
+  const [geminiModel, setGeminiModel] = useState(GEMINI_TEST_MODELS[0].value)
   const [phone,  setPhone]  = useState('')
   const [opener, setOpener] = useState(PHONE_TEST_DEFAULT_OPENER)
   const [state,  setState]  = useState<'idle' | 'calling' | 'ringing'>('idle')
@@ -363,6 +386,7 @@ function PhoneTestSection() {
           opener:      opener.trim().slice(0, PHONE_TEST_OPENER_MAX) || undefined,
           engine,
           lang,
+          geminiModel: engine === 'gemini' ? geminiModel : undefined,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -397,7 +421,9 @@ function PhoneTestSection() {
             <p className="font-medium text-brun-900">Ton téléphone sonne</p>
             <p className="text-sm text-slate-500">
               Appel <span className="font-medium text-brun-700">{cleaned}</span> via{' '}
-              <span className="font-mono">{engine}</span>. Décroche pour discuter.
+              <span className="font-mono">{engine}</span>
+              {engine === 'gemini' && <> · <span className="font-mono">{geminiModel.replace('models/', '')}</span></>}
+              . Décroche pour discuter.
             </p>
             <button
               onClick={() => { setState('idle'); setError(null) }}
@@ -434,6 +460,21 @@ function PhoneTestSection() {
                 </select>
               </div>
             </div>
+
+            {/* Version Gemini — uniquement pour le moteur Gemini, pour tester
+                de nouvelles versions (half-cascade, native audio) par téléphone. */}
+            {engine === 'gemini' && (
+              <div>
+                <label htmlFor="pt-gemini-model" className="block text-xs uppercase tracking-wider text-brun-700 font-semibold mb-1.5">Version Gemini</label>
+                <select id="pt-gemini-model" value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} disabled={state === 'calling'}
+                  className="w-full px-3 py-2 bg-white border border-creme-sable rounded-lg text-sm text-brun-900 focus:outline-none focus:border-accent-600 focus:ring-2 focus:ring-accent-600/20 cursor-pointer disabled:opacity-60">
+                  {GEMINI_TEST_MODELS.map(({ value, label }) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500 font-mono break-all">{geminiModel}</p>
+              </div>
+            )}
 
             {/* Numéro */}
             <div>
@@ -676,6 +717,27 @@ function SystemEventsSection({ events }: { events: SystemEvent[] }) {
         </table>
       </div>
     </section>
+  )
+}
+
+function TabButton({ active, onClick, icon: Icon, label }: {
+  active: boolean
+  onClick: () => void
+  icon: React.ComponentType<{ size?: number; className?: string }>
+  label: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 px-4 py-2.5 -mb-px text-sm font-medium border-b-2 transition-colors ${
+        active
+          ? 'border-accent-600 text-accent-700'
+          : 'border-transparent text-brun-700 hover:text-brun-900 hover:border-creme-sable'
+      }`}
+    >
+      <Icon size={15} />
+      {label}
+    </button>
   )
 }
 

@@ -194,10 +194,28 @@ function sanitizeLang(raw) {
   return DEMO_LANGS.includes(v) ? v : 'fr'
 }
 
+// Modèles Gemini Live testables via /call (override admin pour comparer des
+// versions sans redéploiement). WHITELIST : /call est public (démo vitrine) →
+// on n'accepte qu'une liste curée, sinon on retombe sur le défaut du bridge
+// (env GEMINI_MODEL > version prod). Le 1er = défaut prod. À garder en phase
+// avec le menu déroulant de /admin/sante (PhoneTestSection, GEMINI_TEST_MODELS).
+const ALLOWED_GEMINI_MODELS = [
+  'models/gemini-3.1-flash-live-preview',
+  'models/gemini-live-2.5-flash-preview',
+  'models/gemini-2.5-flash-native-audio-preview-09-2025',
+]
+function sanitizeGeminiModel(raw) {
+  const v = String(raw ?? '').trim()
+  return ALLOWED_GEMINI_MODELS.includes(v) ? v : null
+}
+
 app.post('/call', async (req, res) => {
   try {
     const { phoneNumber, opener, engine: engineRaw, lang: langRaw } = req.body ?? {}
     const lang = sanitizeLang(langRaw)
+    // Override de version Gemini (test admin) — ignoré hors moteur Gemini et
+    // null si hors whitelist (→ le bridge prend son défaut).
+    const geminiModel = engineRaw === 'gemini' ? sanitizeGeminiModel(req.body?.geminiModel) : null
 
     const cleaned = String(phoneNumber || '').replace(/\s/g, '')
     if (!cleaned.match(/^\+\d{8,15}$/)) {
@@ -248,6 +266,7 @@ app.post('/call', async (req, res) => {
     if (openerClean) queryParts.push(`opener=${encodeURIComponent(openerClean)}`)
     queryParts.push(`engine=${encodeURIComponent(engine)}`)
     queryParts.push(`lang=${encodeURIComponent(lang)}`)
+    if (geminiModel) queryParts.push(`geminiModel=${encodeURIComponent(geminiModel)}`)
     const outgoingUrl = `${publicBase}/outgoing?${queryParts.join('&')}`
 
     // Diagnostic fluidité : si l'admin a demandé de garder des enregistrements de
@@ -302,13 +321,15 @@ app.all('/outgoing', (req, res) => {
   const opener     = (req.query.opener     ?? req.body?.opener     ?? '').toString()
   const engine     = (req.query.engine     ?? req.body?.engine     ?? 'openai').toString()
   const lang       = sanitizeLang(req.query.lang ?? req.body?.lang)
-  console.log(`📩 /outgoing reçu (engine=${engine}, lang=${lang}, demoCallId=${demoCallId ? 'yes' : 'no'}, opener=${opener ? `"${opener.substring(0, 50)}…"` : 'no'})`)
+  const geminiModel = engine === 'gemini' ? sanitizeGeminiModel(req.query.geminiModel ?? req.body?.geminiModel) : null
+  console.log(`📩 /outgoing reçu (engine=${engine}, lang=${lang}, demoCallId=${demoCallId ? 'yes' : 'no'}, opener=${opener ? `"${opener.substring(0, 50)}…"` : 'no'}${geminiModel ? `, geminiModel=${geminiModel}` : ''})`)
   // <Parameter> est retransmis à la WS dans event start (data.start.customParameters)
   const params = []
   if (demoCallId) params.push(`      <Parameter name="demoCallId" value="${escapeXml(demoCallId)}" />`)
   if (opener)     params.push(`      <Parameter name="opener" value="${escapeXml(opener)}" />`)
   params.push(`      <Parameter name="engine" value="${escapeXml(engine)}" />`)
   params.push(`      <Parameter name="lang" value="${escapeXml(lang)}" />`)
+  if (geminiModel) params.push(`      <Parameter name="geminiModel" value="${escapeXml(geminiModel)}" />`)
   const paramTags = params.join('\n') + '\n'
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -766,6 +787,7 @@ wss.on('connection', (twilioWs) => {
       const lang      = sanitizeLang(params.lang)
       demoCallId      = params.demoCallId ?? null
       engine          = params.engine === 'gemini' ? 'gemini' : 'openai'
+      const geminiModel = engine === 'gemini' ? sanitizeGeminiModel(params.geminiModel) : null
       streamStartedAt = Date.now()
 
       console.log(`✅ Stream démarré engine=${engine} lang=${lang} (${streamSid.substring(0, 12)}…${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
@@ -782,6 +804,7 @@ wss.on('connection', (twilioWs) => {
         session = createGeminiBridge({
           twilioWs, streamSid, opener, lang,
           geminiApiKey: GOOGLE_API_KEY,
+          model: geminiModel,   // null → défaut bridge (env GEMINI_MODEL > prod)
         })
       } else {
         session = createOpenaiBridge({
