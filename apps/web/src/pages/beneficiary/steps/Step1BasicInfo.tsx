@@ -92,7 +92,8 @@ export function Step1BasicInfo({ data, onNext, onPrev }: Props) {
         </div>
         <div>
           <Label>Genre</Label>
-          <div className="flex gap-3 mt-1">
+          <p className="text-xs text-slate-400 mb-1">Pour accorder le ton et les formulations.</p>
+          <div className="flex gap-3">
             {GENDERS.map(({ value, label }) => (
               <button
                 key={value}
