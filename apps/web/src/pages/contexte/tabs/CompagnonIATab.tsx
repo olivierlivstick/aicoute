@@ -322,7 +322,7 @@ function InboundOpeningCard({ beneficiary, onSaved }: CardProps) {
   const opening = inb(beneficiary).inbound_custom_prompt?.trim()
   return (
     <EditableCard
-      title="Ouverture des appels entrants"
+      title="Ouverture des appels émis"
       icon={DoorOpen}
       renderEdit={(close) => <InboundOpeningEdit beneficiary={beneficiary} onSaved={onSaved} close={close} />}
     >
