@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Archive, ArchiveRestore, Trash2, AlertTriangle } from 'lucide-react'
+import { Archive, ArchiveRestore, Trash2, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { BeneficiaryContextEditor } from '@/pages/contexte/BeneficiaryContextEditor'
+import { BeneficiaryAdminHeader } from '@/pages/contexte/BeneficiaryAdminHeader'
 import type { Beneficiary } from '@modect/shared'
 
 interface CaregiverInfo { id: string; full_name: string; email: string }
@@ -76,30 +77,14 @@ export function AdminBeneficiaireDetailPage() {
     )
   }
 
-  const fullName = `${beneficiary.first_name} ${beneficiary.last_name}`
   const confirmTarget = beneficiary.last_name.trim()
   const canDelete = confirmText.trim().toLowerCase() === confirmTarget.toLowerCase()
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 py-8">
-      <Link to="/admin/beneficiaires" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brun-700 mb-4">
-        <ArrowLeft size={15} /> Tous les bénéficiaires
-      </Link>
+    <div className="max-w-[1180px] mx-auto px-4 sm:px-6 py-8">
+      <BeneficiaryAdminHeader beneficiary={beneficiary} caregiver={caregiver} />
 
-      <header className="mb-6">
-        <p className="text-xs uppercase tracking-widest text-accent-700 font-semibold mb-1">Administration · Bénéficiaire</p>
-        <h1 className="font-serif text-3xl font-semibold text-brun-900">{fullName}</h1>
-        <p className="text-slate-500 mt-1 text-sm">
-          Aidant : {caregiver ? <strong>{caregiver.full_name || caregiver.email}</strong> : '—'}
-          {caregiver?.email && <span className="text-slate-400"> · {caregiver.email}</span>}
-          {' · '}
-          <span className={beneficiary.is_active ? 'text-sauge' : 'text-slate-400'}>
-            {beneficiary.is_active ? '● Actif' : '○ Archivé'}
-          </span>
-        </p>
-      </header>
-
-      <BeneficiaryContextEditor beneficiary={beneficiary} onSaved={load} withSchedule />
+      <BeneficiaryContextEditor beneficiary={beneficiary} onSaved={load} withSchedule withCalls />
 
       {/* Zone danger */}
       <section className="mt-10 rounded-2xl border border-brique/30 bg-brique/5 p-6">
