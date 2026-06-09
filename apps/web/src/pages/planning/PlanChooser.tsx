@@ -1,5 +1,5 @@
 import { Check, Sparkles, Phone } from 'lucide-react'
-import { PLAN_TIERS, MINUTE_PACKS } from '@modect/shared'
+import { MINUTE_PACKS } from '@modect/shared'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
 
@@ -18,8 +18,6 @@ export function PlanChooser({
   starting?: boolean
   error?: string | null
 }) {
-  const trial = PLAN_TIERS.trial
-
   return (
     <div className="space-y-6">
       {/* Carte essai gratuit — actionnable */}
@@ -28,16 +26,15 @@ export function PlanChooser({
           <Sparkles size={14} /> Offre de lancement
         </div>
         <h2 className="font-title text-2xl font-bold text-slate-800">
-          Essai gratuit — 1 mois offert
+          Essai gratuit — 30 minutes offertes
         </h2>
         <p className="text-slate-500 mt-1.5 max-w-xl">
-          Profitez de <strong>{trial.callsPerWeek} appels par semaine</strong> pendant
-          un mois, sans carte bancaire. Votre mois d'essai démarre au tout premier appel.
+          Planifier <strong>3 appels</strong>, sans carte bancaire, sans engagement.
         </p>
 
         <ul className="mt-5 space-y-2">
           {[
-            `Jusqu'à ${trial.callsPerWeek} appels par semaine`,
+            'Testez-nous sur +/- 3 conversations (selon leurs durées)',
             'Compte-rendu après chaque appel',
             'Aucune carte bancaire — sans engagement',
           ].map((f) => (
