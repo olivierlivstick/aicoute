@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { useSubscription } from '@/hooks/useSubscription'
@@ -19,6 +19,10 @@ export function useMinutesBalance() {
   const [purchases, setPurchases] = useState<MinutePurchase[]>([])
   const [consumedSeconds, setConsumedSeconds] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  // Permet de rafraîchir le solde après un crédit (saisie d'un code, achat direct).
+  const reload = useCallback(() => setReloadKey((k) => k + 1), [])
 
   useEffect(() => {
     if (!user) return
@@ -45,7 +49,7 @@ export function useMinutesBalance() {
       setLoading(false)
     })
     return () => { active = false }
-  }, [user?.id])
+  }, [user?.id, reloadKey])
 
   const purchasedMinutes = purchases.reduce((s, p) => s + p.minutes, 0)
   const trialMinutes =
@@ -62,5 +66,6 @@ export function useMinutesBalance() {
     stockMinutes,
     availableMinutes,
     loading,
+    reload,
   }
 }

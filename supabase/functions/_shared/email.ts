@@ -318,6 +318,63 @@ export function trialEndedEmailHtml(params: {
 </html>`
 }
 
+/**
+ * Email envoyé à l'acheteur d'un pack de minutes (paiement invité Stripe).
+ * Contient le CODE à usage unique + la marche à suivre pour le créditer.
+ * (Le reçu de paiement Stripe est un email distinct, géré par Stripe.)
+ */
+export function purchaseCodeEmailHtml(params: {
+  code:      string
+  pack_name: string
+  minutes:   number
+  amount_eur: number
+  app_url:   string
+}): string {
+  const { code, pack_name, minutes, amount_eur, app_url } = params
+  const fontSerif = `'Fraunces', Georgia, 'Times New Roman', serif`
+  const fontSans  = `'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif`
+  const amount = amount_eur.toFixed(2).replace('.', ',')
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#FBF5EE;font-family:${fontSans};color:#3D2817">
+  <div style="max-width:600px;margin:32px auto;background:#FFFEFA;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(199,93,58,0.10)">
+    <div style="background:#C75D3A;padding:28px 32px">
+      <h1 style="font-family:${fontSerif};color:#FFFEFA;margin:0;font-size:22px;font-weight:600">Merci pour votre achat 💛</h1>
+    </div>
+    <div style="padding:28px 32px">
+      <p style="font-size:15px;line-height:1.6;margin:0 0 18px">
+        Votre pack <strong>${escapeHtml(pack_name)}</strong> — <strong>${minutes} minutes</strong> (${amount} €) — est prêt.
+      </p>
+      <p style="font-size:15px;line-height:1.6;margin:0 0 10px">Voici votre code :</p>
+      <div style="background:#F5EBDC;border:2px dashed #C75D3A;border-radius:12px;padding:18px;text-align:center;margin:0 0 22px">
+        <span style="font-family:${fontSerif};font-size:28px;font-weight:600;letter-spacing:2px;color:#7C1F26">${escapeHtml(code)}</span>
+      </div>
+      <p style="font-size:15px;line-height:1.6;margin:0 0 8px"><strong>Pour créditer vos minutes :</strong></p>
+      <ol style="font-size:15px;line-height:1.7;margin:0 0 22px;padding-left:20px;color:#6B4423">
+        <li>Créez votre compte (ou connectez-vous) sur Aicoute.</li>
+        <li>Allez dans <strong>Mon compte → Mes achats</strong>.</li>
+        <li>Saisissez ce code : vos ${minutes} minutes sont créditées aussitôt.</li>
+      </ol>
+      <div style="text-align:center;margin:0 0 8px">
+        <a href="${app_url}" style="display:inline-block;background:#C75D3A;color:#FFFEFA;text-decoration:none;font-weight:600;padding:13px 28px;border-radius:10px;font-size:15px">
+          Créer mon compte / me connecter
+        </a>
+      </div>
+    </div>
+    <div style="background:#FBF5EE;padding:20px 32px;text-align:center;border-top:1px solid #E8DCC4">
+      <p style="color:#6B4423;font-size:13px;margin:0">© 2026 Aicoute · Une présence pour ceux que vous aimez</p>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')

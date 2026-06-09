@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { User, ShoppingBag, Wallet, Gift } from 'lucide-react'
+import { User, ShoppingBag, Wallet, Gift, Ticket, Check } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useProfile } from '@/hooks/useProfile'
 import { useMinutesBalance } from '@/hooks/useMinutesBalance'
@@ -10,7 +10,9 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { cn, formatDate } from '@/lib/utils'
-import type { MinutePurchase } from '@modect/shared'
+import { startCheckout } from '@/lib/checkout'
+import { supabase } from '@/lib/supabase'
+import { MINUTE_PACKS, type MinutePurchase, type MinutePackId } from '@modect/shared'
 
 type Tab = 'profil' | 'achats'
 
@@ -21,12 +23,42 @@ const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
 
 export function ComptePage() {
   const [tab, setTab] = useState<Tab>('profil')
+  const [purchaseBanner, setPurchaseBanner] = useState<'ok' | 'annule' | null>(null)
   const balance = useMinutesBalance()
+
+  // Retour depuis Stripe (achat direct connecté) : ?achat=ok|annule.
+  // Le crédit se fait via webhook (asynchrone) → on ouvre l'onglet achats et on
+  // rafraîchit le solde quelques secondes plus tard, puis on nettoie l'URL.
+  useEffect(() => {
+    const achat = new URLSearchParams(window.location.search).get('achat')
+    if (achat !== 'ok' && achat !== 'annule') return
+    setPurchaseBanner(achat)
+    if (achat === 'ok') {
+      setTab('achats')
+      const t1 = setTimeout(() => balance.reload(), 3000)
+      const t2 = setTimeout(() => balance.reload(), 8000)
+      window.history.replaceState({}, '', '/compte')
+      return () => { clearTimeout(t1); clearTimeout(t2) }
+    }
+    window.history.replaceState({}, '', '/compte')
+  }, [])
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 py-8">
       <h1 className="font-title text-3xl font-bold text-slate-800 mb-1">Mon compte</h1>
       <p className="text-slate-500 mb-6">Profil et achats de minutes</p>
+
+      {purchaseBanner === 'ok' && (
+        <div className="mb-6 flex items-start gap-2 rounded-xl bg-sauge/10 border border-sauge/30 px-4 py-3 text-sm text-sauge">
+          <Check size={18} className="mt-0.5 shrink-0" />
+          <span>Paiement confirmé ! Vos minutes sont créditées (le solde se met à jour dans un instant).</span>
+        </div>
+      )}
+      {purchaseBanner === 'annule' && (
+        <div className="mb-6 rounded-xl bg-slate-100 border border-slate-200 px-4 py-3 text-sm text-slate-600">
+          Paiement annulé — aucune somme n'a été débitée.
+        </div>
+      )}
 
       <MinutesBalanceCard balance={balance} />
 
@@ -49,7 +81,9 @@ export function ComptePage() {
       </div>
 
       {tab === 'profil' && <ProfilTab />}
-      {tab === 'achats' && <AchatsTab purchases={balance.purchases} loading={balance.loading} />}
+      {tab === 'achats' && (
+        <AchatsTab purchases={balance.purchases} loading={balance.loading} onReload={balance.reload} />
+      )}
     </div>
   )
 }
@@ -207,7 +241,144 @@ function ProfilTab() {
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`
 
-function AchatsTab({ purchases, loading }: { purchases: MinutePurchase[]; loading: boolean }) {
+function AchatsTab({ purchases, loading, onReload }: { purchases: MinutePurchase[]; loading: boolean; onReload: () => void }) {
+  return (
+    <div className="space-y-6">
+      <BuyPacksCard />
+      <RedeemCodeCard onRedeemed={onReload} />
+      <PurchasesHistory purchases={purchases} loading={loading} />
+    </div>
+  )
+}
+
+// ── Acheter des minutes (packs → Stripe Checkout, crédit direct au retour) ──
+function BuyPacksCard() {
+  const [loadingId, setLoadingId] = useState<MinutePackId | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const buy = async (id: MinutePackId) => {
+    setError(null)
+    setLoadingId(id)
+    try {
+      await startCheckout(id)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Le paiement n’a pas pu démarrer.')
+      setLoadingId(null)
+    }
+  }
+
+  return (
+    <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+      <h2 className="font-semibold text-slate-700 mb-1">Acheter des minutes</h2>
+      <p className="text-sm text-slate-500 mb-5">Paiement sécurisé par Stripe. Vos minutes sont créditées aussitôt.</p>
+      <div className="grid sm:grid-cols-3 gap-4">
+        {MINUTE_PACKS.map((p) => (
+          <div
+            key={p.id}
+            className={cn(
+              'rounded-xl border p-4 flex flex-col',
+              p.featured ? 'border-primary/60 bg-creme/40' : 'border-slate-200',
+            )}
+          >
+            <p className="text-xs uppercase tracking-wider text-accent-700 font-semibold">{p.name}</p>
+            <div className="mt-2 flex items-baseline gap-1.5">
+              <span className="font-title text-3xl font-bold text-brun-900">{p.minutes}</span>
+              <span className="text-sm text-slate-500">min</span>
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="font-semibold text-slate-800">{p.price} €</span>
+              {p.saving && (
+                <span className="text-[11px] font-semibold text-accent-700 bg-accent-50 rounded-full px-2 py-0.5">{p.saving}</span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">{p.perMinute}</p>
+            <Button
+              type="button"
+              className="mt-4 w-full"
+              variant={p.featured ? 'primary' : 'ghost'}
+              loading={loadingId === p.id}
+              disabled={loadingId !== null}
+              onClick={() => buy(p.id)}
+            >
+              Acheter
+            </Button>
+          </div>
+        ))}
+      </div>
+      {error && <p className="mt-3 text-sm text-brique">{error}</p>}
+    </section>
+  )
+}
+
+// ── Créditer un code d'achat (acheté en invité depuis la vitrine) ──
+function RedeemCodeCard({ onRedeemed }: { onRedeemed: () => void }) {
+  const [code, setCode] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  const submit = async () => {
+    const trimmed = code.trim()
+    if (!trimmed) return
+    setError(null)
+    setSuccess(null)
+    setLoading(true)
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('redeem-code', {
+        body: { code: trimmed },
+      })
+      if (invokeError) {
+        // Le message métier (code déjà utilisé / invalide) est dans la réponse.
+        const ctx = (invokeError as { context?: Response }).context
+        let msg = 'Ce code n’a pas pu être crédité.'
+        try { msg = (await ctx?.json())?.error ?? msg } catch { /* garde le message par défaut */ }
+        throw new Error(msg)
+      }
+      const res = data as { ok?: boolean; minutes?: number; error?: string }
+      if (!res?.ok) throw new Error(res?.error ?? 'Ce code n’a pas pu être crédité.')
+      setSuccess(`${res.minutes} minutes créditées 🎉`)
+      setCode('')
+      onRedeemed()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Une erreur est survenue.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+      <h2 className="flex items-center gap-2 font-semibold text-slate-700 mb-1">
+        <Ticket size={18} className="text-primary" /> J'ai un code
+      </h2>
+      <p className="text-sm text-slate-500 mb-4">
+        Vous avez reçu un code d'activation par email après un achat ? Saisissez-le ici pour créditer vos minutes.
+      </p>
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-end max-w-xl">
+        <div className="flex-1">
+          <Label htmlFor="code">Code d'activation</Label>
+          <Input
+            id="code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
+            placeholder="AICOUTE-XXXX-XXXX"
+            className="font-mono uppercase tracking-wider"
+            autoComplete="off"
+          />
+        </div>
+        <Button type="button" onClick={submit} loading={loading} disabled={!code.trim()}>
+          Créditer
+        </Button>
+      </div>
+      {success && <p className="mt-3 text-sm text-sauge bg-sauge/10 rounded-lg px-3 py-2">{success}</p>}
+      {error && <p className="mt-3 text-sm text-brique bg-brique/10 rounded-lg px-3 py-2">{error}</p>}
+    </section>
+  )
+}
+
+// ── Historique des achats ──
+function PurchasesHistory({ purchases, loading }: { purchases: MinutePurchase[]; loading: boolean }) {
   if (loading) {
     return (
       <div className="flex justify-center py-16">
@@ -218,11 +389,11 @@ function AchatsTab({ purchases, loading }: { purchases: MinutePurchase[]; loadin
 
   if (purchases.length === 0) {
     return (
-      <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
-        <ShoppingBag size={40} className="mx-auto text-slate-200 mb-3" />
-        <h2 className="font-title text-xl font-semibold text-slate-700 mb-2">Aucun achat pour le moment</h2>
+      <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-10 text-center">
+        <ShoppingBag size={36} className="mx-auto text-slate-200 mb-3" />
+        <h2 className="font-title text-lg font-semibold text-slate-700 mb-1">Aucun achat pour le moment</h2>
         <p className="text-slate-500 max-w-md mx-auto text-sm leading-relaxed">
-          Vos achats de packs de minutes apparaîtront ici. L'achat de packs sera disponible prochainement.
+          Vos achats de packs de minutes apparaîtront ici.
         </p>
       </div>
     )
@@ -233,6 +404,7 @@ function AchatsTab({ purchases, loading }: { purchases: MinutePurchase[]; loadin
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+      <h2 className="font-semibold text-slate-700 mb-4">Historique</h2>
       <div className="overflow-x-auto -mx-1">
         <table className="w-full text-sm border-collapse">
           <thead>

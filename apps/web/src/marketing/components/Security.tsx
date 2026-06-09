@@ -49,7 +49,7 @@ export function Security() {
         </div>
 
         <div className="mt-14 text-center">
-          <a href="#" className="inline-flex items-center gap-1.5 text-terracotta-dark font-medium link-underline">
+          <a href="/charte-ethique" className="inline-flex items-center gap-1.5 text-terracotta-dark font-medium link-underline">
             Lire notre charte éthique complète
             <Icon.ArrowRight size={16} />
           </a>

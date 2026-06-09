@@ -6,11 +6,13 @@ import { AidantOnly } from '@/components/AidantOnly'
 import { useIsAdmin } from '@/hooks/useIsAdmin'
 import { Home } from '@/marketing/Home'
 import { PublicReportPage } from '@/pages/public/PublicReport'
+import { PurchaseSuccessPage } from '@/pages/public/PurchaseSuccess'
 import { AboutPage } from '@/marketing/About'
 import { MentionsLegalesPage } from '@/marketing/legal/MentionsLegales'
 import { CGUPage } from '@/marketing/legal/CGU'
 import { RGPDPage } from '@/marketing/legal/RGPD'
 import { IAActPage } from '@/marketing/legal/IAAct'
+import { CharteEthiquePage } from '@/marketing/legal/CharteEthique'
 
 // Mono-site : la vitrine et le back-office sont la même app, servie sur deux
 // sous-domaines. Sur app.modect.com on entre dans le back-office ; ailleurs
@@ -69,12 +71,18 @@ export function App() {
             Servi sur les deux hôtes (www + app) ; data via Edge Fn get-report. */}
         <Route path="/r/:token" element={<PublicReportPage />} />
 
+        {/* Achat de minutes : page de succès Stripe (publique, achat invité).
+            Affiche le code d'activation à créditer ensuite dans /compte. */}
+        <Route path="/achat/merci" element={<PurchaseSuccessPage />} />
+        <Route path="/achat/annule" element={<Navigate to="/#tarifs" replace />} />
+
         {/* Pages de contenu (vitrine, publiques) */}
         <Route path="/a-propos" element={<AboutPage />} />
         <Route path="/mentions-legales" element={<MentionsLegalesPage />} />
         <Route path="/cgu" element={<CGUPage />} />
         <Route path="/rgpd" element={<RGPDPage />} />
         <Route path="/ia-act" element={<IAActPage />} />
+        <Route path="/charte-ethique" element={<CharteEthiquePage />} />
 
         {/* App (protégée) */}
         <Route

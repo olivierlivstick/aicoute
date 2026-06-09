@@ -1,7 +1,8 @@
 // SECTION 7 — Tarifs (3 packs de minutes, dégressif, carte centrale mise en avant)
+import { useState } from 'react'
 import { Icon } from '@/marketing/components/icons'
-import { SIGNUP_URL } from '@/config/links'
 import { MINUTE_PACKS, type MinutePack } from '@modect/shared'
+import { startCheckout } from '@/lib/checkout'
 
 const PACK_CTA = 'Choisir ce pack'
 
@@ -39,6 +40,21 @@ export function Pricing() {
 
 function PackCard({ pack }: { pack: MinutePack }) {
   const { featured } = pack
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const onBuy = async () => {
+    setError(null)
+    setLoading(true)
+    try {
+      await startCheckout(pack.id)
+      // redirection en cours — on laisse le spinner actif
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Une erreur est survenue.')
+      setLoading(false)
+    }
+  }
+
   return (
     <div
       className={`relative bg-white rounded-xl p-8 flex flex-col ${
@@ -87,17 +103,22 @@ function PackCard({ pack }: { pack: MinutePack }) {
         </p>
       </div>
 
-      <a
-        href={SIGNUP_URL}
+      <button
+        type="button"
+        onClick={onBuy}
+        disabled={loading}
         aria-label={`${PACK_CTA} — ${pack.name}, ${pack.minutes} minutes`}
-        className={`mt-8 inline-flex items-center justify-center px-6 py-3 rounded-md font-medium transition-colors ${
+        className={`mt-8 inline-flex items-center justify-center px-6 py-3 rounded-md font-medium transition-colors disabled:opacity-70 disabled:cursor-wait ${
           featured
             ? 'bg-terracotta hover:bg-terracotta-dark text-creme'
             : 'border border-terracotta text-terracotta-dark hover:bg-terracotta hover:text-creme'
         }`}
       >
-        {PACK_CTA}
-      </a>
+        {loading ? 'Redirection…' : PACK_CTA}
+      </button>
+      {error && (
+        <p className="mt-2 text-sm text-center text-[#B23A48]">{error}</p>
+      )}
     </div>
   )
 }

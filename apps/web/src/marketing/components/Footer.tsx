@@ -17,6 +17,7 @@ export function Footer() {
       title: 'Entreprise',
       links: [
         { label: 'À propos', href: '/a-propos' },
+        { label: 'Charte éthique', href: '/charte-ethique' },
         { label: 'Contact', href: '/#contact' },
       ],
     },

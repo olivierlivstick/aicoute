@@ -76,3 +76,15 @@ verify_jwt = false   # formulaire de contact public de la vitrine (#contact) →
 
 [functions.model-watch]
 verify_jwt = false   # auth gérée en interne via requireAdmin (JWT appelant) ; veille modèles voix self-service (/admin/sante)
+
+[functions.create-checkout-session]
+verify_jwt = false   # achat invité depuis la vitrine (pas d'auth) ; si JWT présent (achat back-office) on l'utilise pour le crédit direct
+
+[functions.stripe-webhook]
+verify_jwt = false   # authenticité garantie par la signature Stripe (STRIPE_WEBHOOK_SECRET), pas par un JWT
+
+[functions.get-purchase-code]
+verify_jwt = false   # page publique /achat/merci ; le session_id Stripe (cs_…) porté dans l'URL EST le secret
+
+[functions.redeem-code]
+verify_jwt = false   # auth gérée en interne via le JWT appelant ; crédite minute_purchases en service-role
