@@ -1,33 +1,34 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { User, CreditCard, Receipt, Sparkles } from 'lucide-react'
+import { User, ShoppingBag, Wallet, Gift } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useProfile } from '@/hooks/useProfile'
-import { useSubscription } from '@/hooks/useSubscription'
+import { useMinutesBalance } from '@/hooks/useMinutesBalance'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { cn, formatDate } from '@/lib/utils'
-import { PLAN_TIERS, type SubscriptionStatus } from '@modect/shared'
+import type { MinutePurchase } from '@modect/shared'
 
-type Tab = 'profil' | 'abonnement' | 'factures'
+type Tab = 'profil' | 'achats'
 
 const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
-  { id: 'profil',     label: 'Mon profil',     icon: User },
-  { id: 'abonnement', label: 'Mon abonnement', icon: CreditCard },
-  { id: 'factures',   label: 'Mes factures',   icon: Receipt },
+  { id: 'profil', label: 'Mon profil', icon: User },
+  { id: 'achats', label: 'Mes achats', icon: ShoppingBag },
 ]
 
 export function ComptePage() {
   const [tab, setTab] = useState<Tab>('profil')
+  const balance = useMinutesBalance()
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 py-8">
       <h1 className="font-title text-3xl font-bold text-slate-800 mb-1">Mon compte</h1>
-      <p className="text-slate-500 mb-6">Profil, abonnement et facturation</p>
+      <p className="text-slate-500 mb-6">Profil et achats de minutes</p>
+
+      <MinutesBalanceCard balance={balance} />
 
       {/* Onglets */}
       <div className="flex gap-1 mb-6 border-b border-slate-200">
@@ -37,28 +38,80 @@ export function ComptePage() {
             onClick={() => setTab(id)}
             className={cn(
               'flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative',
-              tab === id
-                ? 'text-primary'
-                : 'text-slate-500 hover:text-slate-700'
+              tab === id ? 'text-primary' : 'text-slate-500 hover:text-slate-700',
             )}
           >
             <Icon size={16} />
             {label}
-            {tab === id && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full" />
-            )}
+            {tab === id && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full" />}
           </button>
         ))}
       </div>
 
-      {tab === 'profil'     && <ProfilTab />}
-      {tab === 'abonnement' && <AbonnementTab />}
-      {tab === 'factures'   && <ComingSoon title="Mes factures" description="Historique des paiements et téléchargement des factures. Disponible prochainement." />}
+      {tab === 'profil' && <ProfilTab />}
+      {tab === 'achats' && <AchatsTab purchases={balance.purchases} loading={balance.loading} />}
     </div>
   )
 }
 
-// --- Onglet Profil ---
+// ────────────────────────────────────────────────────────────────────────────
+// Carte « Minutes disponibles » (stock acheté + offert − consommé)
+// ────────────────────────────────────────────────────────────────────────────
+
+function MinutesBalanceCard({ balance }: { balance: ReturnType<typeof useMinutesBalance> }) {
+  const { availableMinutes, stockMinutes, consumedMinutes, purchasedMinutes, trialMinutes, loading } = balance
+  const shown = Math.max(0, availableMinutes)
+  const valueColor =
+    availableMinutes <= 0 ? 'text-brique' : availableMinutes < 10 ? 'text-accent-700' : 'text-brun-900'
+
+  return (
+    <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-5">
+        <div className="flex items-center gap-4">
+          <span className="grid place-items-center w-12 h-12 rounded-xl bg-creme text-primary shrink-0">
+            <Wallet size={22} />
+          </span>
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Minutes disponibles</p>
+            <p className={cn('font-title text-3xl font-bold leading-tight', valueColor)}>
+              {loading ? '…' : `${shown} min`}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-stretch gap-4 text-sm">
+          <BalanceStat
+            label="Stock"
+            value={`${stockMinutes} min`}
+            sub={trialMinutes > 0 ? `dont ${trialMinutes} offertes` : purchasedMinutes > 0 ? `${purchasedMinutes} achetées` : undefined}
+          />
+          <div className="w-px bg-slate-100" />
+          <BalanceStat label="Consommé" value={`${consumedMinutes} min`} sub="reçus + émis" />
+        </div>
+      </div>
+
+      {!loading && trialMinutes > 0 && (
+        <p className="flex items-center gap-1.5 text-xs text-slate-400 mt-4">
+          <Gift size={13} className="text-primary" /> {trialMinutes} minutes offertes pendant l'essai gratuit.
+        </p>
+      )}
+    </section>
+  )
+}
+
+function BalanceStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="text-right">
+      <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">{label}</p>
+      <p className="text-lg font-semibold text-slate-800 leading-tight">{value}</p>
+      {sub && <p className="text-[11px] text-slate-400">{sub}</p>}
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Onglet Profil
+// ────────────────────────────────────────────────────────────────────────────
 
 const profileSchema = z.object({
   full_name: z.string().min(2, 'Prénom et nom requis'),
@@ -148,18 +201,13 @@ function ProfilTab() {
   )
 }
 
-// --- Onglet Abonnement ---
+// ────────────────────────────────────────────────────────────────────────────
+// Onglet Mes achats
+// ────────────────────────────────────────────────────────────────────────────
 
-const STATUS_BADGE: Record<SubscriptionStatus, { label: string; cls: string }> = {
-  trial:    { label: 'Essai gratuit', cls: 'bg-primary-50 text-primary border-primary-100' },
-  active:   { label: 'Actif',         cls: 'bg-green-50 text-green-700 border-green-100' },
-  expired:  { label: 'Expiré',        cls: 'bg-red-50 text-red-700 border-red-100' },
-  canceled: { label: 'Annulé',        cls: 'bg-slate-100 text-slate-500 border-slate-200' },
-}
+const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`
 
-function AbonnementTab() {
-  const { subscription, loading, trialDaysLeft } = useSubscription()
-
+function AchatsTab({ purchases, loading }: { purchases: MinutePurchase[]; loading: boolean }) {
   if (loading) {
     return (
       <div className="flex justify-center py-16">
@@ -168,81 +216,54 @@ function AbonnementTab() {
     )
   }
 
-  if (!subscription) {
+  if (purchases.length === 0) {
     return (
       <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
-        <h2 className="font-title text-xl font-semibold text-slate-700 mb-2">Aucun abonnement actif</h2>
-        <p className="text-slate-500 max-w-md mx-auto text-sm leading-relaxed mb-6">
-          Démarrez votre essai gratuit d'un mois (3 appels par semaine) depuis l'onglet Planning d'un bénéficiaire.
+        <ShoppingBag size={40} className="mx-auto text-slate-200 mb-3" />
+        <h2 className="font-title text-xl font-semibold text-slate-700 mb-2">Aucun achat pour le moment</h2>
+        <p className="text-slate-500 max-w-md mx-auto text-sm leading-relaxed">
+          Vos achats de packs de minutes apparaîtront ici. L'achat de packs sera disponible prochainement.
         </p>
-        <Link to="/contexte?tab=planning">
-          <Button><Sparkles size={16} /> Choisir une formule</Button>
-        </Link>
       </div>
     )
   }
 
-  const plan   = PLAN_TIERS[subscription.plan_tier]
-  const badge  = STATUS_BADGE[subscription.status]
-  const started = subscription.service_started_at
+  const totalMinutes = purchases.reduce((s, p) => s + p.minutes, 0)
+  const totalAmount = purchases.reduce((s, p) => s + p.amount_eur, 0)
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="font-semibold text-slate-700">Votre formule</h2>
-        <span className={cn('text-xs font-semibold px-2.5 py-1 rounded-full border', badge.cls)}>
-          {badge.label}
-        </span>
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wider text-slate-400">
+              <th className="font-semibold px-2 py-2.5">Date</th>
+              <th className="font-semibold px-2 py-2.5">Pack</th>
+              <th className="font-semibold px-2 py-2.5 text-right">Minutes</th>
+              <th className="font-semibold px-2 py-2.5 text-right">Montant</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {purchases.map((p) => (
+              <tr key={p.id} className="hover:bg-creme/40 transition-colors">
+                <td className="px-2 py-3 whitespace-nowrap text-slate-600">
+                  {formatDate(p.created_at, { day: '2-digit', month: 'short', year: 'numeric' })}
+                </td>
+                <td className="px-2 py-3 font-medium text-slate-800">{p.pack_name}</td>
+                <td className="px-2 py-3 text-right tabular-nums text-slate-700">{p.minutes} min</td>
+                <td className="px-2 py-3 text-right tabular-nums font-mono text-[13px] text-slate-700">{eur(p.amount_eur)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-slate-100 font-semibold text-brun-900">
+              <td className="px-2 py-3" colSpan={2}>Total ({purchases.length} achat{purchases.length > 1 ? 's' : ''})</td>
+              <td className="px-2 py-3 text-right tabular-nums">{totalMinutes} min</td>
+              <td className="px-2 py-3 text-right tabular-nums font-mono text-[13px] text-primary">{eur(totalAmount)}</td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
-
-      <div className="space-y-4">
-        <Row label="Formule" value={plan.name} />
-        <Row label="Appels inclus" value={`${plan.callsPerWeek} appel${plan.callsPerWeek > 1 ? 's' : ''} par semaine`} />
-
-        {subscription.plan_tier === 'trial' && (
-          <Row
-            label="Essai gratuit"
-            value={
-              started
-                ? `Se termine le ${formatDate(subscription.trial_ends_at ?? started, { day: 'numeric', month: 'long', year: 'numeric' })}${trialDaysLeft != null ? ` — ${trialDaysLeft} jour${trialDaysLeft > 1 ? 's' : ''} restant${trialDaysLeft > 1 ? 's' : ''}` : ''}`
-                : 'Votre mois démarre au premier appel'
-            }
-          />
-        )}
-
-        <Row
-          label="Démarrage du service"
-          value={started ? formatDate(started, { day: 'numeric', month: 'long', year: 'numeric' }) : 'En attente du premier appel'}
-        />
-      </div>
-
-      <div className="mt-6 pt-5 border-t border-slate-100">
-        <p className="text-sm text-slate-500 mb-3">
-          Le paiement des formules (Découverte, Confort, Sérénité) sera disponible prochainement.
-          À l'issue de l'essai, les appels seront mis en pause jusqu'au choix d'une formule.
-        </p>
-        <Link to="/contexte?tab=planning">
-          <Button variant="ghost">Gérer le planning d'appels</Button>
-        </Link>
-      </div>
-    </div>
-  )
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <span className="text-sm text-slate-500">{label}</span>
-      <span className="text-sm font-medium text-slate-800 text-right">{value}</span>
-    </div>
-  )
-}
-
-function ComingSoon({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
-      <h2 className="font-title text-xl font-semibold text-slate-700 mb-2">{title}</h2>
-      <p className="text-slate-500 max-w-md mx-auto text-sm leading-relaxed">{description}</p>
     </div>
   )
 }

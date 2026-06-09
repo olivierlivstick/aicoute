@@ -221,6 +221,17 @@ export interface MinutePack {
   featured: boolean
 }
 
+// Un achat de pack (table minute_purchases). Vide tant que le paiement n'est pas branché.
+export interface MinutePurchase {
+  id: string
+  caregiver_id: string
+  pack_id: string
+  pack_name: string
+  minutes: number
+  amount_eur: number
+  created_at: string
+}
+
 export const MINUTE_PACKS: MinutePack[] = [
   {
     id: 'rendezvous',
