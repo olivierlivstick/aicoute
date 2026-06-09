@@ -173,9 +173,9 @@ function AbonnementTab() {
       <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
         <h2 className="font-title text-xl font-semibold text-slate-700 mb-2">Aucun abonnement actif</h2>
         <p className="text-slate-500 max-w-md mx-auto text-sm leading-relaxed mb-6">
-          Démarrez votre essai gratuit d'un mois (3 appels par semaine) depuis la page Planning.
+          Démarrez votre essai gratuit d'un mois (3 appels par semaine) depuis l'onglet Planning d'un bénéficiaire.
         </p>
-        <Link to="/planning">
+        <Link to="/contexte?tab=planning">
           <Button><Sparkles size={16} /> Choisir une formule</Button>
         </Link>
       </div>
@@ -221,7 +221,7 @@ function AbonnementTab() {
           Le paiement des formules (Découverte, Confort, Sérénité) sera disponible prochainement.
           À l'issue de l'essai, les appels seront mis en pause jusqu'au choix d'une formule.
         </p>
-        <Link to="/planning">
+        <Link to="/contexte?tab=planning">
           <Button variant="ghost">Gérer le planning d'appels</Button>
         </Link>
       </div>

@@ -121,8 +121,9 @@ export function BeneficiaryWizard() {
     // Recharger la liste du contexte et sélectionner le nouveau bénéficiaire
     await refetch()
     selectBeneficiary(result.id)
-    // Étape suivante de l'onboarding : choix du forfait + planning des appels.
-    navigate('/planning?created=1', { replace: true })
+    // Étape suivante de l'onboarding : choix du forfait + planning des appels,
+    // désormais dans l'onglet Planning de la fiche bénéficiaire.
+    navigate('/contexte?tab=planning&created=1', { replace: true })
   }
 
   const stepProps = { data, onNext: next, onPrev: prev, onSubmit: submit, saving }

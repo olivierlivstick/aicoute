@@ -7,6 +7,7 @@ import { ProfilTab } from './tabs/ProfilTab'
 import { CompagnonIATab } from './tabs/CompagnonIATab'
 import { MemoireTab } from './tabs/MemoireTab'
 import { PlanningTab } from './tabs/PlanningTab'
+import { CaregiverPlanningTab } from './tabs/CaregiverPlanningTab'
 import { AppelsTab } from './tabs/AppelsTab'
 
 type Tab = 'profil' | 'ai' | 'memory' | 'schedule' | 'calls'
@@ -31,26 +32,36 @@ export function BeneficiaryContextEditor({
   onSaved,
   withSchedule = false,
   withCalls = false,
+  withCaregiverPlanning = false,
+  initialTab,
+  showCreatedBanner = false,
   onDeleted,
 }: {
   beneficiary: Beneficiary
   onSaved: () => void
-  /** Onglet « Planning » (édition gardée par confirmation). Réservé à l'admin. */
+  /** Onglet « Planning » admin : lecture seule + édition gardée par confirmation. */
   withSchedule?: boolean
   /** Onglet « Appels » (graphe minutes + coûts). Réservé à l'admin. */
   withCalls?: boolean
+  /** Onglet « Planning » aidant : abonnement/essai + édition directe du planning. */
+  withCaregiverPlanning?: boolean
+  /** Onglet ouvert au montage (sinon « Profil »). */
+  initialTab?: Tab
+  /** Bannière « fiche créée » dans l'onglet Planning aidant (après le wizard). */
+  showCreatedBanner?: boolean
   /** Si fourni, affiche une zone danger « Effacer » en bas de l'onglet Profil
    *  (vue aidant). L'admin a sa propre zone danger au niveau de la page. */
   onDeleted?: () => void
 }) {
-  const [tab, setTab] = useState<Tab>('profil')
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'profil')
   const { memories, loading: memoriesLoading } = useMemories(beneficiary.id)
 
+  const hasPlanning = withSchedule || withCaregiverPlanning
   const tabs: TabDef[] = [
     { id: 'profil', label: 'Profil', icon: IdCard },
     { id: 'ai', label: 'Compagnon IA', icon: Bot },
     { id: 'memory', label: 'Mémoire', icon: Notebook },
-    ...(withSchedule ? [{ id: 'schedule' as Tab, label: 'Planning', icon: CalendarClock }] : []),
+    ...(hasPlanning ? [{ id: 'schedule' as Tab, label: 'Planning', icon: CalendarClock }] : []),
     ...(withCalls ? [{ id: 'calls' as Tab, label: 'Appels', icon: Phone }] : []),
   ]
 
@@ -87,6 +98,9 @@ export function BeneficiaryContextEditor({
       {tab === 'ai' && <CompagnonIATab beneficiary={beneficiary} onSaved={onSaved} />}
       {tab === 'memory' && <MemoireTab beneficiary={beneficiary} />}
       {tab === 'schedule' && withSchedule && <PlanningTab beneficiary={beneficiary} onSaved={onSaved} />}
+      {tab === 'schedule' && withCaregiverPlanning && !withSchedule && (
+        <CaregiverPlanningTab beneficiary={beneficiary} onSaved={onSaved} showCreatedBanner={showCreatedBanner} />
+      )}
       {tab === 'calls' && withCalls && <AppelsTab beneficiary={beneficiary} />}
     </div>
   )

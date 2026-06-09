@@ -28,7 +28,6 @@ import { ResetPasswordPage } from '@/pages/auth/ResetPassword'
 import { DashboardPage } from '@/pages/dashboard/Dashboard'
 import { BeneficiaryWizard } from '@/pages/beneficiary/BeneficiaryWizard'
 import { ContextePage } from '@/pages/contexte/ContextePage'
-import { PlanningPage } from '@/pages/planning/PlanningPage'
 import { HistoriquePage } from '@/pages/historique/HistoriquePage'
 import { CallDetailPage } from '@/pages/historique/CallDetail'
 import { VeillePage } from '@/pages/veille/VeillePage'
@@ -89,7 +88,6 @@ export function App() {
               est redirigé vers /admin par <AidantOnly>. */}
           <Route path="/dashboard"       element={<AidantOnly><DashboardPage /></AidantOnly>} />
           <Route path="/contexte"        element={<ContextePage />} />
-          <Route path="/planning"        element={<PlanningPage />} />
           <Route path="/historique"      element={<HistoriquePage />} />
           <Route path="/historique/:id"  element={<CallDetailPage />} />
           <Route path="/veille"          element={<VeillePage />} />
@@ -113,7 +111,9 @@ export function App() {
           <Route path="/admin/prompt"        element={<RequireAdmin><AdminPromptPage       /></RequireAdmin>} />
 
           {/* --- Redirections legacy --- */}
-          <Route path="/sessions"        element={<Navigate to="/planning"   replace />} />
+          {/* Planning n'est plus une page : il vit dans un onglet de la fiche bénéficiaire. */}
+          <Route path="/planning"        element={<Navigate to="/contexte?tab=planning" replace />} />
+          <Route path="/sessions"        element={<Navigate to="/contexte?tab=planning" replace />} />
           <Route path="/reports"         element={<Navigate to="/historique" replace />} />
           <Route path="/reports/:id"     element={<LegacyReportRedirect />} />
           <Route path="/settings"        element={<Navigate to="/compte"     replace />} />

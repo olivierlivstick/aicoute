@@ -260,7 +260,7 @@ function UpcomingCallsTab({ schedules, loading }: { schedules: SessionSchedule[]
       <div className="text-center py-16 bg-white rounded-2xl border border-slate-100">
         <CalendarClock size={40} className="mx-auto text-slate-200 mb-3" />
         <p className="text-slate-400 mb-2">Aucun planning enregistré pour ce bénéficiaire.</p>
-        <Link to="/planning" className="text-primary text-sm font-medium hover:underline">
+        <Link to="/contexte?tab=planning" className="text-primary text-sm font-medium hover:underline">
           Créer le planning →
         </Link>
       </div>
@@ -272,7 +272,7 @@ function UpcomingCallsTab({ schedules, loading }: { schedules: SessionSchedule[]
       <div className="text-center py-16 bg-white rounded-2xl border border-slate-100">
         <CalendarClock size={40} className="mx-auto text-slate-200 mb-3" />
         <p className="text-slate-400 mb-2">Le planning est en pause.</p>
-        <Link to="/planning" className="text-primary text-sm font-medium hover:underline">
+        <Link to="/contexte?tab=planning" className="text-primary text-sm font-medium hover:underline">
           Réactiver le planning →
         </Link>
       </div>

@@ -2,7 +2,6 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   BookHeart,
-  CalendarDays,
   Phone,
   Radar,
   UserCog,
@@ -19,7 +18,6 @@ import { SelectedBeneficiaryProvider } from '@/hooks/useSelectedBeneficiary'
 const mainNav = [
   { to: '/dashboard',  icon: LayoutDashboard, label: 'Tableau de bord' },
   { to: '/contexte',   icon: BookHeart,       label: 'Bénéficiaires' },
-  { to: '/planning',   icon: CalendarDays,    label: 'Planning' },
   { to: '/historique', icon: Phone,           label: 'Appels' },
   { to: '/veille',     icon: Radar,           label: 'Veille' },
 ]

@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { UserPlus } from 'lucide-react'
 import { useSelectedBeneficiary } from '@/hooks/useSelectedBeneficiary'
 import { Button } from '@/components/ui/Button'
@@ -6,6 +6,9 @@ import { BeneficiaryContextEditor } from './BeneficiaryContextEditor'
 
 export function ContextePage() {
   const { selected, refetch } = useSelectedBeneficiary()
+  const [searchParams] = useSearchParams()
+  const initialTab = searchParams.get('tab') === 'planning' ? 'schedule' : undefined
+  const showCreatedBanner = searchParams.get('created') === '1'
 
   if (!selected) {
     return <EmptyState />
@@ -20,7 +23,14 @@ export function ContextePage() {
         </p>
       </div>
 
-      <BeneficiaryContextEditor beneficiary={selected} onSaved={refetch} onDeleted={refetch} />
+      <BeneficiaryContextEditor
+        beneficiary={selected}
+        onSaved={refetch}
+        onDeleted={refetch}
+        withCaregiverPlanning
+        initialTab={initialTab}
+        showCreatedBanner={showCreatedBanner}
+      />
     </div>
   )
 }
