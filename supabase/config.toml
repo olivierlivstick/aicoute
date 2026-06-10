@@ -88,3 +88,6 @@ verify_jwt = false   # page publique /achat/merci ; le session_id Stripe (cs_…
 
 [functions.redeem-code]
 verify_jwt = false   # auth gérée en interne via le JWT appelant ; crédite minute_purchases en service-role
+
+[functions.admin-credit-minutes]
+verify_jwt = false   # auth gérée en interne via requireAdmin (JWT appelant) ; crédite minute_adjustments en service-role

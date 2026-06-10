@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
-import { useSubscription } from '@/hooks/useSubscription'
 
 // Minutes offertes pendant l'essai (cf. useMinutesBalance — même valeur).
 const TRIAL_FREE_MINUTES = 30
@@ -13,48 +12,65 @@ export interface LedgerEntry {
   credit: number          // minutes créditées (0 si débit)
   debit: number           // minutes débitées (0 si crédit)
   balance: number         // solde cumulé APRÈS cette opération
-  kind: 'trial' | 'purchase' | 'call'
+  kind: 'trial' | 'purchase' | 'call' | 'adjustment'
 }
 
 /**
  * Relevé de compte de minutes (crédit / débit / solde), calculé À LA VOLÉE à
- * partir des sources de vérité — PAS de table dédiée (qui dériverait) :
- *   crédits = minute_purchases (+ 30 min offertes de l'essai)
+ * partir des sources de vérité — PAS de table dédiée :
+ *   crédits = minute_purchases + crédits admin (minute_adjustments) + 30 min essai
  *   débits  = appels `completed` (reçus + émis), arrondis à la minute SUPÉRIEURE
- *             par appel (« toute minute entamée est due ») — même règle que la
- *             carte « Minutes disponibles » (useMinutesBalance) → les deux
- *             totaux se réconcilient toujours.
- * Le solde cumulé est calculé du plus ancien au plus récent, puis la liste est
- * renvoyée du plus récent au plus ancien (pour l'affichage).
+ *             par appel — même règle que la carte « Minutes disponibles ».
+ * Solde cumulé du plus ancien au plus récent, renvoyé du plus récent au plus ancien.
+ *
+ * `caregiverId` optionnel : par défaut l'utilisateur connecté ; renseigné, lit le
+ * relevé d'un autre aidant (vue admin, autorisée par la RLS admin).
  */
-export function useMinuteLedger() {
+export function useMinuteLedger(caregiverId?: string) {
   const { user } = useAuth()
-  const { subscription } = useSubscription()
+  const id = caregiverId ?? user?.id ?? null
   const [entries, setEntries] = useState<LedgerEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  const reload = () => setReloadKey((k) => k + 1)
 
   useEffect(() => {
-    if (!user) return
+    if (!id) return
     let active = true
     setLoading(true)
     Promise.all([
       supabase
         .from('minute_purchases')
         .select('id, pack_name, minutes, created_at')
-        .eq('caregiver_id', user.id),
+        .eq('caregiver_id', id),
       supabase
         .from('calls')
         .select('id, duration_seconds, ended_at, started_at, scheduled_at, origin, beneficiaries!inner(first_name, caregiver_id)')
-        .eq('beneficiaries.caregiver_id', user.id)
+        .eq('beneficiaries.caregiver_id', id)
         .eq('status', 'completed'),
-    ]).then(([pRes, cRes]) => {
+      // Crédits admin. On NE lit PAS le motif : côté aidant c'est volontairement
+      // neutre (« Minutes offertes ») — le motif reste interne (vu côté admin).
+      supabase
+        .from('minute_adjustments')
+        .select('id, minutes, created_at')
+        .eq('caregiver_id', id),
+      supabase
+        .from('subscriptions')
+        .select('plan_tier, status, created_at, service_started_at')
+        .eq('caregiver_id', id)
+        .in('status', ['trial', 'active'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]).then(([pRes, cRes, aRes, sRes]) => {
       if (!active) return
 
       const raw: Omit<LedgerEntry, 'balance'>[] = []
 
       // Crédit d'ouverture : minutes offertes de l'essai (si essai en cours).
-      if (subscription?.plan_tier === 'trial' && subscription.status === 'trial') {
-        const sub = subscription as unknown as { created_at?: string; service_started_at?: string | null }
+      const sub = sRes.data as { plan_tier?: string; status?: string; created_at?: string; service_started_at?: string | null } | null
+      if (sub?.plan_tier === 'trial' && sub.status === 'trial') {
         raw.push({
           id: 'trial',
           date: sub.created_at ?? sub.service_started_at ?? new Date(0).toISOString(),
@@ -74,6 +90,20 @@ export function useMinuteLedger() {
           credit: p.minutes,
           debit: 0,
           kind: 'purchase',
+        })
+      }
+
+      // Crédits admin (geste commercial / cadeau / test prolongé). Libellé neutre.
+      for (const a of (aRes.data as Array<{ id: string; minutes: number; created_at: string }> | null) ?? []) {
+        const m = a.minutes ?? 0
+        if (m === 0) continue
+        raw.push({
+          id: `a_${a.id}`,
+          date: a.created_at,
+          label: m > 0 ? 'Minutes offertes' : 'Ajustement',
+          credit: m > 0 ? m : 0,
+          debit: m < 0 ? -m : 0,
+          kind: 'adjustment',
         })
       }
 
@@ -109,7 +139,7 @@ export function useMinuteLedger() {
       setLoading(false)
     })
     return () => { active = false }
-  }, [user?.id, subscription?.id])
+  }, [id, reloadKey])
 
-  return { entries, loading }
+  return { entries, loading, reload }
 }

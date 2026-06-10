@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, ShieldCheck, Trash2, AlertTriangle, Check, Users } from 'lucide-react'
+import { ArrowLeft, ShieldCheck, Trash2, AlertTriangle, Check, Users, User, ScrollText, ShoppingBag, Gift } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
+import { cn, formatDate } from '@/lib/utils'
+import { useMinutesBalance } from '@/hooks/useMinutesBalance'
+import { useMinuteLedger } from '@/hooks/useMinuteLedger'
+import { MinutesBalanceCard, LedgerTable, PurchasesTable } from '@/pages/compte/MinutesViews'
 
 interface ProfileRow {
   id:         string
@@ -26,6 +30,7 @@ export function AdminCompteDetailPage() {
   const [bens, setBens]         = useState<BenLite[]>([])
   const [loading, setLoading]   = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [tab, setTab]           = useState<'profil' | 'solde' | 'achats'>('profil')
 
   // Form
   const [fullName, setFullName] = useState('')
@@ -129,6 +134,32 @@ export function AdminCompteDetailPage() {
         </p>
       </header>
 
+      {/* Onglets (miroir du « Mon compte » de l'aidant) */}
+      <div className="flex gap-1 mb-6 border-b border-slate-200">
+        {([
+          { id: 'profil', label: 'Profil', icon: User },
+          { id: 'solde',  label: 'Son solde', icon: ScrollText },
+          { id: 'achats', label: 'Ses achats', icon: ShoppingBag },
+        ] as const).map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={cn(
+              'flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative',
+              tab === id ? 'text-primary' : 'text-slate-500 hover:text-slate-700',
+            )}
+          >
+            <Icon size={16} />
+            {label}
+            {tab === id && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full" />}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'solde'  && <AdminSoldeTab caregiverId={profile.id} />}
+      {tab === 'achats' && <AdminAchatsTab caregiverId={profile.id} />}
+
+      {tab === 'profil' && (<>
       {/* Formulaire d'édition */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
         <h2 className="font-serif text-lg font-semibold text-brun-900 mb-4">Informations du compte</h2>
@@ -255,6 +286,161 @@ export function AdminCompteDetailPage() {
           )}
         </div>
       </section>
+      </>)}
     </div>
   )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Onglet « Son solde » (admin) : carte solde + CTA créditer + historique + relevé
+// ────────────────────────────────────────────────────────────────────────────
+
+function AdminSoldeTab({ caregiverId }: { caregiverId: string }) {
+  const balance = useMinutesBalance(caregiverId)
+  const ledger  = useMinuteLedger(caregiverId)
+
+  const refresh = () => { balance.reload(); ledger.reload() }
+
+  return (
+    <div className="space-y-6">
+      <MinutesBalanceCard balance={balance} />
+      <CreditMinutesCard caregiverId={caregiverId} onCredited={refresh} />
+      <LedgerTable entries={ledger.entries} loading={ledger.loading} />
+    </div>
+  )
+}
+
+// ── CTA : créditer des minutes (geste commercial) + historique des crédits ──
+const CREDIT_PRESETS = ['Geste commercial', 'Cadeau', 'Test prolongé']
+
+interface AdjustmentRow { id: string; minutes: number; reason: string; created_at: string }
+
+function CreditMinutesCard({ caregiverId, onCredited }: { caregiverId: string; onCredited: () => void }) {
+  const [minutes, setMinutes] = useState('')
+  const [reason, setReason]   = useState(CREDIT_PRESETS[0])
+  const [busy, setBusy]       = useState(false)
+  const [msg, setMsg]         = useState<string | null>(null)
+  const [error, setError]     = useState<string | null>(null)
+  const [history, setHistory] = useState<AdjustmentRow[]>([])
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    supabase
+      .from('minute_adjustments')
+      .select('id, minutes, reason, created_at')
+      .eq('caregiver_id', caregiverId)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { if (active) setHistory((data as AdjustmentRow[] | null) ?? []) })
+    return () => { active = false }
+  }, [caregiverId, reloadKey])
+
+  const submit = async () => {
+    const n = Number(minutes)
+    if (!Number.isInteger(n) || n <= 0) { setError('Saisissez un nombre de minutes entier positif.'); return }
+    if (!reason.trim()) { setError('Un motif est requis.'); return }
+    setError(null); setMsg(null); setBusy(true)
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('admin-credit-minutes', {
+        body: { caregiver_id: caregiverId, minutes: n, reason: reason.trim() },
+      })
+      if (invokeError) {
+        const ctx = (invokeError as { context?: Response }).context
+        let m = 'Le crédit a échoué.'
+        try { m = (await ctx?.json())?.error ?? m } catch { /* défaut */ }
+        throw new Error(m)
+      }
+      const res = data as { ok?: boolean; minutes?: number; error?: string }
+      if (!res?.ok) throw new Error(res?.error ?? 'Le crédit a échoué.')
+      setMsg(`${res.minutes} minutes créditées.`)
+      setMinutes('')
+      setReloadKey((k) => k + 1)  // recharge l'historique
+      onCredited()                // recharge le solde + relevé
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Une erreur est survenue.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="bg-white rounded-2xl border border-primary/30 shadow-sm p-6">
+      <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-brun-900 mb-1">
+        <Gift size={18} className="text-primary" /> Créditer des minutes
+      </h2>
+      <p className="text-sm text-slate-500 mb-4">
+        Geste commercial, cadeau, test prolongé… Les minutes sont créditées aussitôt et apparaissent
+        chez l'aidant comme « Minutes offertes » (le motif reste interne).
+      </p>
+
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+        <div className="w-32">
+          <Label htmlFor="credit_minutes">Minutes</Label>
+          <Input
+            id="credit_minutes"
+            type="number"
+            min={1}
+            value={minutes}
+            onChange={(e) => setMinutes(e.target.value)}
+            placeholder="30"
+          />
+        </div>
+        <div className="flex-1">
+          <Label htmlFor="credit_reason">Motif (interne)</Label>
+          <Input
+            id="credit_reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Geste commercial"
+          />
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {CREDIT_PRESETS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setReason(p)}
+                className={cn(
+                  'px-2.5 py-1 rounded-full text-xs border transition-colors',
+                  reason === p
+                    ? 'bg-primary/10 border-primary/40 text-primary'
+                    : 'border-slate-200 text-slate-500 hover:border-slate-300',
+                )}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Button type="button" onClick={submit} loading={busy} className="shrink-0">
+          Créditer
+        </Button>
+      </div>
+
+      {msg && <p className="mt-3 text-sm text-sauge bg-sauge/10 rounded-lg px-3 py-2">{msg}</p>}
+      {error && <p className="mt-3 text-sm text-brique bg-brique/10 rounded-lg px-3 py-2">{error}</p>}
+
+      {history.length > 0 && (
+        <div className="mt-5 pt-4 border-t border-slate-100">
+          <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-2">Crédits accordés</p>
+          <ul className="space-y-1.5 text-sm">
+            {history.map((h) => (
+              <li key={h.id} className="flex items-center gap-3 text-slate-600">
+                <span className="text-slate-400 w-20 shrink-0">
+                  {formatDate(h.created_at, { day: '2-digit', month: 'short', year: 'numeric' })}
+                </span>
+                <span className="font-medium text-sauge w-14 shrink-0 tabular-nums">+{h.minutes} min</span>
+                <span className="text-slate-500 truncate">{h.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  )
+}
+
+// ── Onglet « Ses achats » (admin) ──
+function AdminAchatsTab({ caregiverId }: { caregiverId: string }) {
+  const balance = useMinutesBalance(caregiverId)
+  return <PurchasesTable purchases={balance.purchases} loading={balance.loading} />
 }
