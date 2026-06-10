@@ -17,7 +17,7 @@ export function useMinutesBalance() {
   const { user } = useAuth()
   const { subscription } = useSubscription()
   const [purchases, setPurchases] = useState<MinutePurchase[]>([])
-  const [consumedSeconds, setConsumedSeconds] = useState(0)
+  const [consumedMinutes, setConsumedMinutes] = useState(0)
   const [loading, setLoading] = useState(true)
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -43,9 +43,11 @@ export function useMinutesBalance() {
     ]).then(([pRes, cRes]) => {
       if (!active) return
       setPurchases((pRes.data as MinutePurchase[] | null) ?? [])
-      const secs = ((cRes.data as { duration_seconds: number | null }[] | null) ?? [])
-        .reduce((s, c) => s + (c.duration_seconds ?? 0), 0)
-      setConsumedSeconds(secs)
+      // Arrondi à la minute SUPÉRIEURE par appel (« toute minute entamée est due »).
+      // Même règle que le relevé (useMinuteLedger) → carte et relevé se réconcilient.
+      const mins = ((cRes.data as { duration_seconds: number | null }[] | null) ?? [])
+        .reduce((s, c) => s + Math.ceil((c.duration_seconds ?? 0) / 60), 0)
+      setConsumedMinutes(mins)
       setLoading(false)
     })
     return () => { active = false }
@@ -54,7 +56,6 @@ export function useMinutesBalance() {
   const purchasedMinutes = purchases.reduce((s, p) => s + p.minutes, 0)
   const trialMinutes =
     subscription?.plan_tier === 'trial' && subscription.status === 'trial' ? TRIAL_FREE_MINUTES : 0
-  const consumedMinutes = Math.round(consumedSeconds / 60)
   const stockMinutes = trialMinutes + purchasedMinutes
   const availableMinutes = stockMinutes - consumedMinutes
 

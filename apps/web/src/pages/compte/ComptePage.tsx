@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { User, ShoppingBag, Wallet, Gift, Ticket, Check } from 'lucide-react'
+import { User, ShoppingBag, Wallet, Gift, Ticket, Check, ScrollText } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useProfile } from '@/hooks/useProfile'
 import { useMinutesBalance } from '@/hooks/useMinutesBalance'
+import { useMinuteLedger, type LedgerEntry } from '@/hooks/useMinuteLedger'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -14,10 +15,11 @@ import { startCheckout } from '@/lib/checkout'
 import { supabase } from '@/lib/supabase'
 import { MINUTE_PACKS, type MinutePurchase, type MinutePackId } from '@modect/shared'
 
-type Tab = 'profil' | 'achats'
+type Tab = 'profil' | 'solde' | 'achats'
 
 const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: 'profil', label: 'Mon profil', icon: User },
+  { id: 'solde',  label: 'Mon solde', icon: ScrollText },
   { id: 'achats', label: 'Mes achats', icon: ShoppingBag },
 ]
 
@@ -81,6 +83,7 @@ export function ComptePage() {
       </div>
 
       {tab === 'profil' && <ProfilTab />}
+      {tab === 'solde' && <SoldeTab />}
       {tab === 'achats' && (
         <AchatsTab purchases={balance.purchases} loading={balance.loading} onReload={balance.reload} />
       )}
@@ -231,6 +234,79 @@ function ProfilTab() {
 
         <Button type="submit" loading={loading}>Enregistrer</Button>
       </form>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Onglet Mon solde — relevé de compte de minutes (crédit / débit / solde)
+// ────────────────────────────────────────────────────────────────────────────
+
+function SoldeTab() {
+  const { entries, loading } = useMinuteLedger()
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-16">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
+        <ScrollText size={40} className="mx-auto text-slate-200 mb-3" />
+        <h2 className="font-title text-xl font-semibold text-slate-700 mb-2">Aucune opération pour le moment</h2>
+        <p className="text-slate-500 max-w-md mx-auto text-sm leading-relaxed">
+          Vos achats de minutes et vos appels apparaîtront ici, avec le solde mis à jour à chaque opération.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+      <h2 className="font-semibold text-slate-700 mb-1">Relevé de mon compte de minutes</h2>
+      <p className="text-sm text-slate-500 mb-4">
+        Crédits (achats, minutes offertes) et débits (appels reçus et émis), du plus récent au plus ancien.
+        Chaque appel est compté à la minute supérieure.
+      </p>
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wider text-slate-400">
+              <th className="font-semibold px-2 py-2.5">Date</th>
+              <th className="font-semibold px-2 py-2.5">Opération</th>
+              <th className="font-semibold px-2 py-2.5 text-right">Crédit</th>
+              <th className="font-semibold px-2 py-2.5 text-right">Débit</th>
+              <th className="font-semibold px-2 py-2.5 text-right">Solde</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {entries.map((e: LedgerEntry) => (
+              <tr key={e.id} className="hover:bg-creme/40 transition-colors">
+                <td className="px-2 py-3 whitespace-nowrap text-slate-600">
+                  {formatDate(e.date, { day: '2-digit', month: 'short', year: 'numeric' })}
+                </td>
+                <td className="px-2 py-3 text-slate-800">{e.label}</td>
+                <td className="px-2 py-3 text-right tabular-nums font-medium text-sauge">
+                  {e.credit > 0 ? `+${e.credit}` : ''}
+                </td>
+                <td className="px-2 py-3 text-right tabular-nums text-slate-500">
+                  {e.debit > 0 ? `−${e.debit}` : ''}
+                </td>
+                <td className={cn(
+                  'px-2 py-3 text-right tabular-nums font-semibold',
+                  e.balance < 0 ? 'text-brique' : 'text-brun-900',
+                )}>
+                  {e.balance}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
