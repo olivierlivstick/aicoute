@@ -27,7 +27,7 @@ import twilio from 'twilio'
 import 'dotenv/config'
 
 import { rateLimit, LIMITS } from './rateLimit.js'
-import { recordDemoStart, recordDemoEnd, recordDemoRealCost, computeAiCostEur } from './tracking.js'
+import { recordDemoStart, recordDemoEnd, recordDemoRealCost, recordDemoTwilioSid, computeAiCostEur } from './tracking.js'
 import { createOpenaiBridge } from './engines/openai-bridge.js'
 import { createGeminiBridge } from './engines/gemini-bridge.js'
 import { createGeminiBridgeWeb } from './engines/gemini-bridge-web.js'
@@ -43,7 +43,7 @@ import {
   listCallsMissingTwilioCost,
 } from './persistence/modect-call.js'
 import { logEvent as logSystemEvent } from './persistence/system-events.js'
-import { readAppSettings, setKeepRecording, storeRecordingWav } from './persistence/fluidity-diagnostic.js'
+import { readAppSettings, storeRecordingWav, attachRecordingPath } from './persistence/fluidity-diagnostic.js'
 import { acquireCallSlot, releaseCallSlot } from './concurrency.js'
 import {
   findBeneficiaryForInbound,
@@ -60,6 +60,14 @@ const MAX_CALL_SECONDS = Number(process.env.MAX_CALL_SECONDS || 240)
 const MAX_SCHEDULED_CALL_SECONDS = Number(process.env.MAX_SCHEDULED_CALL_SECONDS || 900)
 // Sonnerie max côté Twilio avant de basculer en no-answer (passe B prend ensuite le relais)
 const SCHEDULED_RING_TIMEOUT = Number(process.env.SCHEDULED_RING_TIMEOUT || 30)
+
+// Enregistrement systématique des appels (phase de TEST — analyse qualité). Met
+// TOUS les appels (démo + planifiés + entrants) en dual-channel Twilio → le WAV
+// est récupéré par /recording-status, déposé dans Storage et rattaché à sa ligne
+// d'appel (bouton « .wav » dans /admin/appels). ⚠️ RGPD : enregistre aussi les
+// bénéficiaires (override de la restriction « démos/test seulement »). Kill-switch :
+// RECORD_ALL_CALLS=0. À repenser avant la mise en production réelle.
+const RECORD_ALL_CALLS = process.env.RECORD_ALL_CALLS !== '0'
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
@@ -272,41 +280,17 @@ app.post('/call', async (req, res) => {
     if (geminiModel) queryParts.push(`geminiModel=${encodeURIComponent(geminiModel)}`)
     const outgoingUrl = `${publicBase}/outgoing?${queryParts.join('&')}`
 
-    // Diagnostic fluidité : si l'admin a demandé de garder des enregistrements de
-    // calibration (compteur > 0 dans app_settings), on enregistre CET appel démo
-    // en dual-channel (canal 1 = appelé, canal 2 = IA) et on décrémente. Le WAV
-    // est récupéré + déposé dans Storage par /recording-status. Best-effort : si la
-    // lecture des réglages échoue, on n'enregistre pas (comportement par défaut).
-    const callParams = { to: cleaned, from: TWILIO_NUMBER, url: outgoingUrl }
-    try {
-      const { diagnosticEnabled, keepRecordingRemaining } = await readAppSettings()
-      console.log(`• [diag] app_settings au moment de l'appel: enabled=${diagnosticEnabled} keepRec=${keepRecordingRemaining}`)
-      // Trace visible dans /admin/sante (« Événements système ») — indépendant des
-      // logs Render. Prouve que ce build lit bien app_settings et avec quelle valeur.
-      void logSystemEvent({
-        level:   'info',
-        source:  'voice-bridge/fluidity-diag',
-        message: `/call : app_settings lus — enabled=${diagnosticEnabled}, keepRec=${keepRecordingRemaining}`,
-        payload: { enabled: diagnosticEnabled, keepRec: keepRecordingRemaining },
-      })
-      if (keepRecordingRemaining > 0) {
-        callParams.record                       = true
-        callParams.recordingChannels            = 'dual'
-        callParams.recordingStatusCallback      = `${publicBase}/recording-status`
-        callParams.recordingStatusCallbackEvent = ['completed']
-        await setKeepRecording(keepRecordingRemaining - 1)
-        console.log(`🎙️  [diag] enregistrement de calibration activé (restants après: ${keepRecordingRemaining - 1})`)
-      }
-    } catch (err) {
-      console.error('⚠️  [diag] lecture app_settings échouée, pas d\'enregistrement:', err?.message || err)
-      void logSystemEvent({
-        level:   'error',
-        source:  'voice-bridge/fluidity-diag',
-        message: `/call : lecture app_settings échouée — ${err?.message || err}`,
-      })
-    }
+    // Enregistrement : on enregistre TOUTES les démos en dual-channel (canal 1 =
+    // appelé, canal 2 = IA) tant que RECORD_ALL_CALLS != 0. Le WAV est récupéré +
+    // déposé dans Storage par /recording-status, puis rattaché à cette ligne
+    // demo_calls via le CallSid (cf. recordDemoTwilioSid ci-dessous).
+    const callParams = { to: cleaned, from: TWILIO_NUMBER, url: outgoingUrl, ...recordingRestParams(publicBase) }
 
     const call = await twilioClient.calls.create(callParams)
+
+    // Corrélation WAV ↔ ligne démo : le callback /recording-status est keyé par
+    // CallSid, qu'on ne connaît qu'ici. Best-effort, ne bloque pas la réponse.
+    if (demoCallId) void recordDemoTwilioSid(demoCallId, call.sid)
 
     console.log(`📞 Appel sortant initié vers ${maskNumber(cleaned)} engine=${engine} lang=${lang} (sid: ${call.sid}${demoCallId ? `, demoId: ${demoCallId.substring(0, 8)}…` : ''})`)
     res.json({ ok: true, callSid: call.sid })
@@ -348,12 +332,29 @@ function escapeXml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-// --- Callback d'enregistrement (Diagnostic fluidité, calibration) ----------
+/**
+ * Paramètres d'enregistrement dual-channel pour twilioClient.calls.create()
+ * (appels SORTANTS : démos + planifiés). Canal 1 = interlocuteur, canal 2 = IA.
+ * Twilio POST le WAV prêt → /recording-status. Désarmé si RECORD_ALL_CALLS=0.
+ */
+function recordingRestParams(publicBase) {
+  if (!RECORD_ALL_CALLS) return {}
+  return {
+    record:                       true,
+    recordingChannels:            'dual',
+    recordingStatusCallback:      `${publicBase}/recording-status`,
+    recordingStatusCallbackEvent: ['completed'],
+  }
+}
+
+// --- Callback d'enregistrement (WAV dual-channel de chaque appel) ----------
 //
-// Twilio notifie ici quand un enregistrement dual-channel est prêt. On télécharge
-// le WAV (auth Twilio), on le dépose dans Storage (bucket privé) et on publie un
-// lien signé via system_events → visible/cliquable dans /admin/sante. RGPD : ne
-// concerne QUE les appels démo/test (cf. /call), jamais les bénéficiaires.
+// Twilio notifie ici quand un enregistrement dual-channel est prêt (démos +
+// appels planifiés + entrants). On télécharge le WAV (auth Twilio), on le dépose
+// dans Storage (bucket privé) et on le RATTACHE à sa ligne d'appel via le CallSid
+// (calls ou demo_calls) → bouton « .wav » dans /admin/appels. On publie aussi un
+// lien signé via system_events (vue /admin/sante). ⚠️ RGPD : couvre désormais les
+// appels bénéficiaires (phase de test ; kill-switch RECORD_ALL_CALLS=0).
 app.post('/recording-status', async (req, res) => {
   // Toujours acquitter vite : Twilio n'attend pas notre traitement.
   res.sendStatus(204)
@@ -378,20 +379,24 @@ app.post('/recording-status', async (req, res) => {
     }
     const bytes = Buffer.from(await resp.arrayBuffer())
 
-    const path      = `demo/${callSid || recordingSid}.wav`
+    const path      = `calls/${callSid || recordingSid}.wav`
     const signedUrl = await storeRecordingWav(bytes, path)
+
+    // Rattache le WAV à sa ligne d'appel (calls ou demo_calls) via le CallSid →
+    // bouton « .wav » par appel dans /admin/appels. Best-effort.
+    if (signedUrl) await attachRecordingPath(callSid, path)
 
     // Supprime l'enregistrement côté Twilio (on l'a copié dans notre Storage) —
     // best-effort, évite d'accumuler des médias chez Twilio.
     twilioClient.recordings(recordingSid).remove().catch(() => { /* */ })
 
-    console.log(`🎙️  [diag] WAV calibration ${recordingSid} (${duration}s, ${channels}ch) → ${signedUrl ? 'Storage OK' : 'upload KO'}`)
+    console.log(`🎙️  WAV ${recordingSid} (${duration}s, ${channels}ch) callSid=${callSid || '?'} → ${signedUrl ? 'Storage OK' : 'upload KO'}`)
     await logSystemEvent({
       level:   'info',
       source:  'voice-bridge/fluidity-diag',
       message: signedUrl
-        ? `Enregistrement de calibration prêt (${duration}s) — lien valable 7 jours`
-        : `Enregistrement de calibration capté (${duration}s) mais upload Storage échoué`,
+        ? `Enregistrement d'appel prêt (${duration}s) — lien valable 7 jours`
+        : `Enregistrement d'appel capté (${duration}s) mais upload Storage échoué`,
       payload: { recording_url: signedUrl, twilio_sid: recordingSid, call_sid: callSid, duration_s: Number(duration) || null, channels: Number(channels) || null },
     })
   } catch (err) {
@@ -451,6 +456,9 @@ app.post('/scheduled-call', async (req, res) => {
       statusCallback:       statusCallbackUrl,
       statusCallbackEvent:  ['completed', 'no-answer', 'busy', 'failed', 'canceled'],
       statusCallbackMethod: 'POST',
+      // Enregistrement dual-channel de l'appel (analyse qualité) — WAV rattaché à
+      // calls via le CallSid (= calls.twilio_call_sid écrit par initiate-call).
+      ...recordingRestParams(publicBase),
     })
 
     console.log(`📞 [scheduled] Appel sortant vers ${maskNumber(cleaned)} engine=${engine} (callId: ${callId.slice(0, 8)}…, sid: ${call.sid})`)
@@ -636,8 +644,19 @@ app.post('/inbound-voice', async (req, res) => {
     console.log(`📞 [inbound] ${maskNumber(from)} → ${beneficiary.first_name ?? '?'} accepté (callId: ${callId.slice(0, 8)}…, engine=${engine})`)
 
     const host       = req.headers['x-forwarded-host'] || req.headers.host
+    const proto      = req.headers['x-forwarded-proto'] || 'https'
+    const publicBase = `${proto}://${host}`
     const maxSeconds = Number(beneficiary.inbound_max_duration_seconds) || 600
+    // Enregistrement dual-channel de l'appel ENTRANT : l'appel est créé par Twilio
+    // (pas via REST), donc on l'arme par le verbe TwiML <Start><Recording>, exécuté
+    // avant <Connect>. Le WAV est rattaché à calls via le CallSid (= twilio_sid).
+    const recordingVerb = RECORD_ALL_CALLS
+      ? '<Start>' +
+          `<Recording recordingChannels="dual" recordingStatusCallback="${escapeXml(`${publicBase}/recording-status`)}" recordingStatusCallbackEvent="completed" />` +
+        '</Start>'
+      : ''
     return xml(
+      recordingVerb +
       '<Connect>' +
         `<Stream url="wss://${host}/inbound-media-stream">` +
           `<Parameter name="call_id" value="${escapeXml(callId)}" />` +

@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { RefreshCcw, ExternalLink, PhoneCall, Zap, Trash2, Mail, Activity } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { FluidityModal, type FluidityMetrics } from '@/components/FluidityModal'
+import { RecordingButton } from '@/components/RecordingButton'
 import { DemosTab } from './AdminDemosTab'
 
 type CallStatus = 'scheduled' | 'notified' | 'in_progress' | 'completed' | 'missed' | 'failed'
@@ -30,6 +31,7 @@ interface CallRow {
   origin:           'scheduled' | 'inbound' | null
   alerts:           Array<{ severity: string }> | null
   fluidity_metrics: FluidityMetrics | null
+  recording_path:   string | null
   beneficiaries: {
     id: string
     first_name: string
@@ -157,7 +159,7 @@ export function AdminAppelsPage() {
     // Tri : passés desc (plus récents en haut), prévus asc (prochain en haut)
     let q = supabase
       .from('calls')
-      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, report_email_sent_at, engine, origin, alerts, fluidity_metrics, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
+      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, report_email_sent_at, engine, origin, alerts, fluidity_metrics, recording_path, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
       .in('status', statuses)
       .order('scheduled_at', { ascending: tab === 'upcoming' })
       .limit(200)
@@ -526,6 +528,7 @@ export function AdminAppelsPage() {
                             <Activity size={12} /> Qualité
                           </button>
                         )}
+                        {pastLike && <RecordingButton path={c.recording_path} />}
                         {canRelaunch && (
                           <button
                             onClick={() => relaunch(c.id, ben!.id)}

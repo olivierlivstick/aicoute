@@ -84,6 +84,17 @@ export async function recordDemoStart(phoneNumber, engine = 'openai') {
 }
 
 /**
+ * Mémorise le Twilio CallSid d'une démo téléphone (UPDATE best-effort).
+ * Sert à corréler l'enregistrement WAV (callback /recording-status, keyé par
+ * CallSid) à sa ligne demo_calls. Silencieux si id/sid null ou UPDATE en échec.
+ */
+export async function recordDemoTwilioSid(id, sid) {
+  if (!supabase || !id || !sid) return
+  const { error } = await supabase.from('demo_calls').update({ twilio_call_sid: sid }).eq('id', id)
+  if (error) console.error('❌ tracking sid UPDATE failed:', error.message)
+}
+
+/**
  * Calcule le coût IA RÉEL en EUR à partir des tokens accumulés, pour le moteur
  * indiqué. tokens = { input_audio, input_audio_cached, output_audio, input_text, output_text }
  * Retourne un nombre arrondi à 4 décimales (ex: 0.0843).

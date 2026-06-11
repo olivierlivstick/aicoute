@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Activity, MonitorSmartphone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { FluidityModal, type FluidityMetrics } from '@/components/FluidityModal'
+import { RecordingButton } from '@/components/RecordingButton'
 
 interface DemoRow {
   id:                   string
@@ -24,6 +25,7 @@ interface DemoRow {
   openai_cost_eur:      number | null
   openai_cost_eur_real: number | null
   fluidity_metrics:     FluidityMetrics | null
+  recording_path:       string | null
 }
 
 const PERIOD_LABEL = { '7d': '7 derniers jours', '30d': '30 derniers jours', all: 'Tout' } as const
@@ -41,7 +43,7 @@ export function DemosTab() {
     setLoading(true)
     let q = supabase
       .from('demo_calls')
-      .select('id, mode, engine, started_at, ended_at, duration_seconds, phone_prefix, twilio_cost_eur, openai_cost_eur, openai_cost_eur_real, fluidity_metrics')
+      .select('id, mode, engine, started_at, ended_at, duration_seconds, phone_prefix, twilio_cost_eur, openai_cost_eur, openai_cost_eur_real, fluidity_metrics, recording_path')
       .order('started_at', { ascending: false })
       .limit(200)
 
@@ -106,7 +108,7 @@ export function DemosTab() {
                 <th className="px-4 py-3 text-right">Twilio</th>
                 <th className="px-4 py-3 text-right">IA est.</th>
                 <th className="px-4 py-3 text-right">IA réel</th>
-                <th className="px-4 py-3">Qualité</th>
+                <th className="px-4 py-3">Qualité / Audio</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-creme-sable">
@@ -142,17 +144,21 @@ export function DemosTab() {
                     {r.openai_cost_eur_real != null ? formatEur(r.openai_cost_eur_real) : '—'}
                   </td>
                   <td className="px-4 py-3">
-                    {r.fluidity_metrics ? (
-                      <button
-                        onClick={() => setQualityFor(r.fluidity_metrics)}
-                        className="inline-flex items-center gap-1 text-xs text-accent-700 hover:underline"
-                        title="Métriques de fluidité de la démo"
-                      >
-                        <Activity size={12} /> Qualité
-                      </button>
-                    ) : (
-                      <span className="text-xs text-slate-300">—</span>
-                    )}
+                    <div className="flex items-center gap-3">
+                      {r.fluidity_metrics && (
+                        <button
+                          onClick={() => setQualityFor(r.fluidity_metrics)}
+                          className="inline-flex items-center gap-1 text-xs text-accent-700 hover:underline"
+                          title="Métriques de fluidité de la démo"
+                        >
+                          <Activity size={12} /> Qualité
+                        </button>
+                      )}
+                      <RecordingButton path={r.recording_path} />
+                      {!r.fluidity_metrics && !r.recording_path && (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
