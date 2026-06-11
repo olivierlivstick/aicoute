@@ -45,6 +45,7 @@ import {
 import { logEvent as logSystemEvent } from './persistence/system-events.js'
 import { readAppSettings, storeRecordingWav, attachRecordingPath } from './persistence/fluidity-diagnostic.js'
 import { analyzeDualChannelWav } from './engines/wav-analysis.js'
+import { startTuningRefresh, getTuning } from './persistence/tuning.js'
 import { acquireCallSlot, releaseCallSlot } from './concurrency.js'
 import {
   findBeneficiaryForInbound,
@@ -694,6 +695,13 @@ const server = app.listen(PORT, () => {
   readAppSettings()
     .then((s) => console.log(`   diagnostic fluidité : lecture app_settings OK (enabled=${s.diagnosticEnabled}, keepRec=${s.keepRecordingRemaining})`))
     .catch((e) => console.log(`   diagnostic fluidité : lecture app_settings KO (${e?.message || e})`))
+  // Fine-tuning fluidité : démarre le rafraîchissement du cache (DB → env → défaut)
+  // → les réglages /admin/sante s'appliquent à chaud, sans redémarrer Render.
+  startTuningRefresh()
+  Promise.resolve().then(() => {
+    const t = getTuning()
+    console.log(`   fine-tuning : WAV hang=${t.wav_hang_ms}ms onset=${t.wav_onset_ms}ms factor=${t.wav_vad_factor} · Gemini prefix=${t.gemini_vad_prefix_padding_ms}ms · OpenAI ${t.openai_vad_type}`)
+  })
   if (ALLOWED_ORIGINS.length) {
     console.log(`   CORS autorisé pour : ${ALLOWED_ORIGINS.join(', ')}`)
   } else {

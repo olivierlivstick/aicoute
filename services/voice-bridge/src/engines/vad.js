@@ -26,54 +26,43 @@
 //       GEMINI_VAD_SILENCE_DURATION_MS (ex. 600-800) = attente après le silence
 //       GEMINI_VAD_END_SENSITIVITY (END_SENSITIVITY_HIGH = fin détectée plus tôt).
 //
-// Tout est surchargeable par variable d'env (même convention que GEMINI_MODEL /
-// GEMINI_VOICE) → on itère les réglages sans redéploiement de code.
+// Tout est réglable depuis /admin/sante (onglet Fine-tuning) — lu À CHAUD via le
+// cache tuning.js (cascade DB → env → défaut), sans redémarrer Render. Les env
+// (GEMINI_VAD_*) restent un filet/escape hatch.
 //
-// KILL-SWITCH : GEMINI_VAD_DISABLED=true → on n'injecte plus du tout le bloc,
-// Gemini reprend son comportement par défaut au prochain appel (rollback
-// instantané sans redéploiement).
+// KILL-SWITCH : gemini_vad_disabled (DB) ou GEMINI_VAD_DISABLED=true → on n'injecte
+// plus du tout le bloc, Gemini reprend son comportement par défaut au prochain appel.
 
-const DISABLED = /^(1|true|yes|on)$/i.test(process.env.GEMINI_VAD_DISABLED || '')
-
-const START_SENSITIVITY = process.env.GEMINI_VAD_START_SENSITIVITY || 'START_SENSITIVITY_LOW'
-const PREFIX_PADDING_MS  = intEnv('GEMINI_VAD_PREFIX_PADDING_MS', 300)
-
-// Optionnels : seulement envoyés si explicitement définis en env (sinon on
-// laisse le défaut Gemini pour ne pas ralentir la prise de parole de l'IA).
-const END_SENSITIVITY     = process.env.GEMINI_VAD_END_SENSITIVITY || null
-const SILENCE_DURATION_MS = intEnv('GEMINI_VAD_SILENCE_DURATION_MS', null)
+import { getTuning } from '../persistence/tuning.js'
 
 /**
  * Construit le bloc realtimeInputConfig à insérer dans le `setup` Gemini.
- * @returns {{ automaticActivityDetection: object } | null} null si désactivé
- *          (kill-switch) → l'appelant n'ajoute alors rien au setup.
+ * Lit les réglages courants (cache tuning) au moment de l'appel.
+ * @returns {{ automaticActivityDetection: object } | null} null si désactivé.
  */
 export function buildRealtimeInputConfig() {
-  if (DISABLED) return null
+  const t = getTuning()
+  if (t.gemini_vad_disabled) return null
 
   const automaticActivityDetection = {
     disabled:                 false,
-    startOfSpeechSensitivity: START_SENSITIVITY,
-    prefixPaddingMs:          PREFIX_PADDING_MS,
+    startOfSpeechSensitivity: t.gemini_vad_start_sensitivity,
+    prefixPaddingMs:          t.gemini_vad_prefix_padding_ms,
   }
-  if (END_SENSITIVITY)             automaticActivityDetection.endOfSpeechSensitivity = END_SENSITIVITY
-  if (SILENCE_DURATION_MS != null) automaticActivityDetection.silenceDurationMs      = SILENCE_DURATION_MS
+  // Optionnels : seulement envoyés si réglés (sinon défaut Gemini, pour ne pas
+  // ralentir la prise de parole de l'IA).
+  if (t.gemini_vad_end_sensitivity)             automaticActivityDetection.endOfSpeechSensitivity = t.gemini_vad_end_sensitivity
+  if (t.gemini_vad_silence_duration_ms != null) automaticActivityDetection.silenceDurationMs      = t.gemini_vad_silence_duration_ms
 
   return { automaticActivityDetection }
 }
 
 /** Résumé lisible pour les logs de setup. */
 export function vadSummary() {
-  if (DISABLED) return 'désactivée (GEMINI_VAD_DISABLED)'
-  const parts = [`start=${START_SENSITIVITY}`, `prefix=${PREFIX_PADDING_MS}ms`]
-  if (END_SENSITIVITY)             parts.push(`end=${END_SENSITIVITY}`)
-  if (SILENCE_DURATION_MS != null) parts.push(`silence=${SILENCE_DURATION_MS}ms`)
+  const t = getTuning()
+  if (t.gemini_vad_disabled) return 'désactivée'
+  const parts = [`start=${t.gemini_vad_start_sensitivity}`, `prefix=${t.gemini_vad_prefix_padding_ms}ms`]
+  if (t.gemini_vad_end_sensitivity)             parts.push(`end=${t.gemini_vad_end_sensitivity}`)
+  if (t.gemini_vad_silence_duration_ms != null) parts.push(`silence=${t.gemini_vad_silence_duration_ms}ms`)
   return parts.join(' ')
-}
-
-function intEnv(name, dflt) {
-  const v = process.env[name]
-  if (v == null || v === '') return dflt
-  const n = parseInt(v, 10)
-  return Number.isFinite(n) ? n : dflt
 }

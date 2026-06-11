@@ -21,46 +21,32 @@
 //        - en server_vad uniquement : `threshold` plus haut = exige une voix
 //          plus franche (semantic_vad n'utilise pas de threshold).
 //
-// Tout surchargeable par variable d'env (même convention que GEMINI_VAD_*) → on
-// itère les réglages à l'oreille en prod SANS redéploiement de code.
+// Tout réglable depuis /admin/sante (onglet Fine-tuning) — lu À CHAUD via le cache
+// tuning.js (cascade DB → env → défaut), sans redémarrer Render. Env (OPENAI_VAD_*)
+// = filet/escape hatch.
 //
-// KILL-SWITCH : OPENAI_VAD_DISABLED=true → on ne renvoie ni turn_detection ni
-// noise_reduction (OpenAI reprend ses défauts) — rollback instantané.
+// KILL-SWITCH : openai_vad_disabled (DB) ou OPENAI_VAD_DISABLED=true → on ne renvoie
+// ni turn_detection ni noise_reduction (OpenAI reprend ses défauts) — rollback instantané.
 
-const DISABLED = /^(1|true|yes|on)$/i.test(process.env.OPENAI_VAD_DISABLED || '')
-
-// Type de détection de tour : 'semantic_vad' (défaut, cf. ci-dessus) ou 'server_vad'.
-const TYPE = (process.env.OPENAI_VAD_TYPE || 'semantic_vad').toLowerCase()
-
-// semantic_vad : low | medium | high | auto. Défaut 'high' = prise de parole la
-// plus rapide après une phrase finie (objectif fluidité). Repli 'medium' par env
-// si l'IA coupe des pauses de réflexion.
-const EAGERNESS = process.env.OPENAI_VAD_EAGERNESS || 'high'
-
-// server_vad : réglages classiques (utilisés UNIQUEMENT si OPENAI_VAD_TYPE=server_vad).
-const THRESHOLD           = floatEnv('OPENAI_VAD_THRESHOLD', 0.5)
-const PREFIX_PADDING_MS   = intEnv('OPENAI_VAD_PREFIX_PADDING_MS', 300)
-const SILENCE_DURATION_MS = intEnv('OPENAI_VAD_SILENCE_DURATION_MS', 500)
-
-// Réduction de bruit en entrée : 'far_field' (défaut) | 'near_field' | 'off'.
-const NOISE_REDUCTION = (process.env.OPENAI_NOISE_REDUCTION || 'far_field').toLowerCase()
+import { getTuning } from '../persistence/tuning.js'
 
 /**
  * Construit le bloc `turn_detection` à placer dans session.audio.input.
  * @returns {object | null} null si kill-switch (l'appelant n'ajoute alors rien).
  */
 export function buildTurnDetection() {
-  if (DISABLED) return null
-  if (TYPE === 'server_vad') {
+  const t = getTuning()
+  if (t.openai_vad_disabled) return null
+  if (t.openai_vad_type === 'server_vad') {
     return {
       type:                'server_vad',
-      threshold:           THRESHOLD,
-      prefix_padding_ms:   PREFIX_PADDING_MS,
-      silence_duration_ms: SILENCE_DURATION_MS,
+      threshold:           t.openai_vad_threshold,
+      prefix_padding_ms:   t.openai_vad_prefix_padding_ms,
+      silence_duration_ms: t.openai_vad_silence_duration_ms,
     }
   }
   // Défaut : semantic_vad
-  return { type: 'semantic_vad', eagerness: EAGERNESS }
+  return { type: 'semantic_vad', eagerness: t.openai_vad_eagerness }
 }
 
 /**
@@ -68,31 +54,20 @@ export function buildTurnDetection() {
  * @returns {{ type: 'near_field' | 'far_field' } | null} null si désactivé.
  */
 export function buildNoiseReduction() {
-  if (DISABLED) return null
-  if (NOISE_REDUCTION !== 'near_field' && NOISE_REDUCTION !== 'far_field') return null
-  return { type: NOISE_REDUCTION }
+  const t = getTuning()
+  if (t.openai_vad_disabled) return null
+  const nr = t.openai_noise_reduction
+  if (nr !== 'near_field' && nr !== 'far_field') return null
+  return { type: nr }
 }
 
 /** Résumé lisible pour les logs de setup. */
 export function openaiVadSummary() {
-  if (DISABLED) return 'désactivée (OPENAI_VAD_DISABLED)'
-  const td = TYPE === 'server_vad'
-    ? `server_vad thr=${THRESHOLD} prefix=${PREFIX_PADDING_MS}ms silence=${SILENCE_DURATION_MS}ms`
-    : `semantic_vad eagerness=${EAGERNESS}`
-  const nr = buildNoiseReduction() ? NOISE_REDUCTION : 'off'
+  const t = getTuning()
+  if (t.openai_vad_disabled) return 'désactivée'
+  const td = t.openai_vad_type === 'server_vad'
+    ? `server_vad thr=${t.openai_vad_threshold} prefix=${t.openai_vad_prefix_padding_ms}ms silence=${t.openai_vad_silence_duration_ms}ms`
+    : `semantic_vad eagerness=${t.openai_vad_eagerness}`
+  const nr = buildNoiseReduction() ? t.openai_noise_reduction : 'off'
   return `${td} · noise=${nr}`
-}
-
-function intEnv(name, dflt) {
-  const v = process.env[name]
-  if (v == null || v === '') return dflt
-  const n = parseInt(v, 10)
-  return Number.isFinite(n) ? n : dflt
-}
-
-function floatEnv(name, dflt) {
-  const v = process.env[name]
-  if (v == null || v === '') return dflt
-  const n = parseFloat(v)
-  return Number.isFinite(n) ? n : dflt
 }

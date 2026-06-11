@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Clock, RefreshCcw, Sparkles, ExternalLink, Activity, Mic, Download, Phone } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock, RefreshCcw, Sparkles, ExternalLink, Activity, Mic, Download, Phone, SlidersHorizontal, Save, RotateCcw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface StuckCall {
@@ -35,7 +35,7 @@ export function AdminSantePage() {
   const [snap, setSnap] = useState<HealthSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [tab, setTab] = useState<'sante' | 'veille'>('sante')
+  const [tab, setTab] = useState<'sante' | 'veille' | 'tuning'>('sante')
 
   async function load() {
     setRefreshing(true)
@@ -100,9 +100,12 @@ export function AdminSantePage() {
           <div className="flex gap-1 mb-6 border-b border-creme-sable">
             <TabButton active={tab === 'sante'}  onClick={() => setTab('sante')}  icon={Activity}  label="Santé" />
             <TabButton active={tab === 'veille'} onClick={() => setTab('veille')} icon={Sparkles}  label="Veille" />
+            <TabButton active={tab === 'tuning'} onClick={() => setTab('tuning')} icon={SlidersHorizontal} label="Fine-tuning" />
           </div>
 
-          {tab === 'sante' ? (
+          {tab === 'tuning' ? (
+            <FineTuningSection />
+          ) : tab === 'sante' ? (
             <>
               {/* Pulse */}
               <section className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
@@ -645,6 +648,199 @@ function FluidityDiagnosticSection() {
         </div>
       </div>
     </section>
+  )
+}
+
+// --- Fine-tuning fluidité --------------------------------------------------
+// Miroir UI des paramètres réglables (cf. services/voice-bridge/src/persistence/
+// tuning.js → TUNING_DEFS). À GARDER EN PHASE (clés, types, bornes, défauts).
+// Stocké dans app_settings.fluidity_tuning (JSONB des seules clés surchargées).
+
+type TFieldType = 'int' | 'float' | 'bool' | 'enum'
+interface TField {
+  key:      string
+  label:    string
+  help?:    string
+  type:     TFieldType
+  def:      number | string | boolean | null
+  min?:     number
+  max?:     number
+  step?:    number
+  unit?:    string
+  options?: { value: string; label: string }[]
+}
+interface TSection { id: string; title: string; subtitle: string; danger?: boolean; fields: TField[] }
+
+const TUNING_SECTIONS: TSection[] = [
+  {
+    id: 'wav', title: 'Analyse WAV (mesure « vérité terrain »)',
+    subtitle: 'Hors-ligne, zéro risque sur les appels. Effet sur la mesure du « blanc » des PROCHAINS appels.',
+    fields: [
+      { key: 'wav_hang_ms', label: 'Silence → fin de parole (hang)', help: '↑ regroupe les pauses internes (moins de fragmentation des tours)', type: 'int', def: 250, min: 50, max: 1000, unit: 'ms' },
+      { key: 'wav_onset_ms', label: 'Parole soutenue → début', help: '↑ rejette mieux les clics / bruits brefs', type: 'int', def: 90, min: 20, max: 400, unit: 'ms' },
+      { key: 'wav_vad_factor', label: 'Seuil voix = bruit de fond ×', help: '↑ = exige une voix plus franche', type: 'float', def: 3.5, min: 1.5, max: 10, step: 0.1 },
+      { key: 'wav_vad_min_rms', label: 'Plancher d\'énergie (PCM16)', help: 'plancher absolu sous lequel = silence', type: 'int', def: 250, min: 50, max: 2000 },
+      { key: 'wav_greeting_min_ms', label: 'Durée mini du « bonjour »', help: 'segment ≥ cette durée = vraie parole (détection du canal IA, anti-clic)', type: 'int', def: 400, min: 100, max: 2000, unit: 'ms' },
+      { key: 'wav_frame_ms', label: 'Fenêtre d\'analyse (frame)', help: 'granularité RMS', type: 'int', def: 20, min: 5, max: 50, unit: 'ms' },
+      { key: 'wav_ai_channel', label: 'Canal IA (forcer)', help: 'vide = canal 1 (jambe sortante Twilio = l\'IA)', type: 'enum', def: null, options: [{ value: '', label: 'Auto (canal 1)' }, { value: '0', label: 'Canal 0 (piste du haut)' }, { value: '1', label: 'Canal 1 (piste du bas)' }] },
+    ],
+  },
+  {
+    id: 'gemini', title: 'VAD Gemini (live)', danger: true,
+    subtitle: '⚠️ Affecte le comportement des VRAIS appels Gemini, à chaud. Vide = défaut.',
+    fields: [
+      { key: 'gemini_vad_prefix_padding_ms', label: 'Parole soutenue avant interruption', help: '↑ = un « oui » bref ou un bruit ne coupe plus l\'IA (anti barge-in nerveux)', type: 'int', def: 300, min: 0, max: 2000, unit: 'ms' },
+      { key: 'gemini_vad_start_sensitivity', label: 'Sensibilité début de parole', help: 'LOW = moins nerveux (moins de faux barge-in)', type: 'enum', def: 'START_SENSITIVITY_LOW', options: [{ value: 'START_SENSITIVITY_LOW', label: 'LOW (moins nerveux)' }, { value: 'START_SENSITIVITY_HIGH', label: 'HIGH (plus réactif)' }] },
+      { key: 'gemini_vad_end_sensitivity', label: 'Sensibilité fin de parole', help: 'HIGH = fin détectée plus tôt (réduit le blanc, risque de couper une pause)', type: 'enum', def: null, options: [{ value: '', label: 'Défaut Gemini' }, { value: 'END_SENSITIVITY_LOW', label: 'LOW' }, { value: 'END_SENSITIVITY_HIGH', label: 'HIGH (plus tôt)' }] },
+      { key: 'gemini_vad_silence_duration_ms', label: 'Silence avant fin de tour', help: 'vide = défaut Gemini', type: 'int', def: null, min: 0, max: 3000, unit: 'ms' },
+      { key: 'gemini_vad_disabled', label: 'Désactiver la VAD Gemini', help: 'kill-switch → comportement Gemini par défaut', type: 'bool', def: false },
+    ],
+  },
+  {
+    id: 'openai', title: 'VAD OpenAI (live)', danger: true,
+    subtitle: '⚠️ Affecte le comportement des VRAIS appels OpenAI, à chaud. Vide = défaut.',
+    fields: [
+      { key: 'openai_vad_type', label: 'Type de détection de tour', help: 'semantic_vad = décide selon les MOTS (anti-blanc) ; server_vad = sur le silence', type: 'enum', def: 'semantic_vad', options: [{ value: 'semantic_vad', label: 'semantic_vad' }, { value: 'server_vad', label: 'server_vad' }] },
+      { key: 'openai_vad_eagerness', label: 'Rapidité de prise de parole', help: 'semantic_vad : high = répond vite après une phrase finie', type: 'enum', def: 'high', options: [{ value: 'low', label: 'low' }, { value: 'medium', label: 'medium' }, { value: 'high', label: 'high' }, { value: 'auto', label: 'auto' }] },
+      { key: 'openai_noise_reduction', label: 'Réduction de bruit en entrée', help: 'far_field = haut-parleur / pièce ; near_field = combiné', type: 'enum', def: 'far_field', options: [{ value: 'far_field', label: 'far_field' }, { value: 'near_field', label: 'near_field' }, { value: 'off', label: 'off' }] },
+      { key: 'openai_vad_threshold', label: 'Seuil voix (server_vad)', help: '↑ = exige une voix plus franche', type: 'float', def: 0.5, min: 0, max: 1, step: 0.05 },
+      { key: 'openai_vad_prefix_padding_ms', label: 'Prefix padding (server_vad)', type: 'int', def: 300, min: 0, max: 2000, unit: 'ms' },
+      { key: 'openai_vad_silence_duration_ms', label: 'Silence avant fin (server_vad)', help: '↓ = répond plus vite', type: 'int', def: 500, min: 0, max: 3000, unit: 'ms' },
+      { key: 'openai_vad_disabled', label: 'Désactiver la VAD OpenAI', help: 'kill-switch → défauts OpenAI', type: 'bool', def: false },
+    ],
+  },
+]
+
+function FineTuningSection() {
+  const [draft, setDraft]   = useState<Record<string, unknown>>({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving]   = useState(false)
+  const [savedAt, setSavedAt] = useState<number | null>(null)
+
+  async function load() {
+    const { data } = await supabase.from('app_settings').select('fluidity_tuning').eq('id', 1).maybeSingle()
+    setDraft(((data as { fluidity_tuning?: Record<string, unknown> } | null)?.fluidity_tuning) ?? {})
+    setLoading(false)
+  }
+  useEffect(() => { load() }, [])
+
+  function setField(key: string, value: unknown) {
+    setDraft((d) => {
+      const next = { ...d }
+      if (value === '' || value === undefined || value === null) delete next[key]
+      else next[key] = value
+      return next
+    })
+  }
+
+  async function save(payload: Record<string, unknown>) {
+    setSaving(true)
+    const { error } = await supabase.from('app_settings')
+      .update({ fluidity_tuning: payload, updated_at: new Date().toISOString() }).eq('id', 1)
+    if (!error) { setDraft(payload); setSavedAt(Date.now()) }
+    else alert(`Échec de l'enregistrement : ${error.message}`)
+    setSaving(false)
+  }
+
+  const overrideCount = Object.keys(draft).length
+
+  return (
+    <section className="mb-8">
+      <div className="flex items-center gap-2 mb-2">
+        <SlidersHorizontal size={16} className="text-accent-700" />
+        <h2 className="font-serif text-lg font-semibold text-brun-900">Fine-tuning fluidité</h2>
+        {overrideCount > 0 && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-accent-50 text-accent-700">{overrideCount} réglage{overrideCount > 1 ? 's' : ''} actif{overrideCount > 1 ? 's' : ''}</span>
+        )}
+      </div>
+      <p className="text-xs text-slate-500 mb-4 max-w-3xl">
+        Réglages lus <strong>à chaud</strong> par le voice-bridge (~15 s, sans redémarrer Render). Cascade : valeur saisie ici →
+        variable d'env Render → défaut codé. Une valeur saisie ici <strong>prime toujours</strong>. Champ vide : on retombe sur
+        l'env Render si elle existe, sinon le défaut (montré en placeholder). Les valeurs hors bornes sont ramenées dans la plage côté serveur.
+      </p>
+
+      {loading ? (
+        <p className="text-slate-400 text-sm">Chargement…</p>
+      ) : (
+        <div className="space-y-5">
+          {TUNING_SECTIONS.map((sec) => (
+            <div key={sec.id} className={`bg-white rounded-xl border ${sec.danger ? 'border-brique/30' : 'border-creme-sable'}`}>
+              <div className="px-4 py-3 border-b border-creme-sable">
+                <h3 className="text-sm font-semibold text-brun-900">{sec.title}</h3>
+                <p className={`text-xs mt-0.5 ${sec.danger ? 'text-brique' : 'text-slate-500'}`}>{sec.subtitle}</p>
+              </div>
+              <div className="divide-y divide-creme-sable">
+                {sec.fields.map((f) => (
+                  <TuningField key={f.key} field={f} value={draft[f.key]} onChange={(v) => setField(f.key, v)} />
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <button onClick={() => save(draft)} disabled={saving}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm hover:bg-primary-600 disabled:opacity-50">
+              <Save size={14} className={saving ? 'animate-pulse' : ''} /> Enregistrer
+            </button>
+            <button onClick={() => { if (confirm('Tout réinitialiser aux défauts (vider tous les réglages) ?')) save({}) }} disabled={saving || overrideCount === 0}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-creme-sable bg-white text-sm text-brun-700 hover:bg-creme disabled:opacity-50">
+              <RotateCcw size={14} /> Réinitialiser tout
+            </button>
+            {savedAt && <span className="text-xs text-sauge">Enregistré · effet sous ~15 s</span>}
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function TuningField({ field, value, onChange }: { field: TField; value: unknown; onChange: (v: unknown) => void }) {
+  const id = `tuning-${field.key}`
+  return (
+    <div className="px-4 py-3 flex items-start gap-4">
+      <div className="flex-1 min-w-0">
+        <label htmlFor={id} className="text-sm text-brun-900">{field.label}</label>
+        {field.help && <p className="text-xs text-slate-500 mt-0.5">{field.help}</p>}
+      </div>
+      <div className="shrink-0 w-44 flex items-center justify-end gap-1.5">
+        {field.type === 'bool' ? (
+          <button
+            onClick={() => onChange(value === true ? '' : true)}
+            className={`w-12 h-6 rounded-full transition-colors relative ${value === true ? 'bg-brique' : 'bg-slate-300'}`}
+            aria-pressed={value === true}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${value === true ? 'translate-x-6' : ''}`} />
+          </button>
+        ) : field.type === 'enum' ? (
+          <select
+            id={id}
+            value={value != null ? String(value) : (field.def != null ? String(field.def) : '')}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full rounded-lg border border-creme-sable bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-300"
+          >
+            {field.options!.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        ) : (
+          <>
+            <input
+              id={id}
+              type="number"
+              value={value == null ? '' : String(value)}
+              min={field.min}
+              max={field.max}
+              step={field.step ?? 1}
+              placeholder={field.def == null ? 'défaut' : String(field.def)}
+              onChange={(e) => {
+                const raw = e.target.value
+                onChange(raw === '' ? '' : (field.type === 'float' ? parseFloat(raw) : parseInt(raw, 10)))
+              }}
+              className="w-24 rounded-lg border border-creme-sable bg-white px-2 py-1.5 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-300"
+            />
+            {field.unit && <span className="text-xs text-slate-400 w-6">{field.unit}</span>}
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 

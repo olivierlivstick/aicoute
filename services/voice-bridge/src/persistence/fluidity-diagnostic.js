@@ -24,6 +24,27 @@ const supabase = url && key
 
 const BUCKET = 'fluidity-recordings'
 
+/**
+ * Lit l'objet de fine-tuning fluidité (app_settings.fluidity_tuning) — les seules
+ * clés surchargées par l'admin. {} si rien / Supabase absent / erreur (best-effort).
+ * @returns {Promise<Record<string, unknown>>}
+ */
+export async function readFluidityTuning() {
+  if (!supabase) return {}
+  try {
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('fluidity_tuning')
+      .eq('id', 1)
+      .maybeSingle()
+    if (error || !data) return {}
+    return data.fluidity_tuning || {}
+  } catch (err) {
+    console.error('[fluidity-diag] readFluidityTuning:', err?.message || err)
+    return {}
+  }
+}
+
 /** @returns {Promise<{ diagnosticEnabled: boolean, keepRecordingRemaining: number }>} */
 export async function readAppSettings() {
   const neutral = { diagnosticEnabled: false, keepRecordingRemaining: 0 }

@@ -14,16 +14,12 @@
 // Best-effort : tout échec de parse → null (l'appelant garde juste recording_path).
 // Tous les seuils sont surchargeables par env pour le calibrage contre Audacity.
 
-const FRAME_MS    = Number(process.env.WAV_FRAME_MS    || 20)    // fenêtre RMS
-const HANG_MS     = Number(process.env.WAV_HANG_MS     || 250)   // silence continu → fin de parole
-const ONSET_MS    = Number(process.env.WAV_ONSET_MS    || 90)    // parole continue → début (rejette les clics)
-const VAD_FACTOR  = Number(process.env.WAV_VAD_FACTOR  || 3.5)   // seuil = bruit de fond × facteur
-const VAD_MIN_RMS = Number(process.env.WAV_VAD_MIN_RMS || 250)   // plancher absolu d'énergie (PCM16)
-const AI_CHANNEL  = process.env.WAV_AI_CHANNEL                   // '0'|'1' pour forcer le canal IA
-// Le bonjour de l'IA est une parole SOUTENUE (≥ ce seuil) ; un clic de connexion à
-// t=0 sur le canal entrant ne l'est pas. On détecte le canal IA sur le 1er segment
-// soutenu (pas le 1er son), sinon un clic faussait la détection → tout inversé.
-const GREETING_MIN_MS = Number(process.env.WAV_GREETING_MIN_MS || 400)
+// Seuils VAD lus À CHAUD depuis le cache tuning (cascade DB → env → défaut), réglables
+// depuis /admin/sante. On lit getTuning() au début de chaque analyse et on passe un
+// `cfg` aux helpers — pas de constante figée au chargement (sinon un changement DB
+// n'arriverait qu'au prochain restart). Le bonjour est une parole SOUTENUE (≥ greetingMinMs) ;
+// un clic à t=0 ne l'est pas → on détecte le canal IA sur le 1er segment soutenu.
+import { getTuning } from '../persistence/tuning.js'
 
 /** Parse minimal RIFF/WAVE → { fmt, dataOff, dataLen } ou null. */
 function parseWav(buf) {
@@ -79,11 +75,12 @@ function noiseFloor(rms) {
  * frame sonore (pas à l'instant de détection +hang) → latence fidèle à l'œil.
  * @returns {{ segs: Array<[number,number]>, threshold: number, floor: number }} ms
  */
-function segmentsFromRms(rms, frameMs) {
+function segmentsFromRms(rms, cfg) {
+  const frameMs     = cfg.frameMs
   const floor       = noiseFloor(rms)
-  const thr         = Math.max(VAD_MIN_RMS, floor * VAD_FACTOR)
-  const onsetFrames = Math.max(1, Math.round(ONSET_MS / frameMs))
-  const hangFrames  = Math.max(1, Math.round(HANG_MS / frameMs))
+  const thr         = Math.max(cfg.vadMinRms, floor * cfg.vadFactor)
+  const onsetFrames = Math.max(1, Math.round(cfg.onsetMs / frameMs))
+  const hangFrames  = Math.max(1, Math.round(cfg.hangMs / frameMs))
   const segs = []
   let inSpeech = false, segStart = 0, lastLoud = -1, quiet = 0, loud = 0, pendingStart = -1
   for (let f = 0; f < rms.length; f++) {
@@ -108,9 +105,9 @@ function segmentsFromRms(rms, frameMs) {
   return { segs, threshold: Math.round(thr), floor: Math.round(floor) }
 }
 
-/** Début du 1er segment SOUTENU (≥ GREETING_MIN_MS), sinon du 1er segment (repli). */
-function firstSustainedOnset(segs) {
-  for (const [s, e] of segs) if (e - s >= GREETING_MIN_MS) return s
+/** Début du 1er segment SOUTENU (≥ greetingMinMs), sinon du 1er segment (repli). */
+function firstSustainedOnset(segs, greetingMinMs) {
+  for (const [s, e] of segs) if (e - s >= greetingMinMs) return s
   return segs[0]?.[0] ?? Infinity
 }
 
@@ -143,6 +140,16 @@ function stats(arr) {
  */
 export function analyzeDualChannelWav(buf) {
   try {
+    const t = getTuning()
+    const cfg = {
+      frameMs:       t.wav_frame_ms,
+      hangMs:        t.wav_hang_ms,
+      onsetMs:       t.wav_onset_ms,
+      vadFactor:     t.wav_vad_factor,
+      vadMinRms:     t.wav_vad_min_rms,
+      greetingMinMs: t.wav_greeting_min_ms,
+      aiChannel:     t.wav_ai_channel,  // null = forcé 1
+    }
     const parsed = parseWav(buf)
     if (!parsed) return null
     const { fmt, dataOff, dataLen } = parsed
@@ -163,9 +170,9 @@ export function analyzeDualChannelWav(buf) {
       ch1[i] = buf.readInt16LE(base + 2)
     }
 
-    const frameLen   = Math.max(1, Math.round(sr * FRAME_MS / 1000))
-    const s0         = segmentsFromRms(frameRms(ch0, frameLen), FRAME_MS)
-    const s1         = segmentsFromRms(frameRms(ch1, frameLen), FRAME_MS)
+    const frameLen   = Math.max(1, Math.round(sr * cfg.frameMs / 1000))
+    const s0         = segmentsFromRms(frameRms(ch0, frameLen), cfg)
+    const s1         = segmentsFromRms(frameRms(ch1, frameLen), cfg)
     const durationMs = Math.round(totalSamples / sr * 1000)
 
     // Canal IA = la jambe SORTANTE Twilio (l'audio qu'on diffuse) = canal 1 (droite =
@@ -173,9 +180,9 @@ export function analyzeDualChannelWav(buf) {
     // à parler » : avec la latence du bonjour (~1 s), l'interlocuteur dit souvent
     // « allô » AVANT l'IA → ça inversait blanc/réactivité (bug 2026-06-11, l'enregistrement
     // capte le « allô » même si la porte-micro l'a caché au modèle). Override WAV_AI_CHANNEL.
-    const aiCh = (AI_CHANNEL === '0' || AI_CHANNEL === '1') ? Number(AI_CHANNEL) : 1
+    const aiCh = (cfg.aiChannel === '0' || cfg.aiChannel === '1') ? Number(cfg.aiChannel) : 1
     // Repère diagnostic : ce que la devinette audio aurait dit (pour repérer un flip Twilio).
-    const guessedAi = firstSustainedOnset(s0.segs) <= firstSustainedOnset(s1.segs) ? 0 : 1
+    const guessedAi = firstSustainedOnset(s0.segs, cfg.greetingMinMs) <= firstSustainedOnset(s1.segs, cfg.greetingMinMs) ? 0 : 1
     if (guessedAi !== aiCh) console.log(`[wav-analysis] canal IA=${aiCh} (forcé) ≠ devinette audio=${guessedAi} — OK si l'interlocuteur a parlé en 1er`)
     const aiSegs   = (aiCh === 0 ? s0 : s1).segs
     const userSegs = (aiCh === 0 ? s1 : s0).segs
@@ -231,7 +238,7 @@ export function analyzeDualChannelWav(buf) {
       duration_seconds: Math.round(durationMs / 1000),
       blank: {
         // décroché → 1er son IA : le bonjour SOUTENU, pas un clic résiduel à t=0.
-        start_ms: Number.isFinite(firstSustainedOnset(aiSegs)) ? firstSustainedOnset(aiSegs) : null,
+        start_ms: Number.isFinite(firstSustainedOnset(aiSegs, cfg.greetingMinMs)) ? firstSustainedOnset(aiSegs, cfg.greetingMinMs) : null,
         ...renameTurn(stats(blanks)),
       },
       barge_in: {
@@ -250,8 +257,8 @@ export function analyzeDualChannelWav(buf) {
       // Données BRUTES pour analyses statistiques ultérieures (≈ ce qu'on lit dans Audacity).
       segments: { ai: aiSegs, user: userSegs },
       vad: {
-        frame_ms: FRAME_MS, hang_ms: HANG_MS, onset_ms: ONSET_MS,
-        factor: VAD_FACTOR, min_rms: VAD_MIN_RMS,
+        frame_ms: cfg.frameMs, hang_ms: cfg.hangMs, onset_ms: cfg.onsetMs,
+        factor: cfg.vadFactor, min_rms: cfg.vadMinRms,
         threshold_ai:   aiCh === 0 ? s0.threshold : s1.threshold,
         threshold_user: aiCh === 0 ? s1.threshold : s0.threshold,
       },
