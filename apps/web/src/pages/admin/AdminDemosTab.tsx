@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Activity, MonitorSmartphone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { FluidityModal, type FluidityMetrics } from '@/components/FluidityModal'
+import { FluidityModal, type FluidityMetrics, type RecordingAnalysis } from '@/components/FluidityModal'
 import { RecordingButton } from '@/components/RecordingButton'
 
 interface DemoRow {
@@ -25,7 +25,16 @@ interface DemoRow {
   openai_cost_eur:      number | null
   openai_cost_eur_real: number | null
   fluidity_metrics:     FluidityMetrics | null
+  recording_analysis:   RecordingAnalysis | null
   recording_path:       string | null
+}
+
+// Charge utile du modal Qualité : analyse WAV (vérité terrain) si dispo, sinon live.
+type QualityPayload = {
+  metrics:  FluidityMetrics | null
+  analysis: RecordingAnalysis | null
+  engine:   string | null
+  duration: number | null
 }
 
 const PERIOD_LABEL = { '7d': '7 derniers jours', '30d': '30 derniers jours', all: 'Tout' } as const
@@ -35,7 +44,7 @@ export function DemosTab() {
   const [rows, setRows]     = useState<DemoRow[]>([])
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState<Period>('7d')
-  const [qualityFor, setQualityFor] = useState<FluidityMetrics | null>(null)
+  const [qualityFor, setQualityFor] = useState<QualityPayload | null>(null)
 
   useEffect(() => { load() }, [period])
 
@@ -43,7 +52,7 @@ export function DemosTab() {
     setLoading(true)
     let q = supabase
       .from('demo_calls')
-      .select('id, mode, engine, started_at, ended_at, duration_seconds, phone_prefix, twilio_cost_eur, openai_cost_eur, openai_cost_eur_real, fluidity_metrics, recording_path')
+      .select('id, mode, engine, started_at, ended_at, duration_seconds, phone_prefix, twilio_cost_eur, openai_cost_eur, openai_cost_eur_real, fluidity_metrics, recording_analysis, recording_path')
       .order('started_at', { ascending: false })
       .limit(200)
 
@@ -145,17 +154,24 @@ export function DemosTab() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      {r.fluidity_metrics && (
+                      {(r.recording_analysis || r.fluidity_metrics) && (
                         <button
-                          onClick={() => setQualityFor(r.fluidity_metrics)}
+                          onClick={() => setQualityFor({
+                            metrics:  r.fluidity_metrics,
+                            analysis: r.recording_analysis,
+                            engine:   r.engine,
+                            duration: r.duration_seconds,
+                          })}
                           className="inline-flex items-center gap-1 text-xs text-accent-700 hover:underline"
-                          title="Métriques de fluidité de la démo"
+                          title={r.recording_analysis
+                            ? 'Fluidité mesurée sur l\'enregistrement (vérité terrain)'
+                            : 'Fluidité (mesure live, approximative)'}
                         >
                           <Activity size={12} /> Qualité
                         </button>
                       )}
                       <RecordingButton path={r.recording_path} />
-                      {!r.fluidity_metrics && !r.recording_path && (
+                      {!r.fluidity_metrics && !r.recording_analysis && !r.recording_path && (
                         <span className="text-xs text-slate-300">—</span>
                       )}
                     </div>
@@ -176,7 +192,14 @@ export function DemosTab() {
       )}
 
       {qualityFor && (
-        <FluidityModal metrics={qualityFor} onClose={() => setQualityFor(null)} subtitle="Démo vitrine" />
+        <FluidityModal
+          metrics={qualityFor.metrics}
+          analysis={qualityFor.analysis}
+          engine={qualityFor.engine}
+          durationSeconds={qualityFor.duration}
+          onClose={() => setQualityFor(null)}
+          subtitle="Démo vitrine"
+        />
       )}
     </div>
   )

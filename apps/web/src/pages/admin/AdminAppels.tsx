@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { RefreshCcw, ExternalLink, PhoneCall, Zap, Trash2, Mail, Activity } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { FluidityModal, type FluidityMetrics } from '@/components/FluidityModal'
+import { FluidityModal, type FluidityMetrics, type RecordingAnalysis } from '@/components/FluidityModal'
 import { RecordingButton } from '@/components/RecordingButton'
 import { DemosTab } from './AdminDemosTab'
 
@@ -31,6 +31,7 @@ interface CallRow {
   origin:           'scheduled' | 'inbound' | null
   alerts:           Array<{ severity: string }> | null
   fluidity_metrics: FluidityMetrics | null
+  recording_analysis: RecordingAnalysis | null
   recording_path:   string | null
   beneficiaries: {
     id: string
@@ -80,6 +81,14 @@ interface BeneficiaryOption {
   id:         string
   first_name: string
   last_name:  string
+}
+
+// Charge utile du modal Qualité : analyse WAV (vérité terrain) si dispo, sinon live.
+type QualityPayload = {
+  metrics:  FluidityMetrics | null
+  analysis: RecordingAnalysis | null
+  engine:   string | null
+  duration: number | null
 }
 
 const STATUS_LABEL: Record<CallStatus, string> = {
@@ -135,7 +144,7 @@ export function AdminAppelsPage() {
   const [beneficiariesList, setBeneficiariesList] = useState<BeneficiaryOption[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
-  const [qualityFor, setQualityFor] = useState<FluidityMetrics | null>(null)
+  const [qualityFor, setQualityFor] = useState<QualityPayload | null>(null)
 
   // Liste des bénéficiaires pour le dropdown (chargée une seule fois)
   useEffect(() => {
@@ -159,7 +168,7 @@ export function AdminAppelsPage() {
     // Tri : passés desc (plus récents en haut), prévus asc (prochain en haut)
     let q = supabase
       .from('calls')
-      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, report_email_sent_at, engine, origin, alerts, fluidity_metrics, recording_path, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
+      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, report_email_sent_at, engine, origin, alerts, fluidity_metrics, recording_analysis, recording_path, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
       .in('status', statuses)
       .order('scheduled_at', { ascending: tab === 'upcoming' })
       .limit(200)
@@ -519,11 +528,18 @@ export function AdminAppelsPage() {
                         >
                           <ExternalLink size={12} /> Détail
                         </Link>
-                        {pastLike && c.fluidity_metrics && (
+                        {pastLike && (c.recording_analysis || c.fluidity_metrics) && (
                           <button
-                            onClick={() => setQualityFor(c.fluidity_metrics)}
+                            onClick={() => setQualityFor({
+                              metrics:  c.fluidity_metrics,
+                              analysis: c.recording_analysis,
+                              engine:   c.engine,
+                              duration: c.duration_seconds,
+                            })}
                             className="inline-flex items-center gap-1 text-xs text-accent-700 hover:underline"
-                            title="Métriques de fluidité de la conversation"
+                            title={c.recording_analysis
+                              ? 'Fluidité mesurée sur l\'enregistrement (vérité terrain)'
+                              : 'Fluidité (mesure live, approximative)'}
                           >
                             <Activity size={12} /> Qualité
                           </button>
@@ -591,7 +607,13 @@ export function AdminAppelsPage() {
       )}
 
       {qualityFor && (
-        <FluidityModal metrics={qualityFor} onClose={() => setQualityFor(null)} />
+        <FluidityModal
+          metrics={qualityFor.metrics}
+          analysis={qualityFor.analysis}
+          engine={qualityFor.engine}
+          durationSeconds={qualityFor.duration}
+          onClose={() => setQualityFor(null)}
+        />
       )}
     </div>
   )

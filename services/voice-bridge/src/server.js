@@ -44,6 +44,7 @@ import {
 } from './persistence/modect-call.js'
 import { logEvent as logSystemEvent } from './persistence/system-events.js'
 import { readAppSettings, storeRecordingWav, attachRecordingPath } from './persistence/fluidity-diagnostic.js'
+import { analyzeDualChannelWav } from './engines/wav-analysis.js'
 import { acquireCallSlot, releaseCallSlot } from './concurrency.js'
 import {
   findBeneficiaryForInbound,
@@ -382,9 +383,17 @@ app.post('/recording-status', async (req, res) => {
     const path      = `calls/${callSid || recordingSid}.wav`
     const signedUrl = await storeRecordingWav(bytes, path)
 
-    // Rattache le WAV à sa ligne d'appel (calls ou demo_calls) via le CallSid →
-    // bouton « .wav » par appel dans /admin/appels. Best-effort.
-    if (signedUrl) await attachRecordingPath(callSid, path)
+    // Analyse OFFLINE « vérité terrain » sur le WAV dual-channel (VAD par canal →
+    // vraies latences de tour de parole, barge-in, ratio). On a déjà l'audio en
+    // mémoire, le calcul est local (~100 ms). Best-effort → null si format inattendu.
+    const analysis = analyzeDualChannelWav(bytes)
+    if (analysis) {
+      console.log(`📊 [wav] ${callSid || '?'} : blanc moy ${analysis.blank.turn_avg_ms ?? '—'}ms (${analysis.blank.samples} mesures), barge-in ${analysis.barge_in.total}, ratio ${analysis.speech_ratio}`)
+    }
+
+    // Rattache le WAV (chemin + analyse) à sa ligne d'appel (calls ou demo_calls)
+    // via le CallSid → bouton « .wav » + chiffres « Qualité » dans /admin/appels.
+    if (signedUrl) await attachRecordingPath(callSid, path, analysis)
 
     // Supprime l'enregistrement côté Twilio (on l'a copié dans notre Storage) —
     // best-effort, évite d'accumuler des médias chez Twilio.

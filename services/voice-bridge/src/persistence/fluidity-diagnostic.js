@@ -92,24 +92,27 @@ export async function storeRecordingWav(bytes, path) {
 }
 
 /**
- * Attache le chemin d'un WAV à sa ligne d'appel, par Twilio CallSid.
- * On essaie d'abord `calls` (appels planifiés + entrants AICOUTE), puis
- * `demo_calls` (démos vitrine/test) — les SID Twilio sont uniques, pas de
+ * Attache le WAV (chemin + analyse « vérité terrain ») à sa ligne d'appel, par
+ * Twilio CallSid. On essaie d'abord `calls` (appels planifiés + entrants AICOUTE),
+ * puis `demo_calls` (démos vitrine/test) — les SID Twilio sont uniques, pas de
  * collision. Best-effort : aucun match → no-op silencieux.
  *
- * @param {string} callSid  Twilio CallSid (RecordingStatus.CallSid)
- * @param {string} path     chemin dans le bucket (ex: "calls/CAxxx.wav")
+ * @param {string} callSid   Twilio CallSid (RecordingStatus.CallSid)
+ * @param {string} path      chemin dans le bucket (ex: "calls/CAxxx.wav")
+ * @param {object|null} analysis  sortie de analyzeDualChannelWav (ou null)
  */
-export async function attachRecordingPath(callSid, path) {
+export async function attachRecordingPath(callSid, path, analysis = null) {
   if (!supabase || !callSid || !path) return
+  const patch = { recording_path: path }
+  if (analysis) patch.recording_analysis = analysis
   try {
     const { data, error } = await supabase
       .from('calls')
-      .update({ recording_path: path })
+      .update(patch)
       .eq('twilio_call_sid', callSid)
       .select('id')
     if (!error && data && data.length) return  // matché côté appels AICOUTE
-    await supabase.from('demo_calls').update({ recording_path: path }).eq('twilio_call_sid', callSid)
+    await supabase.from('demo_calls').update(patch).eq('twilio_call_sid', callSid)
   } catch (err) {
     console.error('[fluidity-diag] attachRecordingPath:', err?.message || err)
   }
