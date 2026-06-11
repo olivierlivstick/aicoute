@@ -20,6 +20,10 @@ const ONSET_MS    = Number(process.env.WAV_ONSET_MS    || 90)    // parole conti
 const VAD_FACTOR  = Number(process.env.WAV_VAD_FACTOR  || 3.5)   // seuil = bruit de fond × facteur
 const VAD_MIN_RMS = Number(process.env.WAV_VAD_MIN_RMS || 250)   // plancher absolu d'énergie (PCM16)
 const AI_CHANNEL  = process.env.WAV_AI_CHANNEL                   // '0'|'1' pour forcer le canal IA
+// Le bonjour de l'IA est une parole SOUTENUE (≥ ce seuil) ; un clic de connexion à
+// t=0 sur le canal entrant ne l'est pas. On détecte le canal IA sur le 1er segment
+// soutenu (pas le 1er son), sinon un clic faussait la détection → tout inversé.
+const GREETING_MIN_MS = Number(process.env.WAV_GREETING_MIN_MS || 400)
 
 /** Parse minimal RIFF/WAVE → { fmt, dataOff, dataLen } ou null. */
 function parseWav(buf) {
@@ -104,6 +108,12 @@ function segmentsFromRms(rms, frameMs) {
   return { segs, threshold: Math.round(thr), floor: Math.round(floor) }
 }
 
+/** Début du 1er segment SOUTENU (≥ GREETING_MIN_MS), sinon du 1er segment (repli). */
+function firstSustainedOnset(segs) {
+  for (const [s, e] of segs) if (e - s >= GREETING_MIN_MS) return s
+  return segs[0]?.[0] ?? Infinity
+}
+
 function percentile(sorted, p) {
   if (!sorted.length) return null
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))
@@ -158,13 +168,15 @@ export function analyzeDualChannelWav(buf) {
     const s1         = segmentsFromRms(frameRms(ch1, frameLen), FRAME_MS)
     const durationMs = Math.round(totalSamples / sr * 1000)
 
-    // Canal IA : override env, sinon = le 1er à parler (bonjour proactif).
+    // Canal IA : override env, sinon = le 1er à dire un VRAI segment de parole
+    // (bonjour proactif). On ignore les clics/bruits courts (< GREETING_MIN_MS) qui,
+    // à t=0 sur le canal entrant, faussaient la détection → blanc/réactivité inversés.
     let aiCh
     if (AI_CHANNEL === '0' || AI_CHANNEL === '1') {
       aiCh = Number(AI_CHANNEL)
     } else {
-      const f0 = s0.segs[0]?.[0] ?? Infinity
-      const f1 = s1.segs[0]?.[0] ?? Infinity
+      const f0 = firstSustainedOnset(s0.segs)
+      const f1 = firstSustainedOnset(s1.segs)
       aiCh = f0 <= f1 ? 0 : 1
     }
     const aiSegs   = (aiCh === 0 ? s0 : s1).segs
@@ -178,12 +190,15 @@ export function analyzeDualChannelWav(buf) {
 
     const blanks  = []  // fin interlocuteur → début IA (LE « vrai blanc »)
     const userLat = []  // fin IA → début interlocuteur (réactivité de l'interlocuteur)
-    let lastAiEnd = -1, lastUserEnd = -1
+    let lastAiEnd = -1, lastUserEnd = -1, firstAiSeen = false
     for (const seg of tagged) {
       const lastOtherEndIsUser = lastUserEnd >= lastAiEnd
       if (seg.ai) {
-        // Blanc seulement si le dernier à avoir parlé était l'interlocuteur (vrai relais).
-        if (lastUserEnd >= 0 && lastOtherEndIsUser && seg.s >= lastUserEnd) blanks.push(seg.s - lastUserEnd)
+        // Blanc seulement si le dernier à avoir parlé était l'interlocuteur (vrai relais)
+        // ET pas pour le bonjour proactif (1er segment IA, jamais une réponse) → évite
+        // aussi un faux blanc si un bruit/clic interlocuteur le précède à t=0.
+        if (firstAiSeen && lastUserEnd >= 0 && lastOtherEndIsUser && seg.s >= lastUserEnd) blanks.push(seg.s - lastUserEnd)
+        firstAiSeen = true
         lastAiEnd = Math.max(lastAiEnd, seg.e)
       } else {
         if (lastAiEnd >= 0 && !lastOtherEndIsUser && seg.s >= lastAiEnd) userLat.push(seg.s - lastAiEnd)
@@ -215,7 +230,8 @@ export function analyzeDualChannelWav(buf) {
       duration_ms:      durationMs,
       duration_seconds: Math.round(durationMs / 1000),
       blank: {
-        start_ms: aiSegs[0]?.[0] ?? null,  // décroché → 1er son IA (bonjour)
+        // décroché → 1er son IA : le bonjour SOUTENU, pas un clic résiduel à t=0.
+        start_ms: Number.isFinite(firstSustainedOnset(aiSegs)) ? firstSustainedOnset(aiSegs) : null,
         ...renameTurn(stats(blanks)),
       },
       barge_in: {
