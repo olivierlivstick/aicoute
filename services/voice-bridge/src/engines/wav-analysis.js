@@ -168,17 +168,15 @@ export function analyzeDualChannelWav(buf) {
     const s1         = segmentsFromRms(frameRms(ch1, frameLen), FRAME_MS)
     const durationMs = Math.round(totalSamples / sr * 1000)
 
-    // Canal IA : override env, sinon = le 1er à dire un VRAI segment de parole
-    // (bonjour proactif). On ignore les clics/bruits courts (< GREETING_MIN_MS) qui,
-    // à t=0 sur le canal entrant, faussaient la détection → blanc/réactivité inversés.
-    let aiCh
-    if (AI_CHANNEL === '0' || AI_CHANNEL === '1') {
-      aiCh = Number(AI_CHANNEL)
-    } else {
-      const f0 = firstSustainedOnset(s0.segs)
-      const f1 = firstSustainedOnset(s1.segs)
-      aiCh = f0 <= f1 ? 0 : 1
-    }
+    // Canal IA = la jambe SORTANTE Twilio (l'audio qu'on diffuse) = canal 1 (droite =
+    // piste du bas dans Audacity), confirmé sur nos appels. On NE devine PLUS « le 1er
+    // à parler » : avec la latence du bonjour (~1 s), l'interlocuteur dit souvent
+    // « allô » AVANT l'IA → ça inversait blanc/réactivité (bug 2026-06-11, l'enregistrement
+    // capte le « allô » même si la porte-micro l'a caché au modèle). Override WAV_AI_CHANNEL.
+    const aiCh = (AI_CHANNEL === '0' || AI_CHANNEL === '1') ? Number(AI_CHANNEL) : 1
+    // Repère diagnostic : ce que la devinette audio aurait dit (pour repérer un flip Twilio).
+    const guessedAi = firstSustainedOnset(s0.segs) <= firstSustainedOnset(s1.segs) ? 0 : 1
+    if (guessedAi !== aiCh) console.log(`[wav-analysis] canal IA=${aiCh} (forcé) ≠ devinette audio=${guessedAi} — OK si l'interlocuteur a parlé en 1er`)
     const aiSegs   = (aiCh === 0 ? s0 : s1).segs
     const userSegs = (aiCh === 0 ? s1 : s0).segs
 
@@ -206,14 +204,16 @@ export function analyzeDualChannelWav(buf) {
       }
     }
 
-    // Barge-in : l'interlocuteur commence À PENDANT que l'IA parle.
+    // Chevauchements : l'interlocuteur commence PENDANT que l'IA parle. On distingue
+    // une VRAIE coupure (l'IA cède : son segment finit avant/avec celui de l'interlocuteur)
+    // d'un simple backchannel/talk-over (« oui », « mhm » — l'IA continue par-dessus).
     const overlaps = []
-    let bargeIn = 0
+    let interrupted = 0
     for (const [us, ue] of userSegs) {
       for (const [as, ae] of aiSegs) {
-        if (us > as && us < ae) {  // début user strictement dans un segment IA
-          bargeIn++
+        if (us > as && us < ae) {  // début interlocuteur strictement dans un segment IA
           overlaps.push(Math.min(ae, ue) - us)
+          if (ae <= ue) interrupted++  // l'IA s'arrête avant la fin de l'interlocuteur → coupée
           break
         }
       }
@@ -235,8 +235,9 @@ export function analyzeDualChannelWav(buf) {
         ...renameTurn(stats(blanks)),
       },
       barge_in: {
-        total:          bargeIn,
-        per_min:        +(bargeIn / Math.max(1, durationMs / 60000)).toFixed(2),
+        total:          overlaps.length,  // tous les chevauchements (interlocuteur démarre pendant l'IA)
+        interrupted,                       // l'IA a effectivement CÉDÉ (vraie coupure)
+        per_min:        +(interrupted / Math.max(1, durationMs / 60000)).toFixed(2),
         overlap_avg_ms: overlaps.length ? Math.round(overlaps.reduce((a, b) => a + b, 0) / overlaps.length) : null,
         overlap_max_ms: overlaps.length ? Math.round(Math.max(...overlaps)) : null,
         overlap_ms:     overlaps.map((v) => Math.round(v)),

@@ -46,7 +46,7 @@ export interface RecordingAnalysis {
     samples?:     number
     samples_ms?:  number[]
   }
-  barge_in?:           { total?: number; per_min?: number; overlap_avg_ms?: number | null; overlap_max_ms?: number | null }
+  barge_in?:           { total?: number; interrupted?: number; per_min?: number; overlap_avg_ms?: number | null; overlap_max_ms?: number | null }
   user_latency?:       { avg_ms?: number | null; p90_ms?: number | null; max_ms?: number | null; min_ms?: number | null; samples?: number }
   turns?:              { assistant?: number | null; user?: number | null }
   assistant_speech_ms?: number
@@ -137,8 +137,9 @@ function WavView({ a }: { a: RecordingAnalysis }) {
       </Section>
 
       <Section title="Interruptions (barge-in)">
-        <Row label="Total (interlocuteur coupe l'IA)" value={barge.total != null ? String(barge.total) : '—'} />
-        <Row label="Par minute"                       value={barge.per_min != null ? barge.per_min.toFixed(2) : '—'} />
+        <Row label="L'IA coupée (elle a cédé)"        value={barge.interrupted != null ? String(barge.interrupted) : '—'} />
+        <Row label="Coupures par minute"              value={barge.per_min != null ? barge.per_min.toFixed(2) : '—'} />
+        <Row label="Chevauchements total (dont backchannels)" value={barge.total != null ? String(barge.total) : '—'} muted />
         <Row label="Chevauchement moyen"              value={fmtMs(barge.overlap_avg_ms)} />
         <Row label="Chevauchement max"                value={fmtMs(barge.overlap_max_ms)} />
       </Section>
