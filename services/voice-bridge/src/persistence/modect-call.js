@@ -9,6 +9,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import WebSocket from 'ws'
+import { getTuning } from './tuning.js'
 
 const url = process.env.SUPABASE_URL
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -69,9 +70,11 @@ export async function markCallInProgress(callId, engine = 'openai') {
   const { error } = await supabase
     .from('calls')
     .update({
-      status:     'in_progress',
-      started_at: new Date().toISOString(),
+      status:          'in_progress',
+      started_at:      new Date().toISOString(),
       engine,
+      // Réglages de fine-tuning ACTIFS au démarrage de l'appel (calibrage).
+      tuning_snapshot: getTuning(),
     })
     .eq('id', callId)
     .in('status', ['scheduled', 'notified'])

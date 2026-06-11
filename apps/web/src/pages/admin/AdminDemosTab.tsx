@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Activity, MonitorSmartphone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { FluidityModal, type FluidityMetrics, type RecordingAnalysis } from '@/components/FluidityModal'
+import { FluidityModal, type FluidityMetrics, type RecordingAnalysis, type TuningSnapshot } from '@/components/FluidityModal'
 import { RecordingButton } from '@/components/RecordingButton'
 
 interface DemoRow {
@@ -26,6 +26,7 @@ interface DemoRow {
   openai_cost_eur_real: number | null
   fluidity_metrics:     FluidityMetrics | null
   recording_analysis:   RecordingAnalysis | null
+  tuning_snapshot:      TuningSnapshot | null
   recording_path:       string | null
 }
 
@@ -35,6 +36,7 @@ type QualityPayload = {
   analysis: RecordingAnalysis | null
   engine:   string | null
   duration: number | null
+  tuning:   TuningSnapshot | null
 }
 
 const PERIOD_LABEL = { '7d': '7 derniers jours', '30d': '30 derniers jours', all: 'Tout' } as const
@@ -52,7 +54,7 @@ export function DemosTab() {
     setLoading(true)
     let q = supabase
       .from('demo_calls')
-      .select('id, mode, engine, started_at, ended_at, duration_seconds, phone_prefix, twilio_cost_eur, openai_cost_eur, openai_cost_eur_real, fluidity_metrics, recording_analysis, recording_path')
+      .select('id, mode, engine, started_at, ended_at, duration_seconds, phone_prefix, twilio_cost_eur, openai_cost_eur, openai_cost_eur_real, fluidity_metrics, recording_analysis, tuning_snapshot, recording_path')
       .order('started_at', { ascending: false })
       .limit(200)
 
@@ -161,6 +163,7 @@ export function DemosTab() {
                             analysis: r.recording_analysis,
                             engine:   r.engine,
                             duration: r.duration_seconds,
+                            tuning:   r.tuning_snapshot,
                           })}
                           className="inline-flex items-center gap-1 text-xs text-accent-700 hover:underline"
                           title={r.recording_analysis
@@ -197,6 +200,7 @@ export function DemosTab() {
           analysis={qualityFor.analysis}
           engine={qualityFor.engine}
           durationSeconds={qualityFor.duration}
+          tuningSnapshot={qualityFor.tuning}
           onClose={() => setQualityFor(null)}
           subtitle="Démo vitrine"
         />

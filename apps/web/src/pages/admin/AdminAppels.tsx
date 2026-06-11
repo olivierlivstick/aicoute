@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { RefreshCcw, ExternalLink, PhoneCall, Zap, Trash2, Mail, Activity } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { FluidityModal, type FluidityMetrics, type RecordingAnalysis } from '@/components/FluidityModal'
+import { FluidityModal, type FluidityMetrics, type RecordingAnalysis, type TuningSnapshot } from '@/components/FluidityModal'
 import { RecordingButton } from '@/components/RecordingButton'
 import { DemosTab } from './AdminDemosTab'
 
@@ -32,6 +32,7 @@ interface CallRow {
   alerts:           Array<{ severity: string }> | null
   fluidity_metrics: FluidityMetrics | null
   recording_analysis: RecordingAnalysis | null
+  tuning_snapshot:  TuningSnapshot | null
   recording_path:   string | null
   beneficiaries: {
     id: string
@@ -89,6 +90,7 @@ type QualityPayload = {
   analysis: RecordingAnalysis | null
   engine:   string | null
   duration: number | null
+  tuning:   TuningSnapshot | null
 }
 
 const STATUS_LABEL: Record<CallStatus, string> = {
@@ -168,7 +170,7 @@ export function AdminAppelsPage() {
     // Tri : passés desc (plus récents en haut), prévus asc (prochain en haut)
     let q = supabase
       .from('calls')
-      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, report_email_sent_at, engine, origin, alerts, fluidity_metrics, recording_analysis, recording_path, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
+      .select('id, status, scheduled_at, started_at, notified_at, ended_at, duration_seconds, attempt_number, ai_cost_eur_real, twilio_cost_eur, report_email_sent_at, engine, origin, alerts, fluidity_metrics, recording_analysis, tuning_snapshot, recording_path, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
       .in('status', statuses)
       .order('scheduled_at', { ascending: tab === 'upcoming' })
       .limit(200)
@@ -535,6 +537,7 @@ export function AdminAppelsPage() {
                               analysis: c.recording_analysis,
                               engine:   c.engine,
                               duration: c.duration_seconds,
+                              tuning:   c.tuning_snapshot,
                             })}
                             className="inline-flex items-center gap-1 text-xs text-accent-700 hover:underline"
                             title={c.recording_analysis
@@ -612,6 +615,7 @@ export function AdminAppelsPage() {
           analysis={qualityFor.analysis}
           engine={qualityFor.engine}
           durationSeconds={qualityFor.duration}
+          tuningSnapshot={qualityFor.tuning}
           onClose={() => setQualityFor(null)}
         />
       )}

@@ -55,6 +55,23 @@ export interface RecordingAnalysis {
   vad?:                 { threshold_ai?: number; threshold_user?: number; factor?: number; hang_ms?: number }
 }
 
+/** Réglages de fine-tuning ACTIFS au démarrage de l'appel (calls/demo_calls.tuning_snapshot). */
+export interface TuningSnapshot {
+  gemini_vad_disabled?:            boolean
+  gemini_vad_start_sensitivity?:   string
+  gemini_vad_prefix_padding_ms?:   number
+  gemini_vad_end_sensitivity?:     string | null
+  gemini_vad_silence_duration_ms?: number | null
+  openai_vad_disabled?:            boolean
+  openai_vad_type?:                string
+  openai_vad_eagerness?:           string
+  openai_noise_reduction?:         string
+  openai_vad_threshold?:           number
+  openai_vad_prefix_padding_ms?:   number
+  openai_vad_silence_duration_ms?: number
+  [key: string]: unknown
+}
+
 function fmtMs(ms: number | null | undefined): string {
   if (ms == null) return '—'
   if (ms < 1000) return `${Math.round(ms)} ms`
@@ -68,11 +85,12 @@ function fmtSec(s: number | null | undefined): string {
   return m > 0 ? `${m}m${sec.toString().padStart(2, '0')}` : `${sec}s`
 }
 
-export function FluidityModal({ metrics, analysis, engine, durationSeconds, onClose, subtitle }: {
+export function FluidityModal({ metrics, analysis, engine, durationSeconds, tuningSnapshot, onClose, subtitle }: {
   metrics?:         FluidityMetrics | null
   analysis?:        RecordingAnalysis | null
   engine?:          string | null
   durationSeconds?: number | null
+  tuningSnapshot?:  TuningSnapshot | null
   onClose:          () => void
   subtitle?:        string
 }) {
@@ -102,7 +120,7 @@ export function FluidityModal({ metrics, analysis, engine, durationSeconds, onCl
         </div>
 
         {wav
-          ? <WavView a={analysis!} />
+          ? <WavView a={analysis!} engine={eng ?? null} tuning={tuningSnapshot ?? null} />
           : <LiveView metrics={metrics ?? {}} />}
       </div>
     </div>
@@ -110,11 +128,12 @@ export function FluidityModal({ metrics, analysis, engine, durationSeconds, onCl
 }
 
 /** Vue VÉRITÉ TERRAIN — chiffres mesurés sur l'enregistrement WAV. */
-function WavView({ a }: { a: RecordingAnalysis }) {
+function WavView({ a, engine, tuning }: { a: RecordingAnalysis; engine: string | null; tuning: TuningSnapshot | null }) {
   const blank = a.blank ?? {}
   const barge = a.barge_in ?? {}
   const ul    = a.user_latency ?? {}
   const vad   = a.vad ?? {}
+  const convRows = tuning ? conversationRows(engine, tuning) : []
   return (
     <div className="px-6 py-5 space-y-5">
       <p className="text-[11px] text-sauge bg-sauge/10 rounded-md px-2 py-1.5 flex items-center gap-1.5">
@@ -153,13 +172,52 @@ function WavView({ a }: { a: RecordingAnalysis }) {
              value={a.speech_ratio != null ? `${Math.round(a.speech_ratio * 100)} %` : '—'} />
       </Section>
 
+      {convRows.length > 0 && (
+        <Section title="Réglages de cet appel (conversation, au démarrage)">
+          {convRows.map(([label, value]) => (
+            <Row key={label} label={label} value={value} />
+          ))}
+        </Section>
+      )}
+
       <p className="text-[11px] text-slate-400 pt-1 border-t border-creme-sable">
-        Canal IA détecté : #{a.ai_channel ?? '—'} · seuils VAD IA/interloc.{' '}
+        Analyse WAV — canal IA détecté : #{a.ai_channel ?? '—'} · seuils IA/interloc.{' '}
         {vad.threshold_ai ?? '—'}/{vad.threshold_user ?? '—'} (×{vad.factor ?? '—'}, hang {vad.hang_ms ?? '—'} ms).
-        Surchargeables par env <code>WAV_*</code> pour calibrer.
       </p>
     </div>
   )
+}
+
+/** Libellé court d'une sensibilité Gemini (START_SENSITIVITY_LOW → LOW). */
+function shortSens(s: string | null | undefined): string {
+  return s ? s.replace(/^(START|END)_SENSITIVITY_/, '') : '—'
+}
+
+/** Lignes « réglages VAD live » pour le moteur de l'appel (depuis tuning_snapshot). */
+function conversationRows(engine: string | null, t: TuningSnapshot): Array<[string, string]> {
+  if (engine === 'gemini') {
+    if (t.gemini_vad_disabled) return [['VAD Gemini', 'désactivée (défaut Gemini)']]
+    return [
+      ['Sensibilité de début',         shortSens(t.gemini_vad_start_sensitivity)],
+      ['Parole avant interruption',    t.gemini_vad_prefix_padding_ms != null ? `${t.gemini_vad_prefix_padding_ms} ms` : '—'],
+      ['Sensibilité de fin',           t.gemini_vad_end_sensitivity ? shortSens(t.gemini_vad_end_sensitivity) : 'défaut'],
+      ['Silence fin de tour',          t.gemini_vad_silence_duration_ms != null ? `${t.gemini_vad_silence_duration_ms} ms` : 'défaut'],
+    ]
+  }
+  if (engine === 'openai') {
+    if (t.openai_vad_disabled) return [['VAD OpenAI', 'désactivée (défaut OpenAI)']]
+    const rows: Array<[string, string]> = [['Détection de tour', t.openai_vad_type ?? '—']]
+    if (t.openai_vad_type === 'server_vad') {
+      rows.push(['Seuil',          t.openai_vad_threshold != null ? String(t.openai_vad_threshold) : '—'])
+      rows.push(['Parole avant',   t.openai_vad_prefix_padding_ms != null ? `${t.openai_vad_prefix_padding_ms} ms` : '—'])
+      rows.push(['Silence fin',    t.openai_vad_silence_duration_ms != null ? `${t.openai_vad_silence_duration_ms} ms` : '—'])
+    } else {
+      rows.push(['Réactivité (eagerness)', t.openai_vad_eagerness ?? '—'])
+    }
+    rows.push(['Réduction de bruit', t.openai_noise_reduction ?? '—'])
+    return rows
+  }
+  return []
 }
 
 /** Vue LIVE — mesure historique (repli quand pas d'enregistrement). */

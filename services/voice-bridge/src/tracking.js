@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 // exige WebSocket. Node 20 ne l'a pas en natif → on injecte 'ws' (déjà dep).
 // Inutile pour nos INSERT/UPDATE mais évite un crash au démarrage.
 import WebSocket from 'ws'
+import { getTuning } from './persistence/tuning.js'
 
 // Tarifs ESTIMÉS par durée (alignés sur supabase/functions/log-demo/index.ts).
 // Approximation grossière utilisée comme fallback quand on n'a pas les tokens
@@ -69,10 +70,12 @@ export async function recordDemoStart(phoneNumber, engine = 'openai') {
   const { data, error } = await supabase
     .from('demo_calls')
     .insert({
-      mode:         'phone',
+      mode:            'phone',
       engine,
-      started_at:   new Date().toISOString(),
-      phone_prefix: phonePrefix,
+      started_at:      new Date().toISOString(),
+      phone_prefix:    phonePrefix,
+      // Réglages de fine-tuning actifs au lancement de la démo (calibrage).
+      tuning_snapshot: getTuning(),
     })
     .select('id')
     .single()
