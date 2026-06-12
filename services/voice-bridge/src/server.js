@@ -40,6 +40,7 @@ import {
   markCallByTwilioStatus,
   findCallIdByTwilioSid,
   saveTwilioCostBySid,
+  saveTwilioDurationBySid,
   listCallsMissingTwilioCost,
 } from './persistence/modect-call.js'
 import { logEvent as logSystemEvent } from './persistence/system-events.js'
@@ -137,15 +138,37 @@ async function fetchTwilioPriceEur(sid) {
  */
 async function captureTwilioCost(sid) {
   if (!sid) return
+  let durationWritten = false
   const delaysMs = [15_000, 30_000, 45_000, 60_000, 90_000]
   for (let attempt = 0; attempt < delaysMs.length; attempt++) {
     await new Promise((r) => setTimeout(r, delaysMs[attempt]))
     try {
-      const eur = await fetchTwilioPriceEur(sid)
-      if (eur == null) continue  // pas encore prêt → réessaie plus tard
-      await saveTwilioCostBySid(sid, eur)
-      console.log(`💶 [twilio-cost] sid=${sid.slice(0, 12)}… → €${eur}`)
-      return
+      const call = await twilioClient.calls(sid).fetch()
+
+      // Durée AUTHENTIQUE Twilio (secondes de connexion réelles) — disponible dès
+      // le 1er fetch. On écrase la durée écrite par le bridge (temps d'ouverture WS,
+      // qui peut sur-compter : répondeur gardant la ligne, WS qui traîne). Ce poller
+      // tourne APRÈS save-transcript → il gagne la course de façon déterministe.
+      if (!durationWritten && call.duration != null) {
+        const secs = parseInt(call.duration, 10)
+        if (Number.isFinite(secs)) {
+          await saveTwilioDurationBySid(sid, secs)
+          durationWritten = true
+        }
+      }
+
+      // Coût : `price` est renseigné de façon asynchrone (null au début) → on
+      // continue à poller jusqu'à l'obtenir.
+      if (call.price != null) {
+        const raw = Math.abs(parseFloat(call.price))
+        if (Number.isFinite(raw)) {
+          const unit = (call.priceUnit || 'USD').toUpperCase()
+          const eur  = +(unit === 'EUR' ? raw : raw * USD_TO_EUR).toFixed(4)
+          await saveTwilioCostBySid(sid, eur)
+          console.log(`💶 [twilio-cost] sid=${sid.slice(0, 12)}… → €${eur} (durée ${call.duration}s)`)
+          return
+        }
+      }
     } catch (err) {
       console.error(`❌ [twilio-cost] fetch ${sid.slice(0, 12)}… :`, err?.message)
       // On continue à réessayer : une erreur transitoire ne doit pas tout annuler.
@@ -153,6 +176,11 @@ async function captureTwilioCost(sid) {
   }
   console.warn(`⚠️  [twilio-cost] prix toujours indisponible pour sid=${sid.slice(0, 12)}… après ${delaysMs.length} tentatives`)
 }
+
+// Appels AICOUTE en cours, indexés par CallSid Twilio. Permet à /scheduled-amd
+// (détection de répondeur, requête HTTP séparée) de signaler au handler WS qu'il
+// doit AVORTER l'appel sans le flusher en 'completed' (sinon faux résumé).
+const aicouteCallsBySid = new Map()  // callSid → { markAborted: () => void }
 
 // --- App Express -----------------------------------------------------------
 
@@ -466,6 +494,15 @@ app.post('/scheduled-call', async (req, res) => {
       statusCallback:       statusCallbackUrl,
       statusCallbackEvent:  ['completed', 'no-answer', 'busy', 'failed', 'canceled'],
       statusCallbackMethod: 'POST',
+      // Détection de répondeur (AMD) — cf. /scheduled-amd. asyncAmd=true : on ne
+      // BLOQUE PAS le TwiML (le bonjour part tout de suite pour un humain, latence
+      // nulle) ; le verdict AnsweredBy arrive ~3-6 s plus tard sur /scheduled-amd
+      // qui avorte l'appel si c'est une machine. Sans ça, un répondeur est traité
+      // comme un humain : l'IA parle dans le vide → faux transcript + faux résumé.
+      machineDetection:             'Enable',
+      asyncAmd:                     'true',
+      asyncAmdStatusCallback:       `${publicBase}/scheduled-amd`,
+      asyncAmdStatusCallbackMethod: 'POST',
       // Enregistrement dual-channel de l'appel (analyse qualité) — WAV rattaché à
       // calls via le CallSid (= calls.twilio_call_sid écrit par initiate-call).
       ...recordingRestParams(publicBase),
@@ -520,6 +557,43 @@ app.post('/scheduled-status', async (req, res) => {
   } catch (err) {
     console.error('❌ /scheduled-status :', err)
     res.status(200).end()  // idem, on absorbe pour éviter les retries Twilio
+  }
+})
+
+// Verdict de détection de répondeur (AMD asynchrone). Twilio POST ici ~3-6 s
+// après le décrochage avec AnsweredBy ∈ {human, machine_start, machine_end_*,
+// fax, unknown}. Si c'est une machine (ou un fax), on AVORTE : l'IA est en train
+// de parler dans le vide à un répondeur → on raccroche, on marque l'appel manqué
+// (politique no-answer/retry) et on EMPÊCHE le flush 'completed' (qui produirait
+// un faux résumé halluciné). On NE coupe PAS sur 'unknown' (AMD a hésité : couper
+// risquerait de raccrocher au nez d'une personne âgée qui répond doucement).
+app.post('/scheduled-amd', async (req, res) => {
+  res.sendStatus(204)  // acquitter vite, Twilio n'attend pas notre traitement
+  const sid        = (req.body?.CallSid || '').toString()
+  const answeredBy = (req.body?.AnsweredBy || '').toString()
+  if (!sid || !answeredBy) return
+
+  const isMachine = answeredBy.startsWith('machine') || answeredBy === 'fax'
+  if (!isMachine) return  // 'human' / 'unknown' → on laisse l'appel se dérouler
+
+  try {
+    // 1. Signaler au handler WS de NE PAS flusher 'completed' à la fermeture.
+    aicouteCallsBySid.get(sid)?.markAborted()
+    // 2. Marquer l'appel manqué (répondeur = pas d'humain). 'no-answer' → 'missed'
+    //    via le même chemin que le statusCallback (filtre status notified/in_progress).
+    const applied = await markCallByTwilioStatus(sid, 'no-answer')
+    // 3. Raccrocher l'appel Twilio en cours → ferme la WS Stream.
+    await twilioClient.calls(sid).update({ status: 'completed' }).catch(() => { /* déjà fini */ })
+    console.log(`🤖 [amd] sid=${sid.slice(0, 12)}… AnsweredBy=${answeredBy} → appel avorté (répondeur)${applied ? ` + marqué ${applied}` : ''}`)
+    void logSystemEvent({
+      level:   'info',
+      source:  'voice-bridge/amd',
+      call_id: await findCallIdByTwilioSid(sid),
+      message: `Répondeur détecté (${answeredBy}) → appel avorté${applied ? ` + marqué ${applied}` : ''}`,
+      payload: { twilio_sid: sid, answered_by: answeredBy },
+    })
+  } catch (err) {
+    console.error('❌ /scheduled-amd :', err?.message || err)
   }
 })
 
@@ -983,6 +1057,8 @@ function handleAicouteCallConnection(twilioWs, { label }) {
   let engine          = 'openai'
   let streamStartedAt = null
   let twilioSid       = null   // entrants : sid passé en <Parameter> → captureTwilioCost à la fin
+  let callSid         = null   // CallSid Twilio (clé du registre AMD, cf. /scheduled-amd)
+  let aborted         = false  // passe à true si /scheduled-amd détecte un répondeur
 
   // Filet de sécurité initial : borne dure tant qu'on n'a pas reçu 'start'
   // (un Stream qui s'ouvre sans jamais démarrer). Resserré sur 'start' à la
@@ -1002,6 +1078,7 @@ function handleAicouteCallConnection(twilioWs, { label }) {
       callId          = params.call_id ?? null
       engine          = params.engine === 'gemini' ? 'gemini' : 'openai'
       twilioSid       = params.twilio_sid ?? null
+      callSid         = data.start.callSid ?? params.twilio_sid ?? null
       streamStartedAt = Date.now()
 
       if (!callId) {
@@ -1009,6 +1086,10 @@ function handleAicouteCallConnection(twilioWs, { label }) {
         try { twilioWs.close() } catch { /* */ }
         return
       }
+
+      // S'enregistrer pour que /scheduled-amd puisse avorter cet appel si Twilio
+      // détecte un répondeur (cf. registre aicouteCallsBySid).
+      if (callSid) aicouteCallsBySid.set(callSid, { markAborted: () => { aborted = true } })
 
       // Coupe-circuit propre au canal entrant : si max_seconds est fourni et
       // plus court que la limite par défaut, on resserre le timer.
@@ -1066,6 +1147,16 @@ function handleAicouteCallConnection(twilioWs, { label }) {
     console.log(`🔌 [${label}] Stream Twilio fermé${callId ? ` (callId=${callId.slice(0, 8)}…)` : ''}`)
     releaseCallSlot()
     clearTimeout(safetyTimer)
+    if (callSid) aicouteCallsBySid.delete(callSid)
+
+    // Répondeur détecté par l'AMD (/scheduled-amd) → l'appel a déjà été marqué
+    // 'missed' et raccroché. SURTOUT ne pas flusher : save-transcript repasserait
+    // le call en 'completed' avec le seul bonjour de l'IA → faux résumé halluciné.
+    if (aborted) {
+      console.log(`🤖 [${label}] appel avorté (répondeur AMD) — flush 'completed' ignoré`)
+      session?.close()
+      return
+    }
 
     if (!session || !callId || !streamStartedAt) {
       session?.close()

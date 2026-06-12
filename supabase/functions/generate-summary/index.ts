@@ -46,13 +46,29 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Call introuvable' }, 404)
     }
 
-    if (!call.transcript || (call.transcript as unknown[]).length === 0) {
-      console.warn(`[generate-summary] Transcript vide pour call ${call_id}`)
+    // Garde-fou anti-hallucination : on n'analyse QUE s'il y a eu un vrai échange,
+    // c.-à-d. au moins un tour `user` avec du texte. Un transcript ne contenant que
+    // le bonjour de l'IA (ex. répondeur qui décroche, ou appel sans réponse de
+    // l'interlocuteur) suffisait à faire confabuler GPT-4o une conversation entière
+    // à partir du seul contexte (mémoire, dernier appel) → faux résumé rassurant.
+    // On NE génère alors ni résumé fabriqué ni email : on pose un résumé neutre.
+    const entries = Array.isArray(call.transcript)
+      ? (call.transcript as Array<{ role: string; text: string }>)
+      : []
+    const userTurns = entries.filter(
+      (t) => t.role === 'user' && typeof t.text === 'string' && t.text.trim().length > 0,
+    )
+
+    if (entries.length === 0 || userTurns.length === 0) {
+      console.warn(`[generate-summary] Pas d'échange réel (entries=${entries.length}, userTurns=${userTurns.length}) pour call ${call_id} — skip analyse + email`)
       await supabase.from('calls').update({
-        summary:          'La conversation n\'a pas pu être enregistrée.',
+        summary: entries.length === 0
+          ? 'La conversation n\'a pas pu être enregistrée.'
+          : 'L\'appel a été décroché mais aucun échange n\'a eu lieu (répondeur ou absence de réponse). Aucun compte-rendu n\'a pu être établi.',
+        mood_detected:    'neutral',
         report_available: true,
       }).eq('id', call_id)
-      return jsonResponse({ success: true, skipped: true })
+      return jsonResponse({ success: true, skipped: true, reason: 'no_user_turn' })
     }
 
     const beneficiary = call.beneficiaries

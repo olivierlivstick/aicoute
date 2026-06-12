@@ -166,6 +166,23 @@ export async function saveTwilioCostBySid(twilioSid, costEur) {
 }
 
 /**
+ * Écrit la durée AUTHENTIQUE de l'appel (secondes de connexion réelles, fournies
+ * par Twilio) sur le call identifié par son SID. Écrase la durée mesurée par le
+ * bridge (temps d'ouverture de la WS Twilio), qui peut diverger fortement de la
+ * réalité — ex. un répondeur qui garde la ligne ouverte, ou une WS qui traîne à
+ * la fermeture. Appelée par le poller de capture de coût (donc APRÈS save-transcript
+ * → gagne la course). Idempotent : simple UPDATE rejouable.
+ */
+export async function saveTwilioDurationBySid(twilioSid, durationSeconds) {
+  if (!supabase || !twilioSid || durationSeconds == null) return
+  const { error } = await supabase
+    .from('calls')
+    .update({ duration_seconds: durationSeconds })
+    .eq('twilio_call_sid', twilioSid)
+  if (error) console.error(`❌ [modect-call] saveTwilioDuration ${twilioSid}:`, error.message)
+}
+
+/**
  * Liste les appels terminés ayant un SID Twilio mais pas encore de coût réel.
  * Utilisé par le backfill (/backfill-twilio-costs). Renvoie [{ id, twilio_call_sid }].
  */
