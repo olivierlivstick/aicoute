@@ -59,16 +59,6 @@ export function Steps() {
             </div>
           ))}
         </div>
-
-        <div className="mt-16 text-center">
-          <a
-            href="#"
-            className="inline-flex items-center gap-1.5 text-terracotta-dark font-medium link-underline"
-          >
-            Voir le parcours en détail
-            <Icon.ArrowRight size={16} />
-          </a>
-        </div>
       </div>
     </section>
   )
