@@ -276,7 +276,7 @@ function Deploiement() {
 
           {steps.map(({ num, Icon: StepIcon, title, text }) => (
             <div key={num} className="relative">
-              <div className="bg-creme rounded-full w-16 h-16 flex items-center justify-center text-terracotta border border-creme-sable relative z-10">
+              <div className="bg-white rounded-full w-16 h-16 flex items-center justify-center text-terracotta border border-creme-sable relative z-10">
                 <StepIcon size={26} />
               </div>
               <p className="mt-6 font-serif text-2xl text-ocre">{num}</p>
