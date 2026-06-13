@@ -13,6 +13,7 @@ import { CGUPage } from '@/marketing/legal/CGU'
 import { RGPDPage } from '@/marketing/legal/RGPD'
 import { IAActPage } from '@/marketing/legal/IAAct'
 import { CharteEthiquePage } from '@/marketing/legal/CharteEthique'
+import { EtablissementsPage } from '@/marketing/Etablissements'
 
 // Mono-site : la vitrine et le back-office sont la même app, servie sur deux
 // sous-domaines. Sur app.modect.com on entre dans le back-office ; ailleurs
@@ -77,6 +78,7 @@ export function App() {
         <Route path="/achat/annule" element={<Navigate to="/#tarifs" replace />} />
 
         {/* Pages de contenu (vitrine, publiques) */}
+        <Route path="/etablissements" element={<EtablissementsPage />} />
         <Route path="/a-propos" element={<AboutPage />} />
         <Route path="/mentions-legales" element={<MentionsLegalesPage />} />
         <Route path="/cgu" element={<CGUPage />} />

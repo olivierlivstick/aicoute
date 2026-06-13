@@ -19,6 +19,7 @@ export function Header() {
     { href: '#tarifs', label: 'Tarifs' },
     { href: '#securite', label: 'Sécurité' },
     { href: '#faq', label: 'FAQ' },
+    { href: '/etablissements', label: 'Établissements' },
   ]
 
   return (
