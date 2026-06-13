@@ -81,53 +81,97 @@ function Hero() {
   return (
     <section className="bg-creme">
       <div className="max-w-container mx-auto px-6 lg:px-8 pt-12 md:pt-20 pb-20 md:pb-28">
-        <div className="max-w-3xl">
-          <span className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-terracotta-dark mb-6">
-            <span className="w-6 h-px bg-terracotta-dark/40" />
-            Pour les établissements accueillant des personnes âgées
-          </span>
-
-          <h1 className="font-serif font-normal text-brun-900 text-4xl md:text-5xl leading-[1.1] text-balance">
-            Du temps de conversation pour chacun de vos résidents —{' '}
-            <span className="italic text-terracotta-dark">
-              sans alourdir vos équipes.
+        <div className="grid md:grid-cols-2 gap-10 md:gap-16 items-center">
+          {/* Colonne texte */}
+          <div className="order-2 md:order-1">
+            <span className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-terracotta-dark mb-6">
+              <span className="w-6 h-px bg-terracotta-dark/40" />
+              Pour les établissements accueillant des personnes âgées
             </span>
-          </h1>
 
-          <p className="mt-6 text-xl text-brun-700 leading-relaxed max-w-2xl text-pretty">
-            Vos soignants et animateurs font déjà l'essentiel. Aicoute vient en
-            complément&nbsp;: une présence vocale disponible chaque jour, qui prend
-            le temps d'écouter chaque résident, se souvient de son histoire, et
-            restitue à vos équipes ce qui compte. Pour que personne ne passe une
-            journée sans une vraie conversation.
-          </p>
+            <h1 className="font-serif font-normal text-brun-900 text-4xl md:text-5xl leading-[1.1] text-balance">
+              Du temps de conversation pour chacun de vos résidents —{' '}
+              <span className="italic text-terracotta-dark">
+                sans alourdir vos équipes.
+              </span>
+            </h1>
 
-          <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
-            <a
-              href="#contact-etablissements"
-              className="inline-flex items-center justify-center bg-terracotta hover:bg-terracotta-dark text-creme px-6 py-3.5 rounded-md font-medium transition-colors"
-            >
-              Demander une présentation
-            </a>
-            <a
-              href="#deploiement"
-              className="inline-flex items-center gap-1.5 text-terracotta-dark font-medium link-underline"
-            >
-              Voir comment ça s'intègre
-              <Icon.ArrowRight size={16} />
-            </a>
+            <p className="mt-6 text-xl text-brun-700 leading-relaxed max-w-xl text-pretty">
+              Vos soignants et animateurs font déjà l'essentiel. Aicoute vient en
+              complément&nbsp;: une présence vocale disponible chaque jour, qui
+              prend le temps d'écouter chaque résident, se souvient de son
+              histoire, et restitue à vos équipes ce qui compte. Pour que personne
+              ne passe une journée sans une vraie conversation.
+            </p>
+
+            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+              <a
+                href="#contact-etablissements"
+                className="inline-flex items-center justify-center bg-terracotta hover:bg-terracotta-dark text-creme px-6 py-3.5 rounded-md font-medium transition-colors"
+              >
+                Demander une présentation
+              </a>
+              <a
+                href="#deploiement"
+                className="inline-flex items-center gap-1.5 text-terracotta-dark font-medium link-underline"
+              >
+                Voir comment ça s'intègre
+                <Icon.ArrowRight size={16} />
+              </a>
+            </div>
+
+            <p className="mt-6 text-sm text-brun-700/90 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span>Conforme RGPD &amp; IA Act</span>
+              <span className="text-brun-700/40">·</span>
+              <span>Conçu en France</span>
+              <span className="text-brun-700/40">·</span>
+              <span>Sans installation matérielle</span>
+            </p>
           </div>
 
-          <p className="mt-6 text-sm text-brun-700/90 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span>Conforme RGPD &amp; IA Act</span>
-            <span className="text-brun-700/40">·</span>
-            <span>Conçu en France</span>
-            <span className="text-brun-700/40">·</span>
-            <span>Sans installation matérielle</span>
-          </p>
+          {/* Colonne image */}
+          <div className="order-1 md:order-2">
+            <HeroPhoto />
+          </div>
         </div>
       </div>
     </section>
+  )
+}
+
+// Photo du hero B2B — `public/hero-etablissements.jpg` cadrée en portrait, lueur
+// dorée derrière et carte flottante « Compte-rendu transmis ». Même habillage que
+// le hero de la home.
+function HeroPhoto() {
+  return (
+    <div className="relative">
+      {/* Soleil chaud en arrière-plan */}
+      <div className="absolute -top-6 -right-6 w-40 h-40 rounded-full bg-ocre/35 blur-2xl" />
+
+      <div className="relative rounded-xl overflow-hidden aspect-[4/5] md:aspect-[5/6] w-full shadow-sm">
+        <img
+          src="/hero-etablissements.jpg"
+          alt="Une résidente âgée souriante, au téléphone, dans un salon lumineux"
+          className="w-full h-full object-cover object-[32%_center]"
+          loading="eager"
+        />
+        {/* Lueur dorée bas pour fondre la carte flottante */}
+        <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-terracotta/15 to-transparent" />
+      </div>
+
+      {/* Carte flottante — la valeur côté équipe */}
+      <div className="hidden md:flex absolute -left-6 bottom-10 bg-creme border border-creme-sable rounded-xl p-4 pr-5 items-center gap-3">
+        <div className="w-10 h-10 shrink-0 rounded-full bg-creme-sable flex items-center justify-center text-terracotta">
+          <Icon.Mail size={20} />
+        </div>
+        <div>
+          <p className="text-xs text-brun-700">Après chaque appel</p>
+          <p className="font-serif text-base text-brun-900 leading-tight mt-0.5 whitespace-nowrap">
+            Compte-rendu transmis à l'équipe
+          </p>
+        </div>
+      </div>
+    </div>
   )
 }
 
