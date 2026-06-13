@@ -6,12 +6,27 @@ import { LOGIN_URL, SIGNUP_URL } from '@/config/links'
 export function Header() {
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  // Le Header est partagé home + sous-pages (et prérendu dans la home). On ne lit
+  // donc PAS window au rendu (sinon mismatch d'hydratation) : on détecte après
+  // montage si on est sur une sous-page. Sur la home, isSubpage reste false →
+  // rendu identique au prérendu. Sur une sous-page (rendu client only, pas
+  // d'hydratation), les ancres « #section » deviennent « /#section » pour revenir
+  // à la home puis scroller, et le logo pointe sur la racine.
+  const [isSubpage, setIsSubpage] = useState(false)
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8)
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
+
+  useEffect(() => {
+    setIsSubpage(window.location.pathname !== '/')
+  }, [])
+
+  // Résout un lien de nav : les ancres sont préfixées par « / » hors de la home.
+  const resolve = (href: string) =>
+    isSubpage && href.startsWith('#') ? `/${href}` : href
 
   const navLinks = [
     { href: '#comment', label: 'Comment ça marche' },
@@ -29,7 +44,7 @@ export function Header() {
       }`}
     >
       <div className="max-w-container mx-auto px-6 lg:px-8 h-[72px] flex items-center justify-between">
-        <a href="#" className="flex items-center" aria-label="Accueil Aicoute">
+        <a href={isSubpage ? '/' : '#'} className="flex items-center" aria-label="Accueil Aicoute">
           <Logo variant="full" size={35} />
         </a>
 
@@ -37,7 +52,7 @@ export function Header() {
           {navLinks.map((l) => (
             <a
               key={l.href}
-              href={l.href}
+              href={resolve(l.href)}
               className="text-sm text-brun-900 hover:text-terracotta-dark transition-colors"
             >
               {l.label}
@@ -88,7 +103,7 @@ export function Header() {
         <div className="md:hidden border-t border-creme-sable bg-creme">
           <div className="max-w-container mx-auto px-6 py-4 flex flex-col gap-3">
             {navLinks.map((l) => (
-              <a key={l.href} href={l.href} className="py-2 text-brun-900" onClick={() => setMobileOpen(false)}>
+              <a key={l.href} href={resolve(l.href)} className="py-2 text-brun-900" onClick={() => setMobileOpen(false)}>
                 {l.label}
               </a>
             ))}
