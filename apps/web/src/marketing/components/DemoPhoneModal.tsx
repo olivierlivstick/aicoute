@@ -25,7 +25,7 @@ const VOICE_BRIDGE_URL = import.meta.env.VITE_VOICE_BRIDGE_URL as string | undef
 // Phrase d'ouverture par défaut. L'utilisateur peut la remplacer pour tester
 // d'autres scénarios (cousin qui appelle, mère qui appelle son fils, etc.).
 const DEFAULT_OPENER =
-  "Bonjour, c'est Olivier, je vous appelle pour prendre de vos nouvelles, comment allez-vous ?"
+  "Bonjour, c'est Hélène, je vous appelle pour prendre de vos nouvelles, comment allez-vous ?"
 
 const OPENER_MAX_LENGTH = 500
 
