@@ -2,18 +2,59 @@
 
 export type UserRole = 'caregiver' | 'beneficiary' | 'admin'
 
+/** Type de compte aidant : personne physique (individual) ou morale (organization). */
+export type AccountType = 'individual' | 'organization'
+
 export interface Profile {
   id: string
+  /** Type de compte : personne physique ou morale. */
+  account_type: AccountType
+  /**
+   * Nom d'affichage, CONSERVÉ et synchronisé : « prénom nom » (physique) ou
+   * raison sociale (morale). Voir computeFullName().
+   */
   full_name: string
+  /** Prénom (physique) ou prénom du contact principal (morale). */
+  first_name: string | null
+  /** Nom (physique) ou nom du contact principal (morale). */
+  last_name: string | null
+  /** Raison sociale (personne morale uniquement). */
+  company_name: string | null
   email: string
   role: UserRole
   avatar_url: string | null
   phone: string | null
   timezone: string
+  /** Adresse postale. */
+  address_line: string | null
+  postal_code: string | null
+  city: string | null
+  country: string | null
   agent_model: string
   agent_extra_prompt: string | null
   created_at: string
   updated_at: string
+}
+
+/**
+ * full_name dérivé de l'identité structurée : raison sociale pour une personne
+ * morale, « prénom nom » pour une personne physique. À appeler à chaque
+ * écriture d'identité côté client (le trigger SQL fait l'équivalent au signup,
+ * l'Edge Fn admin-update-caregiver à l'édition admin).
+ */
+export function computeFullName(identity: {
+  account_type?: AccountType | null
+  first_name?: string | null
+  last_name?: string | null
+  company_name?: string | null
+}): string {
+  if (identity.account_type === 'organization') {
+    return (identity.company_name ?? '').trim()
+  }
+  return [identity.first_name, identity.last_name]
+    .map((s) => (s ?? '').trim())
+    .filter(Boolean)
+    .join(' ')
 }
 
 export type Gender = 'male' | 'female' | 'other'

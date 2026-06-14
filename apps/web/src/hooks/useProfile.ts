@@ -8,7 +8,11 @@ export function useProfile() {
 
   const updateProfile = useCallback(async (
     userId: string,
-    updates: Partial<Pick<Profile, 'full_name' | 'phone' | 'timezone' | 'avatar_url' | 'agent_model' | 'agent_extra_prompt'>>
+    updates: Partial<Pick<Profile,
+      | 'full_name' | 'phone' | 'timezone' | 'avatar_url' | 'agent_model' | 'agent_extra_prompt'
+      | 'account_type' | 'first_name' | 'last_name' | 'company_name'
+      | 'address_line' | 'postal_code' | 'city' | 'country'
+    >>
   ) => {
     setLoading(true)
     setError(null)

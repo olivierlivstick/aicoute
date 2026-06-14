@@ -13,7 +13,8 @@ import { Label } from '@/components/ui/Label'
 import { cn } from '@/lib/utils'
 import { startCheckout } from '@/lib/checkout'
 import { supabase } from '@/lib/supabase'
-import { MINUTE_PACKS, type MinutePurchase, type MinutePackId } from '@modect/shared'
+import { MINUTE_PACKS, computeFullName, type MinutePurchase, type MinutePackId } from '@modect/shared'
+import { AccountTypeToggle } from '@/components/AccountTypeToggle'
 import { MinutesBalanceCard, LedgerTable, PurchasesTable } from '@/pages/compte/MinutesViews'
 
 type Tab = 'profil' | 'solde' | 'achats'
@@ -97,9 +98,16 @@ export function ComptePage() {
 // ────────────────────────────────────────────────────────────────────────────
 
 const profileSchema = z.object({
-  full_name: z.string().min(2, 'Prénom et nom requis'),
-  phone:     z.string().optional(),
-  timezone:  z.string().min(1),
+  account_type: z.enum(['individual', 'organization']),
+  company_name: z.string().optional(),
+  first_name:   z.string().optional(),
+  last_name:    z.string().optional(),
+  phone:        z.string().optional(),
+  timezone:     z.string().min(1),
+  address_line: z.string().optional(),
+  postal_code:  z.string().optional(),
+  city:         z.string().optional(),
+  country:      z.string().optional(),
 })
 
 type ProfileForm = z.infer<typeof profileSchema>
@@ -114,21 +122,45 @@ function ProfilTab() {
   const { updateProfile, loading, error } = useProfile()
   const [success, setSuccess] = useState(false)
 
-  const { register, handleSubmit, formState: { errors } } = useForm<ProfileForm>({
+  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
     values: {
-      full_name: profile?.full_name ?? '',
-      phone:     profile?.phone ?? '',
-      timezone:  profile?.timezone ?? 'Europe/Paris',
+      account_type: profile?.account_type ?? 'individual',
+      company_name: profile?.company_name ?? '',
+      first_name:   profile?.first_name ?? '',
+      last_name:    profile?.last_name ?? '',
+      phone:        profile?.phone ?? '',
+      timezone:     profile?.timezone ?? 'Europe/Paris',
+      address_line: profile?.address_line ?? '',
+      postal_code:  profile?.postal_code ?? '',
+      city:         profile?.city ?? '',
+      country:      profile?.country ?? 'France',
     },
   })
 
+  const accountType = watch('account_type')
+  const isOrg = accountType === 'organization'
+
   const onSubmit = async (data: ProfileForm) => {
     if (!user) return
+    const full_name = computeFullName({
+      account_type: data.account_type,
+      first_name:   data.first_name,
+      last_name:    data.last_name,
+      company_name: data.company_name,
+    })
     const ok = await updateProfile(user.id, {
-      full_name: data.full_name,
-      phone:     data.phone || null,
-      timezone:  data.timezone,
+      account_type: data.account_type,
+      full_name,
+      first_name:   data.first_name || null,
+      last_name:    data.last_name || null,
+      company_name: data.account_type === 'organization' ? (data.company_name || null) : null,
+      phone:        data.phone || null,
+      timezone:     data.timezone,
+      address_line: data.address_line || null,
+      postal_code:  data.postal_code || null,
+      city:         data.city || null,
+      country:      data.country || null,
     })
     if (ok) {
       setSuccess(true)
@@ -141,19 +173,64 @@ function ProfilTab() {
       <h2 className="font-semibold text-slate-700 mb-5">Informations personnelles</h2>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <div>
+          <Label>Type de compte</Label>
+          <AccountTypeToggle
+            value={accountType}
+            onChange={(v) => setValue('account_type', v, { shouldValidate: true })}
+          />
+        </div>
+
+        <div>
           <Label>Adresse email</Label>
           <Input value={user?.email ?? ''} disabled className="opacity-60" />
           <p className="text-xs text-slate-400 mt-1">L'email ne peut pas être modifié ici.</p>
         </div>
 
-        <div>
-          <Label htmlFor="full_name">Prénom et nom</Label>
-          <Input id="full_name" error={errors.full_name?.message} {...register('full_name')} />
+        {isOrg && (
+          <div>
+            <Label htmlFor="company_name">Raison sociale</Label>
+            <Input id="company_name" {...register('company_name')} />
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="first_name">{isOrg ? 'Prénom du contact' : 'Prénom'}</Label>
+            <Input id="first_name" {...register('first_name')} />
+          </div>
+          <div>
+            <Label htmlFor="last_name">{isOrg ? 'Nom du contact' : 'Nom'}</Label>
+            <Input id="last_name" {...register('last_name')} />
+          </div>
         </div>
 
         <div>
           <Label htmlFor="phone">Téléphone (optionnel)</Label>
           <Input id="phone" type="tel" placeholder="+33 6 00 00 00 00" {...register('phone')} />
+        </div>
+
+        <div className="pt-2 border-t border-slate-100">
+          <p className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-3">Adresse</p>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="address_line">Adresse</Label>
+              <Input id="address_line" placeholder="12 rue des Lilas" {...register('address_line')} />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="postal_code">Code postal</Label>
+                <Input id="postal_code" placeholder="75011" {...register('postal_code')} />
+              </div>
+              <div className="col-span-2">
+                <Label htmlFor="city">Ville</Label>
+                <Input id="city" placeholder="Paris" {...register('city')} />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="country">Pays</Label>
+              <Input id="country" placeholder="France" {...register('country')} />
+            </div>
+          </div>
         </div>
 
         <div>

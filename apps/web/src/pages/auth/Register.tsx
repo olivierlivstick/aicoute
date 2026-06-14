@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { computeFullName } from '@modect/shared'
 import { AuthLayout } from '@/components/AuthLayout'
+import { AccountTypeToggle } from '@/components/AccountTypeToggle'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -11,7 +13,10 @@ import { supabase } from '@/lib/supabase'
 
 const schema = z
   .object({
-    full_name: z.string().min(2, 'Prénom et nom requis'),
+    account_type: z.enum(['individual', 'organization']),
+    company_name: z.string().optional(),
+    first_name: z.string().min(2, 'Prénom requis'),
+    last_name: z.string().min(2, 'Nom requis'),
     email: z.string().email('Adresse email invalide'),
     password: z.string().min(8, 'Minimum 8 caractères'),
     confirm_password: z.string(),
@@ -20,6 +25,10 @@ const schema = z
     message: 'Les mots de passe ne correspondent pas',
     path: ['confirm_password'],
   })
+  .refine(
+    (d) => d.account_type !== 'organization' || (d.company_name?.trim().length ?? 0) >= 2,
+    { message: 'Raison sociale requise', path: ['company_name'] },
+  )
 
 type FormData = z.infer<typeof schema>
 
@@ -28,17 +37,29 @@ export function RegisterPage() {
   const [serverError, setServerError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
+    defaultValues: { account_type: 'individual' },
   })
 
-  const onSubmit = async ({ full_name, email, password }: FormData) => {
+  const accountType = watch('account_type')
+  const isOrg = accountType === 'organization'
+
+  const onSubmit = async ({ account_type, company_name, first_name, last_name, email, password }: FormData) => {
     setServerError(null)
+    const full_name = computeFullName({ account_type, first_name, last_name, company_name })
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name, role: 'caregiver' },
+        data: {
+          full_name,
+          role: 'caregiver',
+          account_type,
+          first_name,
+          last_name,
+          company_name: account_type === 'organization' ? company_name : null,
+        },
         emailRedirectTo: `${window.location.origin}/dashboard`,
       },
     })
@@ -72,15 +93,50 @@ export function RegisterPage() {
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <div>
-          <Label htmlFor="full_name">Votre prénom et nom</Label>
-          <Input
-            id="full_name"
-            type="text"
-            autoComplete="name"
-            placeholder="Marie Dupont"
-            error={errors.full_name?.message}
-            {...register('full_name')}
+          <Label>Vous êtes…</Label>
+          <AccountTypeToggle
+            value={accountType}
+            onChange={(v) => setValue('account_type', v, { shouldValidate: true })}
           />
+        </div>
+
+        {isOrg && (
+          <div>
+            <Label htmlFor="company_name">Raison sociale</Label>
+            <Input
+              id="company_name"
+              type="text"
+              autoComplete="organization"
+              placeholder="Résidence Les Tilleuls"
+              error={errors.company_name?.message}
+              {...register('company_name')}
+            />
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="first_name">{isOrg ? 'Prénom du contact' : 'Prénom'}</Label>
+            <Input
+              id="first_name"
+              type="text"
+              autoComplete="given-name"
+              placeholder="Marie"
+              error={errors.first_name?.message}
+              {...register('first_name')}
+            />
+          </div>
+          <div>
+            <Label htmlFor="last_name">{isOrg ? 'Nom du contact' : 'Nom'}</Label>
+            <Input
+              id="last_name"
+              type="text"
+              autoComplete="family-name"
+              placeholder="Dupont"
+              error={errors.last_name?.message}
+              {...register('last_name')}
+            />
+          </div>
         </div>
 
         <div>

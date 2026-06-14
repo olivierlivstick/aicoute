@@ -6,18 +6,28 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { cn, formatDate } from '@/lib/utils'
+import { type AccountType } from '@modect/shared'
+import { AccountTypeToggle } from '@/components/AccountTypeToggle'
 import { useMinutesBalance } from '@/hooks/useMinutesBalance'
 import { useMinuteLedger } from '@/hooks/useMinuteLedger'
 import { MinutesBalanceCard, LedgerTable, PurchasesTable } from '@/pages/compte/MinutesViews'
 
 interface ProfileRow {
-  id:         string
-  full_name:  string
-  email:      string
-  phone:      string | null
-  timezone:   string | null
-  role:       string
-  created_at: string
+  id:           string
+  account_type: AccountType
+  full_name:    string
+  first_name:   string | null
+  last_name:    string | null
+  company_name: string | null
+  email:        string
+  phone:        string | null
+  timezone:     string | null
+  address_line: string | null
+  postal_code:  string | null
+  city:         string | null
+  country:      string | null
+  role:         string
+  created_at:   string
 }
 
 interface BenLite { id: string; first_name: string; last_name: string }
@@ -33,13 +43,22 @@ export function AdminCompteDetailPage() {
   const [tab, setTab]           = useState<'profil' | 'solde' | 'achats'>('profil')
 
   // Form
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail]       = useState('')
-  const [phone, setPhone]       = useState('')
-  const [timezone, setTimezone] = useState('')
+  const [accountType, setAccountType] = useState<AccountType>('individual')
+  const [companyName, setCompanyName] = useState('')
+  const [firstName, setFirstName]     = useState('')
+  const [lastName, setLastName]       = useState('')
+  const [email, setEmail]             = useState('')
+  const [phone, setPhone]             = useState('')
+  const [timezone, setTimezone]       = useState('')
+  const [addressLine, setAddressLine] = useState('')
+  const [postalCode, setPostalCode]   = useState('')
+  const [city, setCity]               = useState('')
+  const [country, setCountry]         = useState('')
   const [saving, setSaving]     = useState(false)
   const [saved, setSaved]       = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  const isOrg = accountType === 'organization'
 
   // Danger
   const [busy, setBusy]               = useState(false)
@@ -50,16 +69,23 @@ export function AdminCompteDetailPage() {
     if (!id) return
     setLoading(true)
     const [{ data: prof, error }, { data: benRows }] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, email, phone, timezone, role, created_at').eq('id', id).single(),
+      supabase.from('profiles').select('id, account_type, full_name, first_name, last_name, company_name, email, phone, timezone, address_line, postal_code, city, country, role, created_at').eq('id', id).single(),
       supabase.from('beneficiaries').select('id, first_name, last_name').eq('caregiver_id', id).order('first_name'),
     ])
     if (error || !prof) { setNotFound(true); setLoading(false); return }
     const p = prof as ProfileRow
     setProfile(p)
-    setFullName(p.full_name ?? '')
+    setAccountType(p.account_type ?? 'individual')
+    setCompanyName(p.company_name ?? '')
+    setFirstName(p.first_name ?? '')
+    setLastName(p.last_name ?? '')
     setEmail(p.email ?? '')
     setPhone(p.phone ?? '')
     setTimezone(p.timezone ?? 'Europe/Paris')
+    setAddressLine(p.address_line ?? '')
+    setPostalCode(p.postal_code ?? '')
+    setCity(p.city ?? '')
+    setCountry(p.country ?? 'France')
     setBens((benRows as BenLite[]) ?? [])
     setLoading(false)
   }
@@ -72,7 +98,20 @@ export function AdminCompteDetailPage() {
     setSaved(false)
     setFormError(null)
     const { data, error } = await supabase.functions.invoke('admin-update-caregiver', {
-      body: { id: profile.id, full_name: fullName, email: email.trim(), phone, timezone },
+      body: {
+        id: profile.id,
+        account_type: accountType,
+        company_name: companyName,
+        first_name: firstName,
+        last_name: lastName,
+        email: email.trim(),
+        phone,
+        timezone,
+        address_line: addressLine,
+        postal_code: postalCode,
+        city: city,
+        country,
+      },
     })
     setSaving(false)
     if (error || (data as { error?: string })?.error) {
@@ -165,15 +204,32 @@ export function AdminCompteDetailPage() {
         <h2 className="font-serif text-lg font-semibold text-brun-900 mb-4">Informations du compte</h2>
 
         <div className="space-y-5">
+          <div>
+            <Label>Type de compte</Label>
+            <AccountTypeToggle value={accountType} onChange={setAccountType} />
+          </div>
+
+          {isOrg && (
+            <div>
+              <Label htmlFor="company_name">Raison sociale</Label>
+              <Input id="company_name" value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="full_name">Nom complet</Label>
-              <Input id="full_name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+              <Label htmlFor="first_name">{isOrg ? 'Prénom du contact' : 'Prénom'}</Label>
+              <Input id="first_name" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
             </div>
             <div>
-              <Label htmlFor="phone">Téléphone</Label>
-              <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+33 6 00 00 00 00" />
+              <Label htmlFor="last_name">{isOrg ? 'Nom du contact' : 'Nom'}</Label>
+              <Input id="last_name" value={lastName} onChange={(e) => setLastName(e.target.value)} />
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="phone">Téléphone</Label>
+            <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+33 6 00 00 00 00" />
           </div>
 
           <div>
@@ -182,6 +238,30 @@ export function AdminCompteDetailPage() {
               Modifier cet email change aussi l'adresse de connexion du compte.
             </p>
             <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+
+          <div className="pt-2 border-t border-slate-100">
+            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-3">Adresse</p>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="address_line">Adresse</Label>
+                <Input id="address_line" value={addressLine} onChange={(e) => setAddressLine(e.target.value)} placeholder="12 rue des Lilas" />
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="postal_code">Code postal</Label>
+                  <Input id="postal_code" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="75011" />
+                </div>
+                <div className="col-span-2">
+                  <Label htmlFor="city">Ville</Label>
+                  <Input id="city" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Paris" />
+                </div>
+                <div className="col-span-3">
+                  <Label htmlFor="country">Pays</Label>
+                  <Input id="country" value={country} onChange={(e) => setCountry(e.target.value)} placeholder="France" />
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
