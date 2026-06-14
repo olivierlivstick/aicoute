@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/Label'
 import { cn, formatDate } from '@/lib/utils'
 import { type AccountType } from '@modect/shared'
 import { AccountTypeToggle } from '@/components/AccountTypeToggle'
+import { PhoneInput } from '@/components/PhoneInput'
 import { useMinutesBalance } from '@/hooks/useMinutesBalance'
 import { useMinuteLedger } from '@/hooks/useMinuteLedger'
 import { MinutesBalanceCard, LedgerTable, PurchasesTable } from '@/pages/compte/MinutesViews'
@@ -216,7 +217,7 @@ export function AdminCompteDetailPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <Label htmlFor="first_name">{isOrg ? 'Prénom du contact' : 'Prénom'}</Label>
               <Input id="first_name" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
@@ -225,11 +226,10 @@ export function AdminCompteDetailPage() {
               <Label htmlFor="last_name">{isOrg ? 'Nom du contact' : 'Nom'}</Label>
               <Input id="last_name" value={lastName} onChange={(e) => setLastName(e.target.value)} />
             </div>
-          </div>
-
-          <div>
-            <Label htmlFor="phone">Téléphone</Label>
-            <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+33 6 00 00 00 00" />
+            <div>
+              <Label htmlFor="phone">Téléphone</Label>
+              <PhoneInput id="phone" value={phone} onChange={setPhone} />
+            </div>
           </div>
 
           <div>
@@ -252,11 +252,11 @@ export function AdminCompteDetailPage() {
                   <Label htmlFor="postal_code">Code postal</Label>
                   <Input id="postal_code" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="75011" />
                 </div>
-                <div className="col-span-2">
+                <div>
                   <Label htmlFor="city">Ville</Label>
                   <Input id="city" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Paris" />
                 </div>
-                <div className="col-span-3">
+                <div>
                   <Label htmlFor="country">Pays</Label>
                   <Input id="country" value={country} onChange={(e) => setCountry(e.target.value)} placeholder="France" />
                 </div>

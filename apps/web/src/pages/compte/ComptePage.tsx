@@ -15,6 +15,7 @@ import { startCheckout } from '@/lib/checkout'
 import { supabase } from '@/lib/supabase'
 import { MINUTE_PACKS, computeFullName, type MinutePurchase, type MinutePackId } from '@modect/shared'
 import { AccountTypeToggle } from '@/components/AccountTypeToggle'
+import { PhoneInput } from '@/components/PhoneInput'
 import { MinutesBalanceCard, LedgerTable, PurchasesTable } from '@/pages/compte/MinutesViews'
 
 type Tab = 'profil' | 'solde' | 'achats'
@@ -193,7 +194,7 @@ function ProfilTab() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
             <Label htmlFor="first_name">{isOrg ? 'Prénom du contact' : 'Prénom'}</Label>
             <Input id="first_name" {...register('first_name')} />
@@ -202,11 +203,10 @@ function ProfilTab() {
             <Label htmlFor="last_name">{isOrg ? 'Nom du contact' : 'Nom'}</Label>
             <Input id="last_name" {...register('last_name')} />
           </div>
-        </div>
-
-        <div>
-          <Label htmlFor="phone">Téléphone (optionnel)</Label>
-          <Input id="phone" type="tel" placeholder="+33 6 00 00 00 00" {...register('phone')} />
+          <div>
+            <Label htmlFor="phone">Téléphone</Label>
+            <PhoneInput id="phone" value={watch('phone')} onChange={(v) => setValue('phone', v)} />
+          </div>
         </div>
 
         <div className="pt-2 border-t border-slate-100">
@@ -221,14 +221,14 @@ function ProfilTab() {
                 <Label htmlFor="postal_code">Code postal</Label>
                 <Input id="postal_code" placeholder="75011" {...register('postal_code')} />
               </div>
-              <div className="col-span-2">
+              <div>
                 <Label htmlFor="city">Ville</Label>
                 <Input id="city" placeholder="Paris" {...register('city')} />
               </div>
-            </div>
-            <div>
-              <Label htmlFor="country">Pays</Label>
-              <Input id="country" placeholder="France" {...register('country')} />
+              <div>
+                <Label htmlFor="country">Pays</Label>
+                <Input id="country" placeholder="France" {...register('country')} />
+              </div>
             </div>
           </div>
         </div>
