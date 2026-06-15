@@ -21,6 +21,19 @@ import { normalizeReportLang, LANG_NAME_FR, MOOD_LABELS, DATE_LOCALE, EMAIL_STRI
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
 
+/**
+ * Clé de comparaison pour dédoublonner les mémoires : minuscules, accents
+ * retirés, ponctuation/espaces réduits. « Aime le jardinage ! » et « aime le
+ * jardinage » donnent la même clé.
+ */
+function normalizeMemory(s: string): string {
+  return (s ?? '')
+    .toLowerCase()
+    .normalize('NFD').replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+}
+
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req)
   if (corsResponse) return corsResponse
@@ -82,6 +95,23 @@ Deno.serve(async (req: Request) => {
     const reportLangName = LANG_NAME_FR[reportLang]
     const convLangName   = LANG_NAME_FR[convLang]
 
+    // Mémoires DÉJÀ connues pour ce bénéficiaire → servent à deux choses :
+    //   (a) on les donne au modèle pour qu'il ne ré-extraie pas un fait déjà su ;
+    //   (b) on en fait un set normalisé pour filtrer les doublons à l'insert.
+    // Sans ça, un fait récurrent (« aime le jardinage ») était ré-inséré à chaque
+    // appel → accumulation de doublons dans l'onglet Mémoire.
+    const { data: existingMemoryRows } = await supabase
+      .from('conversation_memory')
+      .select('content, importance')
+      .eq('beneficiary_id', beneficiary.id)
+      .order('importance', { ascending: false })
+
+    const existingMemories = (existingMemoryRows as Array<{ content: string; importance: number }> | null) ?? []
+    const existingMemoryKeys = new Set(existingMemories.map((m) => normalizeMemory(m.content)))
+    const existingMemoriesBlock = existingMemories.length > 0
+      ? existingMemories.slice(0, 40).map((m) => `- ${m.content}`).join('\n')
+      : '(aucune mémoire connue pour l\'instant)'
+
     // 2. Formater le transcript pour GPT-4o
     const transcriptText = (call.transcript as Array<{ role: string; text: string; timestamp: string }>)
       .map((t) => `[${t.role === 'user' ? beneficiary.first_name : beneficiary.ai_persona_name}] ${t.text}`)
@@ -97,6 +127,9 @@ LANGUE DES CHAMPS (IMPÉRATIF) :
 
 CONVERSATION À ANALYSER :
 ${transcriptText}
+
+MÉMOIRES DÉJÀ CONNUES SUR CETTE PERSONNE (enregistrées lors d'appels précédents — NE PAS les redire) :
+${existingMemoriesBlock}
 
 INSTRUCTIONS :
 Génère un JSON structuré avec EXACTEMENT ces champs (aucun autre) :
@@ -123,9 +156,14 @@ RÈGLES POUR LES ALERTES (signaux faibles) :
 - severity : low (mention passagère, signal isolé) · medium (récurrent ou explicite) · high (détresse, danger, demande d'aide).
 - evidence : 1 à 2 phrases courtes citant ou paraphrasant le passage du transcript.
 
+RÈGLES POUR LES MÉMOIRES (new_memories) :
+- N'inclure QUE des faits RÉELLEMENT NOUVEAUX, ABSENTS de la liste « MÉMOIRES DÉJÀ CONNUES » ci-dessus.
+- Ne JAMAIS répéter ni reformuler une mémoire déjà connue (même idée formulée autrement = déjà connue → ne pas la remettre).
+- Si la personne reparle d'un sujet déjà mémorisé sans rien ajouter de nouveau, ne créer AUCUNE mémoire pour ce sujet.
+- Faits concrets et réutilisables lors d'appels futurs uniquement. La qualité prime sur la quantité : préférer renvoyer "new_memories": [] plutôt que des redites.
+
 RÈGLES GÉNÉRALES :
 - mood_detected = "concerned" uniquement si des signaux réels d'inquiétude sont présents
-- Les mémoires doivent être des faits concrets et réutilisables lors d'appels futurs
 - Si la conversation est très courte ou vide, adapter le résumé en conséquence
 - Répondre UNIQUEMENT avec le JSON, sans texte avant ou après`
 
@@ -207,10 +245,20 @@ RÈGLES GÉNÉRALES :
 
     if (updateErr) throw new Error(`Update calls failed: ${updateErr.message}`)
 
-    // 7. Insérer les nouvelles mémoires
+    // 7. Insérer les nouvelles mémoires — filet de sécurité déterministe :
+    // on écarte tout fait dont le contenu normalisé existe DÉJÀ en base
+    // (existingMemoryKeys) ou apparaît deux fois dans le même lot (seenInBatch),
+    // au cas où le modèle aurait quand même produit une redite.
     if (new_memories.length > 0) {
+      const seenInBatch = new Set<string>()
       const memoryInserts = new_memories
         .filter((m) => m.content && m.type)
+        .filter((m) => {
+          const key = normalizeMemory(m.content)
+          if (!key || existingMemoryKeys.has(key) || seenInBatch.has(key)) return false
+          seenInBatch.add(key)
+          return true
+        })
         .map((m) => ({
           beneficiary_id: beneficiary.id,
           memory_type:    m.type,
