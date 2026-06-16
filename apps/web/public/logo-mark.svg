@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 6 96 92" width="64" height="61.33" role="img" aria-label="aicoute">
+    <path d="M10 10 H70 a14 14 0 0 1 14 14 V64 a14 14 0 0 1 -14 14 H30 l-12 14 v-14 H10 a14 14 0 0 1 -14 -14 V24 a14 14 0 0 1 14 -14 Z" fill="#C75D3A" stroke="#C75D3A" stroke-width="2" stroke-linejoin="round"/>
+    <g stroke="#FBF5EE" stroke-width="5" stroke-linecap="round">
+      <line x1="20" y1="40" x2="20" y2="48"/>
+      <line x1="30" y1="30" x2="30" y2="58"/>
+      <line x1="40" y1="38" x2="40" y2="50"/>
+      <line x1="52" y1="24" x2="52" y2="64"/>
+      <line x1="62" y1="34" x2="62" y2="54"/>
+      <line x1="72" y1="40" x2="72" y2="48"/>
+    </g>
+</svg>
