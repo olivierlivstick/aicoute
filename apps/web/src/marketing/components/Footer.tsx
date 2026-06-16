@@ -2,8 +2,24 @@
 import { Icon } from '@/marketing/components/icons'
 import { Logo } from '@/components/Logo'
 
+type FooterLink = { label: string; href: string; newTab?: boolean }
+type FooterEntry = FooterLink | { group: FooterLink[] }
+type FooterGroup = { title: string; links: FooterEntry[] }
+
+function renderLink(l: FooterLink) {
+  return (
+    <a
+      href={l.href}
+      {...(l.newTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      className="text-creme/70 hover:text-creme transition-colors text-[15px]"
+    >
+      {l.label}
+    </a>
+  )
+}
+
 export function Footer() {
-  const groups = [
+  const groups: FooterGroup[] = [
     {
       title: 'Produit',
       links: [
@@ -26,8 +42,12 @@ export function Footer() {
       title: 'Légal',
       links: [
         { label: 'Mentions légales', href: '/mentions-legales' },
-        { label: 'CGU', href: '/cgu' },
-        { label: 'CGV', href: '/cgv', newTab: true },
+        {
+          group: [
+            { label: 'CGU', href: '/cgu' },
+            { label: 'CGV', href: '/cgv', newTab: true },
+          ],
+        },
         { label: 'RGPD', href: '/rgpd' },
         { label: 'IA Act', href: '/ia-act' },
       ],
@@ -78,19 +98,20 @@ export function Footer() {
                 {g.title}
               </h3>
               <ul className="space-y-3">
-                {g.links.map((l) => (
-                  <li key={l.label}>
-                    <a
-                      href={l.href}
-                      {...('newTab' in l && l.newTab
-                        ? { target: '_blank', rel: 'noopener noreferrer' }
-                        : {})}
-                      className="text-creme/70 hover:text-creme transition-colors text-[15px]"
-                    >
-                      {l.label}
-                    </a>
-                  </li>
-                ))}
+                {g.links.map((l) =>
+                  'group' in l ? (
+                    <li key={l.group.map((g) => g.label).join('-')}>
+                      {l.group.map((sub, i) => (
+                        <span key={sub.label}>
+                          {i > 0 && <span className="text-creme/40"> — </span>}
+                          {renderLink(sub)}
+                        </span>
+                      ))}
+                    </li>
+                  ) : (
+                    <li key={l.label}>{renderLink(l)}</li>
+                  )
+                )}
               </ul>
             </div>
           ))}
