@@ -15,6 +15,11 @@ import { RGPDPage } from '@/marketing/legal/RGPD'
 import { IAActPage } from '@/marketing/legal/IAAct'
 import { CharteEthiquePage } from '@/marketing/legal/CharteEthique'
 import { EtablissementsPage } from '@/marketing/Etablissements'
+import { ConseilsIndexPage } from '@/marketing/conseils/ConseilsIndex'
+import { RompreIsolementPage } from '@/marketing/conseils/RompreIsolement'
+import { ParentSeulVivreLoinPage } from '@/marketing/conseils/ParentSeulVivreLoin'
+import { ParentVeufPage } from '@/marketing/conseils/ParentVeuf'
+import { CulpabilitePage } from '@/marketing/conseils/Culpabilite'
 
 // Mono-site : la vitrine et le back-office sont la même app, servie sur deux
 // sous-domaines. Sur app.modect.com on entre dans le back-office ; ailleurs
@@ -87,6 +92,13 @@ export function App() {
         <Route path="/rgpd" element={<RGPDPage />} />
         <Route path="/ia-act" element={<IAActPage />} />
         <Route path="/charte-ethique" element={<CharteEthiquePage />} />
+
+        {/* Section éditoriale « Conseils aux aidants » (index + 4 articles) */}
+        <Route path="/conseils" element={<ConseilsIndexPage />} />
+        <Route path="/conseils/rompre-isolement-personne-agee" element={<RompreIsolementPage />} />
+        <Route path="/conseils/parent-age-seul-vivre-loin" element={<ParentSeulVivreLoinPage />} />
+        <Route path="/conseils/aider-parent-veuf-isolement" element={<ParentVeufPage />} />
+        <Route path="/conseils/culpabilite-ne-pas-appeler-parents" element={<CulpabilitePage />} />
 
         {/* App (protégée) */}
         <Route
