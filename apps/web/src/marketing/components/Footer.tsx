@@ -27,6 +27,7 @@ export function Footer() {
       links: [
         { label: 'Mentions légales', href: '/mentions-legales' },
         { label: 'CGU', href: '/cgu' },
+        { label: 'CGV', href: '/cgv', newTab: true },
         { label: 'RGPD', href: '/rgpd' },
         { label: 'IA Act', href: '/ia-act' },
       ],
@@ -81,6 +82,9 @@ export function Footer() {
                   <li key={l.label}>
                     <a
                       href={l.href}
+                      {...('newTab' in l && l.newTab
+                        ? { target: '_blank', rel: 'noopener noreferrer' }
+                        : {})}
                       className="text-creme/70 hover:text-creme transition-colors text-[15px]"
                     >
                       {l.label}

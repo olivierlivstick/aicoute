@@ -10,6 +10,7 @@ import { PurchaseSuccessPage } from '@/pages/public/PurchaseSuccess'
 import { AboutPage } from '@/marketing/About'
 import { MentionsLegalesPage } from '@/marketing/legal/MentionsLegales'
 import { CGUPage } from '@/marketing/legal/CGU'
+import { CGVPage } from '@/marketing/legal/CGV'
 import { RGPDPage } from '@/marketing/legal/RGPD'
 import { IAActPage } from '@/marketing/legal/IAAct'
 import { CharteEthiquePage } from '@/marketing/legal/CharteEthique'
@@ -82,6 +83,7 @@ export function App() {
         <Route path="/a-propos" element={<AboutPage />} />
         <Route path="/mentions-legales" element={<MentionsLegalesPage />} />
         <Route path="/cgu" element={<CGUPage />} />
+        <Route path="/cgv" element={<CGVPage />} />
         <Route path="/rgpd" element={<RGPDPage />} />
         <Route path="/ia-act" element={<IAActPage />} />
         <Route path="/charte-ethique" element={<CharteEthiquePage />} />
