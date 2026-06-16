@@ -230,6 +230,8 @@ export function RompreIsolementPage() {
       lead={lead}
       heroImage="/hero-etablissements.jpg"
       heroAlt="Une femme âgée souriante au téléphone, près d'une plante verte, dans une lumière douce"
+      articleHeadline="Rompre l'isolement d'une personne âgée : les solutions qui existent vraiment"
+      articleImage="https://www.aicoute.fr/hero-etablissements.jpg"
       related={[GUIDE_META.parentSeul, GUIDE_META.veuf, GUIDE_META.culpabilite]}
     >
       <PillarBody />

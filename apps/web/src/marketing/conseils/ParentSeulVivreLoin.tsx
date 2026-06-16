@@ -177,6 +177,8 @@ export function ParentSeulVivreLoinPage() {
       lead={lead}
       heroImage="/conseils/lecture-fenetre.jpg"
       heroAlt="Une femme âgée lisant tranquillement près d'une fenêtre, lumière naturelle"
+      articleHeadline="Votre parent vit seul et vous êtes loin : comment garder le lien"
+      articleImage="https://www.aicoute.fr/conseils/lecture-fenetre.jpg"
       related={[GUIDE_META.isolement, GUIDE_META.culpabilite]}
     >
       <GuideBody />

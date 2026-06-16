@@ -130,6 +130,8 @@ export function ParentVeufPage() {
       lead={lead}
       heroImage="/conseils/the-fenetre.jpg"
       heroAlt="Une tasse de thé tenue près d'une fenêtre baignée d'une lumière dorée"
+      articleHeadline="Aider un parent qui vient de perdre son conjoint à ne pas rester seul"
+      articleImage="https://www.aicoute.fr/conseils/the-fenetre.jpg"
       related={[GUIDE_META.isolement, GUIDE_META.parentSeul]}
     >
       <VeufBody />

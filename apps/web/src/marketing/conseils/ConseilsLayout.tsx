@@ -14,7 +14,20 @@ import { Icon } from '@/marketing/components/icons'
 /* ------------------------------------------------------------------- SEO -- */
 export type Seo = { title: string; description: string; canonical: string }
 
-export function useConseilsSeo({ title, description, canonical }: Seo) {
+// Hôte canonique + dates de la section éditoriale (issues de git : 1er commit =
+// publication, dernier = modification ; identiques pour les 4 articles, créés et
+// refondus le 2026-06-16).
+export const SITE_ORIGIN = 'https://www.aicoute.fr'
+export const CONSEILS_PUBLISHED = '2026-06-16T12:03:06+02:00'
+export const CONSEILS_MODIFIED = '2026-06-16T15:00:21+02:00'
+
+// Réutilise le mécanisme SEO client existant : en plus de title/description/
+// canonical/og, injecte optionnellement un bloc JSON-LD (data-conseils-ld) dans
+// le <head> au montage, retiré au démontage. Ne touche pas au JSON-LD statique
+// de index.html (Organization/WebSite sitewide).
+export function useConseilsSeo({ title, description, canonical }: Seo, jsonLd?: object) {
+  const jsonLdStr = jsonLd ? JSON.stringify(jsonLd) : null
+
   useEffect(() => {
     const prevTitle = document.title
     document.title = title
@@ -39,11 +52,53 @@ export function useConseilsSeo({ title, description, canonical }: Seo) {
     apply('meta[name="twitter:title"]', 'content', title)
     apply('meta[name="twitter:description"]', 'content', description)
 
+    let ldScript: HTMLScriptElement | null = null
+    if (jsonLdStr) {
+      ldScript = document.createElement('script')
+      ldScript.type = 'application/ld+json'
+      ldScript.setAttribute('data-conseils-ld', '')
+      ldScript.textContent = jsonLdStr
+      document.head.appendChild(ldScript)
+    }
+
     return () => {
       document.title = prevTitle
       restorers.forEach((r) => r())
+      if (ldScript) ldScript.remove()
     }
-  }, [title, description, canonical])
+  }, [title, description, canonical, jsonLdStr])
+}
+
+// Construit le JSON-LD Article d'une page de guide à partir du contenu déjà
+// présent (titre, description, canonique, image hero) — ne réécrit aucun texte.
+export function buildArticleLd({
+  headline,
+  description,
+  canonical,
+  image,
+}: {
+  headline: string
+  description: string
+  canonical: string
+  image?: string
+}) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline,
+    description,
+    inLanguage: 'fr-FR',
+    datePublished: CONSEILS_PUBLISHED,
+    dateModified: CONSEILS_MODIFIED,
+    mainEntityOfPage: canonical,
+    ...(image ? { image } : {}),
+    author: { '@type': 'Organization', name: 'Aicoute' },
+    publisher: {
+      '@type': 'Organization',
+      name: 'Aicoute',
+      logo: { '@type': 'ImageObject', url: `${SITE_ORIGIN}/logo.png` },
+    },
+  }
 }
 
 /* ---------------------------------------------------------- Motif d'ondes -- */
@@ -438,6 +493,8 @@ export function GuidePage({
   heroAlt,
   pullQuote,
   customHero,
+  articleHeadline,
+  articleImage,
   related,
   children,
 }: {
@@ -451,10 +508,20 @@ export function GuidePage({
   heroAlt?: string
   pullQuote?: ReactNode
   customHero?: ReactNode
+  /** Texte du H1 pour le JSON-LD Article (le H1 visible peut être un ReactNode). */
+  articleHeadline: string
+  /** URL ABSOLUE de l'image hero pour le JSON-LD Article (optionnel). */
+  articleImage?: string
   related: GuideMeta[]
   children: ReactNode
 }) {
-  useConseilsSeo(seo)
+  const articleLd = buildArticleLd({
+    headline: articleHeadline,
+    description: seo.description,
+    canonical: seo.canonical,
+    image: articleImage,
+  })
+  useConseilsSeo(seo, articleLd)
   return (
     <div className="bg-creme min-h-screen flex flex-col">
       <Header />

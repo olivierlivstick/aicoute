@@ -228,6 +228,8 @@ export function CulpabilitePage() {
       }}
       breadcrumbLabel="Culpabilité d'appeler"
       customHero={<CulpabiliteHero />}
+      articleHeadline="« Je culpabilise de ne pas appeler assez mes parents »"
+      articleImage="https://www.aicoute.fr/conseils/the-fenetre.jpg"
       related={[GUIDE_META.isolement, GUIDE_META.veuf]}
     >
       <CulpabiliteBody />
