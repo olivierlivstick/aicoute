@@ -144,7 +144,12 @@ function buildPrompt(today: string): string {
     `- OpenAI Realtime API : modèle « ${CURRENT.openai.model} », voix « ${CURRENT.openai.voices} ».`,
     `- Google Gemini Live API : modèle « ${CURRENT.gemini.model} », voix « ${CURRENT.gemini.voices} ».`,
     ``,
-    `Avec la RECHERCHE WEB, vérifie sur les sources officielles (docs/changelog OpenAI Realtime et Google Gemini Live, annonces) s'il existe AUJOURD'HUI, pour CHAQUE moteur, soit un MODÈLE de voix temps réel plus récent/meilleur, soit de nouvelles VOIX sensiblement meilleures (notamment pour le français), que ce qu'on utilise.`,
+    `PÉRIMÈTRE STRICT — ne considère QUE les modèles réellement utilisables pour de la conversation vocale TEMPS RÉEL bidirectionnelle (speech-to-speech, "parole entrante → parole sortante") via l'API temps réel du fournisseur :`,
+    `- OpenAI : modèles servis par la « Realtime API ».`,
+    `- Google : modèles servis par la « Live API » en NATIVE AUDIO (identifiants de type "*-live-*" / "*-native-audio-*").`,
+    `NE COMPTENT PAS (à exclure explicitement) : les modèles texte/multimodaux standard sans variante temps réel (ex. un "Gemini X.Y Flash" classique), les modèles TTS / synthèse vocale seuls, et les variantes spécialisées de tâche (ex. traduction "Live Translate"). Un identifiant proposé doit être DOCUMENTÉ comme disponible sur cette API temps réel — vérifie-le sur la doc officielle, ne suppose pas l'existence d'une variante Live à partir d'un nom de génération.`,
+    ``,
+    `Avec la RECHERCHE WEB, vérifie sur les sources officielles (docs/changelog OpenAI Realtime et Google Gemini Live, annonces) s'il existe AUJOURD'HUI, pour CHAQUE moteur et DANS CE PÉRIMÈTRE, soit un MODÈLE temps réel plus récent/meilleur, soit de nouvelles VOIX sensiblement meilleures (notamment pour le français), que ce qu'on utilise.`,
     ``,
     `Réponds UNIQUEMENT par un objet JSON valide (aucun texte autour, aucune balise de code), avec EXACTEMENT cette forme :`,
     `{`,
@@ -154,10 +159,11 @@ function buildPrompt(today: string): string {
     `}`,
     ``,
     `RÈGLES STRICTES :`,
-    `- "is_latest" (par moteur) = false dès qu'un MODÈLE plus récent OU des VOIX nettement meilleures/plus récentes existent ; true seulement si on est au mieux sur les deux plans (modèle + voix).`,
-    `- "note" (FR, concis) doit dire PRÉCISÉMENT ce qui est en jeu : soit "à jour", soit nommer le modèle plus récent et/ou les voix concernées (noms exacts). Ne reste jamais vague.`,
+    `- "is_latest" (par moteur) = false dès qu'un MODÈLE plus récent DANS LE PÉRIMÈTRE (temps réel / Live native audio) OU des VOIX nettement meilleures/plus récentes existent ; true seulement si on est au mieux sur les deux plans (modèle + voix).`,
+    `- Si une génération plus récente existe pour la marque mais SANS variante temps réel/Live à ce jour (ex. un Flash plus récent non disponible en Live API), alors "is_latest" reste true : on ne compte PAS ça comme une amélioration disponible. Mentionne-le simplement dans "note" comme information de veille (ex. « Gemini 3.5 Flash existe mais pas en Live API »).`,
+    `- "note" (FR, concis) doit dire PRÉCISÉMENT ce qui est en jeu : soit "à jour", soit nommer le modèle temps réel plus récent et/ou les voix concernées (identifiants exacts). Ne reste jamais vague.`,
     `- "recommendations" : liste d'actions concrètes en français. OBLIGATOIREMENT NON VIDE si au moins un "is_latest" est false (ex. « Tester la voix Gemini Flare en français avant bascule »). Tableau vide UNIQUEMENT si les deux moteurs sont parfaitement à jour.`,
-    `- "latest" = identifiant exact du modèle le plus récent trouvé (= "in_use" si déjà à jour).`,
+    `- "latest" = identifiant exact du modèle TEMPS RÉEL le plus récent trouvé dans le périmètre (= "in_use" si déjà à jour). N'y mets jamais un modèle non disponible sur l'API temps réel.`,
   ].join('\n')
 }
 
