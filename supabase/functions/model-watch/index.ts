@@ -88,6 +88,15 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Réponse LLM illisible (JSON non parsé).', raw: text.slice(0, 1000) }, 502)
     }
 
+    // Garde-fou déterministe : le LLM confond parfois l'ordre des versions et
+    // propose un modèle PLUS ANCIEN comme « dernier » (vécu : 2.5 présenté comme
+    // plus récent que 3.1). On annule donc toute « amélioration » dont le modèle
+    // proposé n'est PAS strictement postérieur (par date) à l'en-service, ou est
+    // identique. La comparaison de dates est fiable, contrairement au raisonnement
+    // temporel du LLM.
+    reconcileEngine(parsed.openai)
+    reconcileEngine(parsed.gemini)
+
     // Cohérence garantie : on DÉRIVE le verdict global ET le texte du bandeau
     // en CODE à partir des is_latest par moteur. Le texte libre du LLM n'est
     // PAS fiable (il peut contredire ses propres champs) → on l'ignore pour le
@@ -151,20 +160,59 @@ function buildPrompt(today: string): string {
     ``,
     `Avec la RECHERCHE WEB, vérifie sur les sources officielles (docs/changelog OpenAI Realtime et Google Gemini Live, annonces) s'il existe AUJOURD'HUI, pour CHAQUE moteur et DANS CE PÉRIMÈTRE, soit un MODÈLE temps réel plus récent/meilleur, soit de nouvelles VOIX sensiblement meilleures (notamment pour le français), que ce qu'on utilise.`,
     ``,
+    `REPÈRE CHRONOLOGIQUE (à respecter absolument) : un numéro de génération plus élevé est PLUS RÉCENT (3.x > 2.x > 1.x), et une date de sortie postérieure est plus récente. Exemples : Gemini "3.1 flash live" (mars 2026) est PLUS RÉCENT que Gemini "2.5 native audio" (déc. 2025) ; un snapshot OpenAI de 2026 est plus récent qu'un snapshot de 2025. NE PROPOSE JAMAIS comme "latest"/amélioration un modèle d'une génération ANTÉRIEURE ou ÉGALE, ni un snapshot plus ANCIEN, que celui en service.`,
+    ``,
     `Réponds UNIQUEMENT par un objet JSON valide (aucun texte autour, aucune balise de code), avec EXACTEMENT cette forme :`,
     `{`,
-    `  "openai": { "in_use": string, "latest": string, "is_latest": boolean, "note": string },`,
-    `  "gemini": { "in_use": string, "latest": string, "is_latest": boolean, "note": string },`,
+    `  "openai": { "in_use": string, "in_use_date": string, "latest": string, "latest_date": string, "is_latest": boolean, "note": string },`,
+    `  "gemini": { "in_use": string, "in_use_date": string, "latest": string, "latest_date": string, "is_latest": boolean, "note": string },`,
     `  "recommendations": string[]`,
     `}`,
     ``,
     `RÈGLES STRICTES :`,
-    `- "is_latest" (par moteur) = false dès qu'un MODÈLE plus récent DANS LE PÉRIMÈTRE (temps réel / Live native audio) OU des VOIX nettement meilleures/plus récentes existent ; true seulement si on est au mieux sur les deux plans (modèle + voix).`,
+    `- "in_use_date" / "latest_date" = date de sortie (format ISO "AAAA-MM-JJ" ou "AAAA-MM") issue des sources officielles. Obligatoires.`,
+    `- "is_latest" (par moteur) = false UNIQUEMENT si un MODÈLE STRICTEMENT PLUS RÉCENT (date de sortie postérieure) DANS LE PÉRIMÈTRE (temps réel / Live native audio) OU des VOIX nettement meilleures/plus récentes existent ; true sinon. Si "latest" n'est pas strictement postérieur à "in_use", alors is_latest=true et latest=in_use.`,
     `- Si une génération plus récente existe pour la marque mais SANS variante temps réel/Live à ce jour (ex. un Flash plus récent non disponible en Live API), alors "is_latest" reste true : on ne compte PAS ça comme une amélioration disponible. Mentionne-le simplement dans "note" comme information de veille (ex. « Gemini 3.5 Flash existe mais pas en Live API »).`,
     `- "note" (FR, concis) doit dire PRÉCISÉMENT ce qui est en jeu : soit "à jour", soit nommer le modèle temps réel plus récent et/ou les voix concernées (identifiants exacts). Ne reste jamais vague.`,
     `- "recommendations" : liste d'actions concrètes en français. OBLIGATOIREMENT NON VIDE si au moins un "is_latest" est false (ex. « Tester la voix Gemini Flare en français avant bascule »). Tableau vide UNIQUEMENT si les deux moteurs sont parfaitement à jour.`,
-    `- "latest" = identifiant exact du modèle TEMPS RÉEL le plus récent trouvé dans le périmètre (= "in_use" si déjà à jour). N'y mets jamais un modèle non disponible sur l'API temps réel.`,
+    `- "latest" = identifiant exact du modèle TEMPS RÉEL le plus récent trouvé dans le périmètre (= "in_use" si déjà à jour). N'y mets jamais un modèle non disponible sur l'API temps réel, ni un modèle plus ancien que l'en-service.`,
   ].join('\n')
+}
+
+// Normalise une date « AAAA-MM » ou « AAAA-MM-JJ » en « AAAA-MM-JJ » (comparable
+// lexicographiquement). Retourne null si illisible.
+function normDate(s: unknown): string | null {
+  const m = String(s ?? '').match(/(\d{4})-(\d{2})(?:-(\d{2}))?/)
+  return m ? `${m[1]}-${m[2]}-${m[3] ?? '01'}` : null
+}
+
+// Force is_latest=true (et corrige la note) quand le « latest » proposé n'est pas
+// strictement postérieur à l'en-service — protège contre l'inversion de versions
+// par le LLM. En l'absence de dates exploitables, on ne touche pas au verdict LLM.
+function reconcileEngine(engRaw: unknown): void {
+  const eng = engRaw as {
+    in_use?: string; latest?: string; is_latest?: boolean
+    in_use_date?: string; latest_date?: string; note?: string
+  } | undefined
+  if (!eng || typeof eng !== 'object') return
+
+  const inUse = String(eng.in_use ?? '').trim()
+  const latest = String(eng.latest ?? '').trim()
+
+  const sameId = latest && inUse && latest === inUse
+  const du = normDate(eng.in_use_date)
+  const dl = normDate(eng.latest_date)
+  const notNewer = du && dl ? dl <= du : false
+
+  if (sameId || notNewer) {
+    if (eng.is_latest === false) {
+      eng.note = latest && !sameId
+        ? `À jour — le modèle « ${latest} » n'est pas plus récent que celui en service.`
+        : 'À jour.'
+    }
+    eng.is_latest = true
+    eng.latest = inUse
+  }
 }
 
 function parseJson(text: string): Record<string, unknown> | null {
