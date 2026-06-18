@@ -111,6 +111,26 @@ const STATUS_TONE: Record<CallStatus, string> = {
   failed:      'bg-brique/15 text-brique',
 }
 
+// Pastille de signal faible — couleurs alignées sur CallDetail (low=amber,
+// medium=orange, high=rouge/brique). On affiche la sévérité MAX présente.
+const ALERT_SEVERITY_BADGE: Record<'low' | 'medium' | 'high', { label: string; tone: string }> = {
+  low:    { label: 'faible',  tone: 'bg-amber-100 text-amber-700'   },
+  medium: { label: 'moyenne', tone: 'bg-orange-100 text-orange-700' },
+  high:   { label: '⚠ haute', tone: 'bg-brique/15 text-brique'      },
+}
+const SEVERITY_RANK = { high: 0, medium: 1, low: 2 } as const
+
+/** Sévérité la plus élevée parmi les alertes d'un appel, ou null si aucune. */
+function maxAlertSeverity(alerts: Array<{ severity: string }> | null): 'low' | 'medium' | 'high' | null {
+  if (!Array.isArray(alerts)) return null
+  let best: 'low' | 'medium' | 'high' | null = null
+  for (const a of alerts) {
+    const s = a.severity as 'low' | 'medium' | 'high'
+    if (s in SEVERITY_RANK && (best === null || SEVERITY_RANK[s] < SEVERITY_RANK[best])) best = s
+  }
+  return best
+}
+
 // Libellés du filtre période — dépendent de l'onglet : les appels passés se
 // regardent vers l'arrière (« derniers jours »), les prévus vers l'avant
 // (« prochains jours »). La logique de bornage est dans load() (now-X vs now+X).
@@ -455,7 +475,7 @@ export function AdminAppelsPage() {
                 // Suppression : appels prévus (résidus en base) + appels en échec
                 // (nettoyage des tentatives ratées qui polluent l'historique).
                 const canDelete     = tab === 'upcoming' || (pastLike && c.status === 'failed')
-                const hasHighAlert = Array.isArray(c.alerts) && c.alerts.some((a) => a.severity === 'high')
+                const topSeverity = maxAlertSeverity(c.alerts)
                 return (
                   <tr key={c.id} className="hover:bg-creme/40 transition-colors">
                     <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
@@ -489,9 +509,9 @@ export function AdminAppelsPage() {
                           📞 Entrant
                         </span>
                       )}
-                      {hasHighAlert && (
-                        <span className="ml-2 inline-block bg-brique/15 text-brique px-2 py-1 rounded-full text-xs font-semibold">
-                          ⚠ haute
+                      {topSeverity && (
+                        <span className={`ml-2 inline-block px-2 py-1 rounded-full text-xs font-semibold ${ALERT_SEVERITY_BADGE[topSeverity].tone}`}>
+                          {ALERT_SEVERITY_BADGE[topSeverity].label}
                         </span>
                       )}
                     </td>

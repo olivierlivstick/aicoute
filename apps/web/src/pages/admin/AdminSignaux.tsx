@@ -63,6 +63,19 @@ const STATUS_META: Record<FollowStatus, { label: string; tone: string }> = {
 
 const STATUS_ORDER: FollowStatus[] = ['todo', 'in_progress', 'done', 'dismissed']
 
+// Sévérité — couleurs alignées sur CallDetail (low=amber, medium=orange, high=rouge).
+const SEVERITY_META: Record<Severity, { label: string; tone: string; rank: number }> = {
+  high:   { label: 'Élevée',  tone: 'bg-red-50 text-red-700',       rank: 0 },
+  medium: { label: 'Modérée', tone: 'bg-orange-50 text-orange-700', rank: 1 },
+  low:    { label: 'Faible',  tone: 'bg-amber-50 text-amber-700',   rank: 2 },
+}
+type SeverityFilter = 'all' | Severity
+
+/** Rang de la sévérité la plus élevée d'un appel (0 = la plus grave). */
+function maxSeverityRank(r: SignalRow): number {
+  return Math.min(99, ...(r.alerts ?? []).map((a) => SEVERITY_META[a.severity]?.rank ?? 99))
+}
+
 // Tri : les non-résolus (todo > in_progress) d'abord, puis par date décroissante.
 const STATUS_PRIORITY: Record<FollowStatus, number> = {
   todo: 0, in_progress: 1, dismissed: 2, done: 3,
@@ -85,22 +98,21 @@ export function AdminSignauxPage() {
   const [actions, setActions] = useState<Record<string, SignalAction[]>>({})
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<StatusFilter>('open')
+  const [sevFilter, setSevFilter] = useState<SeverityFilter>('all')
   const [followFor, setFollowFor] = useState<SignalRow | null>(null)
 
   useEffect(() => { load() }, [])
 
   async function load() {
     setLoading(true)
-    // Appels portant ≥1 signal high. Containment JSONB : alerts @> [{"severity":"high"}]
-    // est vrai si un élément du tableau contient severity='high'.
-    // ⚠️ On passe le JSON comme CHAÎNE (pas comme tableau JS) : supabase-js
-    // sérialise un tableau via `value.join(',')` → un tableau d'objets devient
-    // `[object Object]` et le filtre ne matche jamais rien. Le branchement string
-    // de .contains() produit le bon `cs.[{"severity":"high"}]` → `@>`.
+    // Tous les appels portant AU MOINS un signal (alerts non vide). Le tri par
+    // sévérité (plus grave en tête) + le filtre se font côté client.
+    // `neq('alerts', '[]')` exclut les tableaux vides ET les NULL (null <> '[]'
+    // vaut NULL → non retenu) → on ne ramène que les appels avec un signal.
     const { data: callsData } = await supabase
       .from('calls')
       .select('id, scheduled_at, started_at, notified_at, origin, alerts, recording_path, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
-      .contains('alerts', JSON.stringify([{ severity: 'high' }]))
+      .neq('alerts', '[]')
       .order('scheduled_at', { ascending: false })
       .limit(300)
 
@@ -134,21 +146,28 @@ export function AdminSignauxPage() {
   const visible = useMemo(() => {
     let list = rows
     if (filter === 'open') {
-      list = rows.filter((r) => {
+      list = list.filter((r) => {
         const s = currentStatus(r.id)
         return s === 'todo' || s === 'in_progress'
       })
     } else if (filter !== 'all') {
-      list = rows.filter((r) => currentStatus(r.id) === filter)
+      list = list.filter((r) => currentStatus(r.id) === filter)
+    }
+    if (sevFilter !== 'all') {
+      list = list.filter((r) => (r.alerts ?? []).some((a) => a.severity === sevFilter))
     }
     return [...list].sort((a, b) => {
+      // 1) non-résolus d'abord, 2) plus grave d'abord, 3) plus récent d'abord
       const pa = STATUS_PRIORITY[currentStatus(a.id)]
       const pb = STATUS_PRIORITY[currentStatus(b.id)]
       if (pa !== pb) return pa - pb
+      const sa = maxSeverityRank(a)
+      const sb = maxSeverityRank(b)
+      if (sa !== sb) return sa - sb
       return new Date(effectiveDate(b)).getTime() - new Date(effectiveDate(a)).getTime()
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, actions, filter])
+  }, [rows, actions, filter, sevFilter])
 
   const openCount = useMemo(
     () => rows.filter((r) => ['todo', 'in_progress'].includes(currentStatus(r.id))).length,
@@ -178,7 +197,7 @@ export function AdminSignauxPage() {
           <ShieldAlert size={26} className="text-brique" /> Signaux
         </h1>
         <p className="text-slate-500 mt-1">
-          Appels portant un signal faible <strong className="text-brique">grave</strong>.
+          Signaux faibles détectés en conversation, <strong className="text-brun-700">les plus graves en tête</strong>.
           Notre responsabilité : prévenir l'aidant et garder la trace des actions menées.
           {openCount > 0 && (
             <span className="ml-2 inline-block bg-brique/15 text-brique px-2 py-0.5 rounded-full text-xs font-semibold">
@@ -189,7 +208,7 @@ export function AdminSignauxPage() {
       </header>
 
       {/* Filtres de statut */}
-      <div className="flex flex-wrap gap-1 mb-5">
+      <div className="flex flex-wrap gap-1 mb-2">
         {([
           { value: 'open', label: 'À traiter' },
           { value: 'all',  label: 'Tous' },
@@ -201,6 +220,27 @@ export function AdminSignauxPage() {
             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
               filter === o.value
                 ? 'bg-primary text-white'
+                : 'bg-white border border-creme-sable text-slate-600 hover:bg-creme'
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Filtre de sévérité */}
+      <div className="flex flex-wrap items-center gap-1 mb-5">
+        <span className="text-[10px] uppercase tracking-wider text-slate-400 mr-1">Sévérité</span>
+        {([
+          { value: 'all', label: 'Toutes' },
+          ...(['high', 'medium', 'low'] as Severity[]).map((s) => ({ value: s, label: SEVERITY_META[s].label })),
+        ] as Array<{ value: SeverityFilter; label: string }>).map((o) => (
+          <button
+            key={o.value}
+            onClick={() => setSevFilter(o.value)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              sevFilter === o.value
+                ? 'bg-accent-600 text-white'
                 : 'bg-white border border-creme-sable text-slate-600 hover:bg-creme'
             }`}
           >
@@ -229,7 +269,10 @@ export function AdminSignauxPage() {
               {visible.map((r) => {
                 const ben = r.beneficiaries
                 const aidant = ben?.profiles
-                const highAlerts = (r.alerts ?? []).filter((a) => a.severity === 'high')
+                // Tri des signaux de la ligne : plus grave d'abord.
+                const sortedAlerts = [...(r.alerts ?? [])].sort(
+                  (a, b) => (SEVERITY_META[a.severity]?.rank ?? 99) - (SEVERITY_META[b.severity]?.rank ?? 99),
+                )
                 const status = currentStatus(r.id)
                 const journal = actions[r.id] ?? []
                 return (
@@ -249,10 +292,10 @@ export function AdminSignauxPage() {
                     </td>
                     <td className="px-4 py-3 max-w-md">
                       <div className="space-y-1.5">
-                        {highAlerts.map((a, i) => (
+                        {sortedAlerts.map((a, i) => (
                           <div key={i} className="flex gap-2 items-start">
-                            <span className="mt-0.5 inline-flex items-center gap-1 bg-brique/15 text-brique px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap">
-                              <AlertTriangle size={11} /> {catLabel(a.category)}
+                            <span className={`mt-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${SEVERITY_META[a.severity]?.tone ?? 'bg-slate-100 text-slate-600'}`}>
+                              <AlertTriangle size={11} /> {catLabel(a.category)} · {SEVERITY_META[a.severity]?.label ?? a.severity}
                             </span>
                             <span className="text-slate-600 text-xs italic">« {a.evidence} »</span>
                           </div>
@@ -299,9 +342,9 @@ export function AdminSignauxPage() {
                 <tr>
                   <td colSpan={7} className="px-5 py-10 text-center text-slate-400 text-sm">
                     <ShieldAlert size={24} className="mx-auto mb-2 text-slate-300" />
-                    {filter === 'open'
-                      ? 'Aucun signal grave en attente de traitement. 🎉'
-                      : 'Aucun signal grave ne correspond à ce filtre.'}
+                    {filter === 'open' && sevFilter === 'all'
+                      ? 'Aucun signal en attente de traitement. 🎉'
+                      : 'Aucun signal ne correspond à ces filtres.'}
                   </td>
                 </tr>
               )}
@@ -337,7 +380,9 @@ function FollowUpModal({
   const [comment, setComment] = useState('')
   const [saving, setSaving] = useState(false)
   const ben = row.beneficiaries
-  const highAlerts = (row.alerts ?? []).filter((a) => a.severity === 'high')
+  const sortedAlerts = [...(row.alerts ?? [])].sort(
+    (a, b) => (SEVERITY_META[a.severity]?.rank ?? 99) - (SEVERITY_META[b.severity]?.rank ?? 99),
+  )
 
   async function submit() {
     if (!comment.trim() && status === currentStatus) {
@@ -378,11 +423,13 @@ function FollowUpModal({
 
         <div className="p-5 space-y-5">
           {/* Rappel des signaux */}
-          <div className="bg-brique/5 border border-brique/20 rounded-xl p-3 space-y-1.5">
-            {highAlerts.map((a, i) => (
-              <p key={i} className="text-xs">
-                <span className="font-semibold text-brique">{catLabel(a.category)}</span>
-                <span className="text-slate-600 italic"> — « {a.evidence} »</span>
+          <div className="bg-creme/60 border border-creme-sable rounded-xl p-3 space-y-1.5">
+            {sortedAlerts.map((a, i) => (
+              <p key={i} className="text-xs flex items-start gap-2">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${SEVERITY_META[a.severity]?.tone ?? 'bg-slate-100 text-slate-600'}`}>
+                  {catLabel(a.category)} · {SEVERITY_META[a.severity]?.label ?? a.severity}
+                </span>
+                <span className="text-slate-600 italic">« {a.evidence} »</span>
               </p>
             ))}
           </div>
