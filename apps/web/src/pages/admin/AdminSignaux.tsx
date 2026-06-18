@@ -75,11 +75,6 @@ function maxSeverityRank(r: SignalRow): number {
   return Math.min(99, ...(r.alerts ?? []).map((a) => SEVERITY_META[a.severity]?.rank ?? 99))
 }
 
-// Tri : les non-résolus (todo > in_progress) d'abord, puis par date décroissante.
-const STATUS_PRIORITY: Record<FollowStatus, number> = {
-  todo: 0, in_progress: 1, dismissed: 2, done: 3,
-}
-
 function effectiveDate(r: SignalRow): string {
   return r.started_at ?? r.notified_at ?? r.scheduled_at
 }
@@ -166,14 +161,12 @@ export function AdminSignauxPage() {
       list = list.filter((r) => (r.alerts ?? []).some((a) => sevSel.has(a.severity)))
     }
     return [...list].sort((a, b) => {
-      // 1) non-résolus d'abord, 2) plus grave d'abord, 3) plus récent d'abord
-      const pa = STATUS_PRIORITY[currentStatus(a.id)]
-      const pb = STATUS_PRIORITY[currentStatus(b.id)]
-      if (pa !== pb) return pa - pb
-      const sa = maxSeverityRank(a)
-      const sb = maxSeverityRank(b)
-      if (sa !== sb) return sa - sb
-      return new Date(effectiveDate(b)).getTime() - new Date(effectiveDate(a)).getTime()
+      // Tri par date d'appel décroissante (plus récents en premier) ;
+      // à date égale, le plus grave d'abord.
+      const da = new Date(effectiveDate(a)).getTime()
+      const db = new Date(effectiveDate(b)).getTime()
+      if (da !== db) return db - da
+      return maxSeverityRank(a) - maxSeverityRank(b)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, actions, statusSel, sevSel])
