@@ -93,10 +93,14 @@ export function AdminSignauxPage() {
     setLoading(true)
     // Appels portant ≥1 signal high. Containment JSONB : alerts @> [{"severity":"high"}]
     // est vrai si un élément du tableau contient severity='high'.
+    // ⚠️ On passe le JSON comme CHAÎNE (pas comme tableau JS) : supabase-js
+    // sérialise un tableau via `value.join(',')` → un tableau d'objets devient
+    // `[object Object]` et le filtre ne matche jamais rien. Le branchement string
+    // de .contains() produit le bon `cs.[{"severity":"high"}]` → `@>`.
     const { data: callsData } = await supabase
       .from('calls')
       .select('id, scheduled_at, started_at, notified_at, origin, alerts, recording_path, beneficiaries(id, first_name, last_name, profiles(email, full_name))')
-      .contains('alerts', [{ severity: 'high' }])
+      .contains('alerts', JSON.stringify([{ severity: 'high' }]))
       .order('scheduled_at', { ascending: false })
       .limit(300)
 
