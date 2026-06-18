@@ -191,6 +191,14 @@ export function AppelsTab({ beneficiary }: { beneficiary: Beneficiary }) {
       }))
   }, [calls])
 
+  // Tri d'affichage : par date EFFECTIVE de l'appel (started_at, repli scheduled_at),
+  // la plus récente en premier — aligné sur la date montrée dans chaque ligne.
+  const ordered = useMemo(
+    () => [...calls].sort((a, b) =>
+      new Date(b.started_at ?? b.scheduled_at).getTime() - new Date(a.started_at ?? a.scheduled_at).getTime()),
+    [calls],
+  )
+
   const totals = useMemo(() => {
     let duration = 0, ai = 0, twilio = 0
     for (const c of calls) {
@@ -300,7 +308,7 @@ export function AppelsTab({ beneficiary }: { beneficiary: Beneficiary }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-creme-sable">
-                  {calls.map((c) => {
+                  {ordered.map((c) => {
                     const t = TYPE_META[callType(c.origin)]
                     const tw = twilioCost(c)
                     const ai = c.ai_cost_eur_real ?? 0
