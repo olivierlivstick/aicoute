@@ -1,16 +1,15 @@
 import { useEffect } from 'react'
 import { usePrompts } from '@/hooks/usePrompts'
 import { cn } from '@/lib/utils'
-import type { Prompt, PromptKind } from '@modect/shared'
+import type { Prompt } from '@modect/shared'
 
 const selectCls =
   'w-full h-10 rounded-xl border border-creme-sable bg-white px-3.5 text-[14px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-accent-300'
 
 interface Props {
   language: string
-  kind: PromptKind
   value: string | null
-  /** Reçoit le prompt complet (ou null) → le parent résout le corps + snapshot. */
+  /** Reçoit la PAIRE complète (ou null) → le parent résout le corps voulu + snapshot. */
   onChange: (prompt: Prompt | null) => void
   /** Si vrai : sélectionne automatiquement le défaut quand `value` n'est pas (ou plus)
    *  dans la liste (utile à l'onboarding et lors d'un changement de langue). */
@@ -19,11 +18,12 @@ interface Props {
 }
 
 /**
- * Menu déroulant des prompts de la bibliothèque pour un couple (langue, type).
- * Le défaut est marqué « — défaut ». Le parent snapshotte le corps du prompt choisi.
+ * Menu déroulant des prompts (paires) de la bibliothèque pour une langue.
+ * Le défaut est marqué « — défaut ». Le parent snapshotte le corps voulu (émis ou
+ * entrant) de la paire choisie.
  */
-export function PromptSelect({ language, kind, value, onChange, autoSelectDefault, className }: Props) {
-  const { prompts, loading } = usePrompts({ language, kind })
+export function PromptSelect({ language, value, onChange, autoSelectDefault, className }: Props) {
+  const { prompts, loading } = usePrompts({ language })
 
   useEffect(() => {
     if (!autoSelectDefault || loading) return

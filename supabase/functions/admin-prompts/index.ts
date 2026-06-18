@@ -1,17 +1,17 @@
 /**
  * Edge Function: admin-prompts
  *
- * CRUD de la BIBLIOTHÈQUE de prompts (table `prompts`) + gestion atomique du
- * « prompt par défaut » d'un couple (langue, type).
+ * CRUD de la BIBLIOTHÈQUE de prompts (table `prompts`, modèle PAIRE) + gestion
+ * atomique de la « paire par défaut » d'une langue.
  *
- *  POST { action: 'create',     title, language, kind, body, is_default? } → { ok, id }
- *  POST { action: 'update', id, title?, language?, kind?, body?, is_default? } → { ok }
- *  POST { action: 'set-default', id }                                        → { ok }
- *  POST { action: 'delete',  id }                                            → { ok }
+ *  POST { action: 'create',     title, language, outbound_body, inbound_body, is_default? } → { ok, id }
+ *  POST { action: 'update', id, title?, language?, outbound_body?, inbound_body?, is_default? } → { ok }
+ *  POST { action: 'set-default', id }                                                          → { ok }
+ *  POST { action: 'delete',  id }                                                              → { ok }
  *
  * Réservé aux admins (requireAdmin sur le JWT appelant). Écriture en service-role.
  * La mise en défaut se fait en 2 temps (dé-cocher les autres PUIS cocher) pour ne
- * pas violer l'index unique partiel `prompts_one_default_per_lang_kind`.
+ * pas violer l'index unique partiel `prompts_one_default_per_lang`.
  * verify_jwt = false (auth gérée en interne, comme admin-credit-minutes).
  */
 
@@ -21,11 +21,10 @@ import { getSupabaseAdmin } from '../_shared/supabaseAdmin.ts'
 import { requireAdmin } from '../_shared/requireAdmin.ts'
 
 const LANGS = ['fr', 'en', 'es', 'de', 'it']
-const KINDS = ['outbound', 'inbound']
 const MAX_TITLE = 120
 const MAX_BODY = 20000
 
-type Fields = { title?: string; language?: string; kind?: string; body?: string }
+type Fields = { title?: string; language?: string; outbound_body?: string; inbound_body?: string }
 
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req)
@@ -52,8 +51,8 @@ Deno.serve(async (req: Request) => {
         .insert({
           title: fields.title,
           language: fields.language,
-          kind: fields.kind,
-          body: fields.body,
+          outbound_body: fields.outbound_body,
+          inbound_body: fields.inbound_body,
           is_default: false,            // mis en défaut juste après si demandé (atomique)
           updated_by: auth.userId,
         })
@@ -62,7 +61,7 @@ Deno.serve(async (req: Request) => {
       if (error) throw new Error(error.message)
 
       if (body?.is_default === true) {
-        await setDefault(admin, data.id, fields.language!, fields.kind!)
+        await setDefault(admin, data.id, fields.language!)
       }
       return jsonResponse({ ok: true, id: data.id })
     }
@@ -79,19 +78,19 @@ Deno.serve(async (req: Request) => {
         updated_at: new Date().toISOString(),
         updated_by: auth.userId,
       }
-      if (fields.title !== undefined)    patch.title = fields.title
-      if (fields.language !== undefined) patch.language = fields.language
-      if (fields.kind !== undefined)     patch.kind = fields.kind
-      if (fields.body !== undefined)     patch.body = fields.body
+      if (fields.title !== undefined)         patch.title = fields.title
+      if (fields.language !== undefined)      patch.language = fields.language
+      if (fields.outbound_body !== undefined) patch.outbound_body = fields.outbound_body
+      if (fields.inbound_body !== undefined)  patch.inbound_body = fields.inbound_body
 
       const { error } = await admin.from('prompts').update(patch).eq('id', id)
       if (error) throw new Error(error.message)
 
-      // État final (langue/kind peuvent avoir changé) pour gérer le défaut.
+      // État final (la langue peut avoir changé) pour gérer le défaut.
       if (body?.is_default === true) {
         const { data: row } = await admin
-          .from('prompts').select('language, kind').eq('id', id).maybeSingle()
-        if (row) await setDefault(admin, id, row.language, row.kind)
+          .from('prompts').select('language').eq('id', id).maybeSingle()
+        if (row) await setDefault(admin, id, row.language)
       }
       return jsonResponse({ ok: true })
     }
@@ -101,10 +100,10 @@ Deno.serve(async (req: Request) => {
       const id = String(body?.id ?? '').trim()
       if (!id) return jsonResponse({ error: 'id manquant' }, 400)
       const { data: row, error } = await admin
-        .from('prompts').select('language, kind').eq('id', id).maybeSingle()
+        .from('prompts').select('language').eq('id', id).maybeSingle()
       if (error) throw new Error(error.message)
       if (!row) return jsonResponse({ error: 'Prompt introuvable.' }, 404)
-      await setDefault(admin, id, row.language, row.kind)
+      await setDefault(admin, id, row.language)
       return jsonResponse({ ok: true })
     }
 
@@ -114,20 +113,18 @@ Deno.serve(async (req: Request) => {
       if (!id) return jsonResponse({ error: 'id manquant' }, 400)
 
       const { data: row } = await admin
-        .from('prompts').select('language, kind, is_default').eq('id', id).maybeSingle()
+        .from('prompts').select('language, is_default').eq('id', id).maybeSingle()
 
       const { error } = await admin.from('prompts').delete().eq('id', id)
       if (error) throw new Error(error.message)
 
-      // Si on a supprimé le défaut, on promeut le plus récent restant du couple
-      // (pour conserver un défaut/fallback). S'il n'en reste aucun → fallback fr /
-      // CODE_DEFAULT_* côté edge.
+      // Si on a supprimé le défaut, on promeut la plus récente paire restante de la
+      // langue (pour conserver un défaut/fallback). Sinon → fallback fr / CODE_DEFAULT_*.
       if (row?.is_default) {
         const { data: sib } = await admin
           .from('prompts')
           .select('id')
           .eq('language', row.language)
-          .eq('kind', row.kind)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle()
@@ -146,17 +143,16 @@ Deno.serve(async (req: Request) => {
   }
 })
 
-/** Bascule le défaut d'un couple (langue, type) en 2 temps (anti-violation index). */
-async function setDefault(admin: SupabaseClient, id: string, language: string, kind: string): Promise<void> {
-  // 1. dé-cocher les autres défauts du même couple
+/** Bascule la paire par défaut d'une langue en 2 temps (anti-violation index). */
+async function setDefault(admin: SupabaseClient, id: string, language: string): Promise<void> {
+  // 1. dé-cocher les autres défauts de la même langue
   await admin
     .from('prompts')
     .update({ is_default: false })
     .eq('language', language)
-    .eq('kind', kind)
     .eq('is_default', true)
     .neq('id', id)
-  // 2. cocher celui-ci
+  // 2. cocher celle-ci
   await admin.from('prompts').update({ is_default: true }).eq('id', id)
 }
 
@@ -176,16 +172,17 @@ function validateFields(body: Record<string, unknown>, requireAll: boolean): Fie
     if (!LANGS.includes(language)) return { error: 'Langue invalide.' }
     out.language = language
   }
-  if (requireAll || body?.kind !== undefined) {
-    const kind = String(body?.kind ?? '')
-    if (!KINDS.includes(kind)) return { error: 'Type invalide.' }
-    out.kind = kind
+  if (requireAll || body?.outbound_body !== undefined) {
+    const text = String(body?.outbound_body ?? '')
+    if (!text.trim()) return { error: 'Le prompt « appel émis » est requis.' }
+    if (text.length > MAX_BODY) return { error: 'Prompt « appel émis » trop long.' }
+    out.outbound_body = text
   }
-  if (requireAll || body?.body !== undefined) {
-    const text = String(body?.body ?? '')
-    if (!text.trim()) return { error: 'Le contenu est requis.' }
-    if (text.length > MAX_BODY) return { error: 'Contenu trop long.' }
-    out.body = text
+  if (requireAll || body?.inbound_body !== undefined) {
+    const text = String(body?.inbound_body ?? '')
+    if (!text.trim()) return { error: 'Le prompt « appel entrant » est requis.' }
+    if (text.length > MAX_BODY) return { error: 'Prompt « appel entrant » trop long.' }
+    out.inbound_body = text
   }
   return out
 }

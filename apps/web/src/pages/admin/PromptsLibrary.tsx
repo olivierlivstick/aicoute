@@ -1,17 +1,18 @@
-import { useState } from 'react'
-import { Plus, Star, Pencil, Trash2, Check, Info, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Plus, Star, Trash2, Check, Info, X, PhoneOutgoing, PhoneIncoming } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { usePrompts } from '@/hooks/usePrompts'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
 import { cn } from '@/lib/utils'
-import type { Prompt, PromptKind } from '@modect/shared'
+import type { Prompt } from '@modect/shared'
 
 /**
  * Onglet « Prompts » de /admin/sante : CRUD de la bibliothèque de prompts.
- * Écriture via l'Edge Fn admin-prompts (service-role, gestion atomique du défaut).
- * Lecture directe (RLS lecture authentifiée).
+ * Un prompt = une PAIRE (appel émis + appel entrant) dans une langue. La liste
+ * montre titre / langue / date + 2 boutons pour éditer chaque texte de la paire.
+ * Écriture via l'Edge Fn admin-prompts (service-role, défaut atomique par langue).
  */
 
 const LANGS: { value: string; label: string }[] = [
@@ -22,12 +23,7 @@ const LANGS: { value: string; label: string }[] = [
   { value: 'it', label: '🇮🇹 Italiano' },
 ]
 const langLabel = (code: string) => LANGS.find((l) => l.value === code)?.label ?? code
-
-const KINDS: { value: PromptKind; label: string; hint: string }[] = [
-  { value: 'outbound', label: 'Appel sortant', hint: 'AICOUTE appelle le bénéficiaire (personnalité + règles)' },
-  { value: 'inbound', label: 'Appel entrant', hint: 'Le bénéficiaire appelle AICOUTE (ouverture)' },
-]
-const kindLabel = (k: PromptKind) => KINDS.find((x) => x.value === k)?.label ?? k
+const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
 
 const PLACEHOLDERS: Array<{ token: string; desc: string }> = [
   { token: '{{persona}}', desc: 'prénom du compagnon IA' },
@@ -37,16 +33,20 @@ const PLACEHOLDERS: Array<{ token: string; desc: string }> = [
   { token: '{{il_elle}}', desc: 'pronom selon le genre' },
 ]
 
+type FocusField = 'outbound' | 'inbound'
 type Draft = {
   id?: string
   title: string
   language: string
-  kind: PromptKind
-  body: string
+  outbound_body: string
+  inbound_body: string
   is_default: boolean
+  focus: FocusField
 }
 
-const EMPTY_DRAFT: Draft = { title: '', language: 'fr', kind: 'outbound', body: '', is_default: false }
+const emptyDraft = (focus: FocusField = 'outbound'): Draft => ({
+  title: '', language: 'fr', outbound_body: '', inbound_body: '', is_default: false, focus,
+})
 
 export function PromptsLibrarySection() {
   const { prompts, loading, refetch } = usePrompts()
@@ -69,22 +69,16 @@ export function PromptsLibrarySection() {
   async function saveDraft() {
     if (!draft) return
     setBusyId('draft')
+    const payload = {
+      title: draft.title,
+      language: draft.language,
+      outbound_body: draft.outbound_body,
+      inbound_body: draft.inbound_body,
+      is_default: draft.is_default,
+    }
     const ok = draft.id
-      ? await call('update', {
-          id: draft.id,
-          title: draft.title,
-          language: draft.language,
-          kind: draft.kind,
-          body: draft.body,
-          is_default: draft.is_default,
-        })
-      : await call('create', {
-          title: draft.title,
-          language: draft.language,
-          kind: draft.kind,
-          body: draft.body,
-          is_default: draft.is_default,
-        })
+      ? await call('update', { id: draft.id, ...payload })
+      : await call('create', payload)
     setBusyId(null)
     if (ok) { setDraft(null); await refetch() }
   }
@@ -97,12 +91,18 @@ export function PromptsLibrarySection() {
   }
 
   async function remove(p: Prompt) {
-    if (!window.confirm(`Supprimer le prompt « ${p.title} » ?`)) return
+    if (!window.confirm(`Supprimer le prompt « ${p.title} » (appel émis + appel entrant) ?`)) return
     setBusyId(p.id)
     const ok = await call('delete', { id: p.id })
     setBusyId(null)
     if (ok) await refetch()
   }
+
+  const openEdit = (p: Prompt, focus: FocusField) => setDraft({
+    id: p.id, title: p.title, language: p.language,
+    outbound_body: p.outbound_body, inbound_body: p.inbound_body,
+    is_default: p.is_default, focus,
+  })
 
   return (
     <div className="space-y-6">
@@ -110,12 +110,12 @@ export function PromptsLibrarySection() {
         <div className="flex items-start gap-2 bg-accent-50 text-accent-800 rounded-xl px-4 py-3 text-sm flex-1">
           <Info size={16} className="mt-0.5 shrink-0" />
           <div>
-            <p>Bibliothèque de prompts proposés à l'aidant (onboarding + fiche bénéficiaire) selon la <strong>langue</strong> et le <strong>type d'appel</strong>. Le prompt <strong>par défaut</strong> de chaque couple (langue, type) est présélectionné et sert de filet de secours.</p>
+            <p>Chaque prompt est une <strong>paire</strong> : le texte des <strong>appels émis</strong> (AICOUTE appelle) et celui des <strong>appels entrants</strong> (le bénéficiaire appelle), dans une langue. La paire <strong>par défaut</strong> de chaque langue est présélectionnée et sert de filet de secours.</p>
             <p className="mt-1">Le <strong>contexte</strong> (profil, mémoire, dernier appel, durée) est ajouté automatiquement — inutile de l'écrire ici.</p>
           </div>
         </div>
         {!draft && (
-          <Button onClick={() => setDraft({ ...EMPTY_DRAFT })}>
+          <Button onClick={() => setDraft(emptyDraft())}>
             <Plus size={14} className="mr-1" /> Nouveau prompt
           </Button>
         )}
@@ -135,67 +135,63 @@ export function PromptsLibrarySection() {
 
       {loading ? (
         <p className="text-slate-400 text-sm">Chargement…</p>
+      ) : prompts.length === 0 ? (
+        <p className="text-sm text-slate-400 italic">Aucun prompt pour le moment.</p>
       ) : (
-        KINDS.map(({ value: kind, label, hint }) => {
-          const rows = prompts.filter((p) => p.kind === kind)
-          return (
-            <section key={kind}>
-              <h3 className="font-serif text-lg font-semibold text-brun-900">{label}</h3>
-              <p className="text-xs text-slate-500 mb-3">{hint}</p>
-              {rows.length === 0 ? (
-                <p className="text-sm text-slate-400 italic">Aucun prompt.</p>
-              ) : (
-                <div className="space-y-2">
-                  {rows.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center gap-3 bg-white rounded-xl border border-creme-sable px-4 py-3"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-slate-800 text-[14.5px]">{p.title}</span>
-                          <span className="text-xs text-slate-500">{langLabel(p.language)}</span>
-                          {p.is_default && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sauge bg-sauge/10 rounded-full px-2 py-0.5">
-                              <Star size={11} /> défaut
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-400 truncate mt-0.5">{p.body.slice(0, 110)}…</p>
-                      </div>
-                      {!p.is_default && (
-                        <button
-                          type="button"
-                          onClick={() => setDefault(p)}
-                          disabled={busyId === p.id}
-                          className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-sauge transition-colors disabled:opacity-50 shrink-0"
-                          title="Définir comme défaut pour cette langue + ce type"
-                        >
-                          <Star size={13} /> Par défaut
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setDraft({ id: p.id, title: p.title, language: p.language, kind: p.kind, body: p.body, is_default: p.is_default })}
-                        className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-primary transition-colors shrink-0"
-                      >
-                        <Pencil size={13} /> Modifier
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => remove(p)}
-                        disabled={busyId === p.id}
-                        className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-brique transition-colors disabled:opacity-50 shrink-0"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  ))}
+        <div className="space-y-2">
+          {prompts.map((p) => (
+            <div key={p.id} className="flex items-center gap-4 bg-white rounded-xl border border-creme-sable px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-slate-800 text-[14.5px]">{p.title}</span>
+                  {p.is_default && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sauge bg-sauge/10 rounded-full px-2 py-0.5">
+                      <Star size={11} /> défaut
+                    </span>
+                  )}
                 </div>
-              )}
-            </section>
-          )
-        })
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {langLabel(p.language)} · créé le {formatDate(p.created_at)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => openEdit(p, 'outbound')}
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-primary border border-creme-sable rounded-lg px-2.5 py-1.5 hover:bg-creme transition-colors"
+                >
+                  <PhoneOutgoing size={13} /> Appel émis
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openEdit(p, 'inbound')}
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-primary border border-creme-sable rounded-lg px-2.5 py-1.5 hover:bg-creme transition-colors"
+                >
+                  <PhoneIncoming size={13} /> Appel entrant
+                </button>
+                {!p.is_default && (
+                  <button
+                    type="button"
+                    onClick={() => setDefault(p)}
+                    disabled={busyId === p.id}
+                    title="Définir comme paire par défaut pour cette langue"
+                    className="inline-flex items-center text-slate-400 hover:text-sauge transition-colors disabled:opacity-50 p-1.5"
+                  >
+                    <Star size={15} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => remove(p)}
+                  disabled={busyId === p.id}
+                  className="inline-flex items-center text-slate-400 hover:text-brique transition-colors disabled:opacity-50 p-1.5"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -210,9 +206,20 @@ function DraftEditor({
   onCancel: () => void
   saving: boolean
 }) {
-  const selectCls = 'h-10 rounded-xl border border-creme-sable bg-white px-3.5 text-[14px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-accent-300'
+  const selectCls = 'h-10 w-full rounded-xl border border-creme-sable bg-white px-3.5 text-[14px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-accent-300'
+  const outRef = useRef<HTMLTextAreaElement | null>(null)
+  const inRef = useRef<HTMLTextAreaElement | null>(null)
+
+  // Focalise le texte ciblé par le bouton ayant ouvert l'éditeur.
+  useEffect(() => {
+    const el = draft.focus === 'inbound' ? inRef.current : outRef.current
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el?.focus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
-    <div className="bg-white rounded-2xl border border-primary/20 shadow-sm p-6 space-y-4">
+    <div className="bg-white rounded-2xl border border-primary/20 shadow-sm p-6 space-y-5">
       <div className="flex items-center justify-between">
         <h3 className="font-serif text-lg font-semibold text-brun-900">
           {draft.id ? 'Modifier le prompt' : 'Nouveau prompt'}
@@ -220,52 +227,62 @@ function DraftEditor({
         <button type="button" onClick={onCancel} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-4">
+      <div className="grid sm:grid-cols-[1fr_auto] gap-4 items-end">
         <div>
           <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5 block">Titre</label>
           <Input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Compagnon chaleureux" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5 block">Langue</label>
-            <select className={cn(selectCls, 'w-full')} value={draft.language} onChange={(e) => setDraft({ ...draft, language: e.target.value })}>
-              {LANGS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5 block">Type</label>
-            <select className={cn(selectCls, 'w-full')} value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as PromptKind })}>
-              {KINDS.map((k) => <option key={k.value} value={k.value}>{kindLabel(k.value)}</option>)}
-            </select>
-          </div>
+        <div>
+          <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5 block">Langue</label>
+          <select className={selectCls} value={draft.language} onChange={(e) => setDraft({ ...draft, language: e.target.value })}>
+            {LANGS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+          </select>
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-1.5">
+        {PLACEHOLDERS.map(({ token, desc }) => (
+          <span key={token} className="inline-flex items-center gap-1.5 text-[11px] bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5">
+            <code className="text-primary font-semibold">{token}</code>
+            <span className="text-slate-500">{desc}</span>
+          </span>
+        ))}
+      </div>
+
       <div>
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {PLACEHOLDERS.map(({ token, desc }) => (
-            <span key={token} className="inline-flex items-center gap-1.5 text-[11px] bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5">
-              <code className="text-primary font-semibold">{token}</code>
-              <span className="text-slate-500">{desc}</span>
-            </span>
-          ))}
-        </div>
+        <label className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-700 mb-1.5">
+          <PhoneOutgoing size={14} className="text-primary" /> Appel émis — AICOUTE appelle le bénéficiaire (personnalité + règles)
+        </label>
         <Textarea
-          rows={draft.kind === 'inbound' ? 6 : 18}
-          value={draft.body}
-          onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-          className="font-mono text-sm leading-relaxed"
+          ref={outRef}
+          rows={16}
+          value={draft.outbound_body}
+          onChange={(e) => setDraft({ ...draft, outbound_body: e.target.value })}
+          className={cn('font-mono text-sm leading-relaxed', draft.focus === 'outbound' && 'ring-2 ring-accent-300')}
+        />
+      </div>
+
+      <div>
+        <label className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-700 mb-1.5">
+          <PhoneIncoming size={14} className="text-primary" /> Appel entrant — le bénéficiaire appelle AICOUTE (ouverture)
+        </label>
+        <Textarea
+          ref={inRef}
+          rows={6}
+          value={draft.inbound_body}
+          onChange={(e) => setDraft({ ...draft, inbound_body: e.target.value })}
+          className={cn('font-mono text-sm leading-relaxed', draft.focus === 'inbound' && 'ring-2 ring-accent-300')}
         />
       </div>
 
       <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-600">
         <input type="checkbox" className="w-4 h-4 rounded accent-primary" checked={draft.is_default} onChange={(e) => setDraft({ ...draft, is_default: e.target.checked })} />
-        Prompt par défaut pour {langLabel(draft.language)} · {kindLabel(draft.kind)}
+        Paire par défaut pour {langLabel(draft.language)}
       </label>
 
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-creme-sable">
         <Button type="button" variant="ghost" onClick={onCancel}>Annuler</Button>
-        <Button onClick={onSave} loading={saving} disabled={!draft.title.trim() || !draft.body.trim()}>
+        <Button onClick={onSave} loading={saving} disabled={!draft.title.trim() || !draft.outbound_body.trim() || !draft.inbound_body.trim()}>
           <Check size={14} className="mr-1" /> Enregistrer
         </Button>
       </div>

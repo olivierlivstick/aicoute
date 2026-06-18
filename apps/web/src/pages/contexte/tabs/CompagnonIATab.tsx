@@ -283,7 +283,7 @@ function PromptEdit({ beneficiary, onSaved, close }: EditProps) {
     if (!p) { setSelected(null); return }
     const current = getValues('custom_prompt')?.trim()
     if (current && !window.confirm(`Remplacer le texte actuel par le prompt « ${p.title} » ?`)) return
-    setValue('custom_prompt', resolveBody(p.body), { shouldDirty: true })
+    setValue('custom_prompt', resolveBody(p.outbound_body), { shouldDirty: true })
     setSelected(p)
   }
 
@@ -291,7 +291,7 @@ function PromptEdit({ beneficiary, onSaved, close }: EditProps) {
     const trimmed = v.custom_prompt?.trim()
     const ok = await save({
       custom_prompt: trimmed ? trimmed : null,
-      custom_prompt_id: selected?.id ?? beneficiary.custom_prompt_id ?? null,
+      prompt_id: selected?.id ?? beneficiary.prompt_id ?? null,
     })
     if (ok) { onSaved(); close() }
   })
@@ -302,8 +302,7 @@ function PromptEdit({ beneficiary, onSaved, close }: EditProps) {
         <EditLabel>Modèle de prompt</EditLabel>
         <PromptSelect
           language={beneficiary.language_preference}
-          kind="outbound"
-          value={selected?.id ?? beneficiary.custom_prompt_id}
+          value={selected?.id ?? beneficiary.prompt_id}
           onChange={apply}
         />
         <p className="text-xs text-slate-400 mt-1 normal-case tracking-normal">
@@ -356,7 +355,7 @@ function InboundOpeningEdit({ beneficiary, onSaved, close }: EditProps) {
     if (!p) { setSelected(null); return }
     const current = getValues('inbound_custom_prompt')?.trim()
     if (current && !window.confirm(`Remplacer le texte actuel par le prompt « ${p.title} » ?`)) return
-    const resolved = resolvePromptPlaceholders(p.body, {
+    const resolved = resolvePromptPlaceholders(p.inbound_body, {
       first_name: beneficiary.first_name,
       ai_persona_name: beneficiary.ai_persona_name,
       conversation_style: beneficiary.conversation_style,
@@ -371,7 +370,7 @@ function InboundOpeningEdit({ beneficiary, onSaved, close }: EditProps) {
     const trimmed = v.inbound_custom_prompt?.trim()
     const ok = await save({
       inbound_custom_prompt: trimmed ? trimmed : null,
-      inbound_prompt_id: selected?.id ?? beneficiary.inbound_prompt_id ?? null,
+      prompt_id: selected?.id ?? beneficiary.prompt_id ?? null,
     } as unknown as Partial<Beneficiary>)
     if (ok) { onSaved(); close() }
   })
@@ -382,8 +381,7 @@ function InboundOpeningEdit({ beneficiary, onSaved, close }: EditProps) {
         <EditLabel>Modèle d'ouverture</EditLabel>
         <PromptSelect
           language={beneficiary.language_preference}
-          kind="inbound"
-          value={selected?.id ?? beneficiary.inbound_prompt_id}
+          value={selected?.id ?? beneficiary.prompt_id}
           onChange={apply}
         />
         <p className="text-xs text-slate-400 mt-1 normal-case tracking-normal">

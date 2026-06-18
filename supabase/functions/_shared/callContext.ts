@@ -180,25 +180,21 @@ export async function loadCallContext(
   const model            = normalizeModel(caregiverProfile?.agent_model)
   const agentExtraPrompt = caregiverProfile?.agent_extra_prompt ?? null
 
-  // 4.5 Défaut de prompt depuis la BIBLIOTHÈQUE `prompts` pour la langue du
-  //     bénéficiaire. Le service role bypass la RLS. Cascade de fallback :
-  //       défaut (langue, kind) → défaut (fr, kind) → null → CODE_DEFAULT_* (edge).
+  // 4.5 Paire de prompts par DÉFAUT depuis la BIBLIOTHÈQUE `prompts` pour la langue
+  //     du bénéficiaire. Le service role bypass la RLS. Cascade de fallback :
+  //       défaut paire (langue) → défaut paire (fr) → null → CODE_DEFAULT_* (edge).
   //     custom_prompt étant quasi toujours snapshotté, ce chemin sert surtout de
   //     filet (bénéficiaire sans copie concrète).
   const lang = (beneficiary.language_preference ?? 'fr').toLowerCase()
   const promptsRes = await supabase
     .from('prompts')
-    .select('language, kind, body')
+    .select('language, outbound_body, inbound_body')
     .eq('is_default', true)
-    .in('kind', ['outbound', 'inbound'])
     .in('language', [lang, 'fr'])
-  const promptRows = (promptsRes.data as Array<{ language: string; kind: string; body: string }> | null) ?? []
-  const pickDefault = (kind: 'outbound' | 'inbound'): string | null =>
-    promptRows.find((r) => r.kind === kind && r.language === lang)?.body
-    ?? promptRows.find((r) => r.kind === kind && r.language === 'fr')?.body
-    ?? null
-  const defaultTemplate       = pickDefault('outbound')
-  const defaultInboundOpening = pickDefault('inbound')
+  const promptRows = (promptsRes.data as Array<{ language: string; outbound_body: string; inbound_body: string }> | null) ?? []
+  const defaultPair = promptRows.find((r) => r.language === lang) ?? promptRows.find((r) => r.language === 'fr') ?? null
+  const defaultTemplate       = defaultPair?.outbound_body ?? null
+  const defaultInboundOpening = defaultPair?.inbound_body ?? null
 
   // 5. Planning (sinon défauts). Pour un appel ENTRANT il n'y a pas de schedule →
   //    la durée cible suit le coupe-circuit entrant du bénéficiaire (sinon 10 min).

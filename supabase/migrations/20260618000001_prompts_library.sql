@@ -1,46 +1,46 @@
--- Migration : BIBLIOTHÈQUE DE PROMPTS sélectionnables
+-- Migration : BIBLIOTHÈQUE DE PROMPTS sélectionnables (modèle PAIRE)
 --
 -- Remplace le défaut UNIQUE (singleton `prompt_templates`) par une BIBLIOTHÈQUE
--- de prompts segmentés par LANGUE + TYPE (`kind`), avec un défaut par couple.
---   - kind = 'outbound' : personnalité + règles (AICOUTE appelle le bénéficiaire)
---                         → ex-`prompt_templates.template`
---   - kind = 'inbound'  : ouverture des appels entrants (le bénéficiaire appelle)
---                         → ex-`prompt_templates.inbound_opening`
+-- de prompts. **Un prompt = une PAIRE** (les deux vont ensemble) :
+--   - `outbound_body` : personnalité + règles (AICOUTE appelle le bénéficiaire)
+--                       → ex-`prompt_templates.template`
+--   - `inbound_body`  : ouverture des appels entrants (le bénéficiaire appelle)
+--                       → ex-`prompt_templates.inbound_opening`
+-- Chaque paire a un titre, une langue, une date. Créer un prompt = créer la paire.
 --
--- `is_default` désigne le prompt proposé par défaut dans les menus déroulants
--- (onboarding / fiche bénéficiaire / admin) POUR un couple (langue, type) ET sert
--- de FALLBACK côté Edge (cascade : custom_prompt bénéficiaire → défaut bibliothèque
--- (langue, kind) → défaut bibliothèque (fr, kind) → CODE_DEFAULT_* codé en dur).
+-- `is_default` désigne la paire proposée par défaut (un défaut PAR LANGUE) dans les
+-- menus déroulants (onboarding / fiche / admin) ET sert de FALLBACK côté Edge
+-- (cascade : custom_prompt bénéficiaire → défaut paire (langue) → défaut paire (fr)
+-- → CODE_DEFAULT_* codé en dur).
 --
 -- Le mécanisme « copie concrète éditable » par bénéficiaire ne change pas :
 -- `beneficiaries.custom_prompt` / `inbound_custom_prompt` restent les snapshots
--- résolus, éditables. On ajoute seulement la MÉMOIRE du prompt source choisi
--- (`custom_prompt_id` / `inbound_prompt_id`) pour réafficher la sélection.
+-- résolus, éditables. On ajoute `beneficiaries.prompt_id` = la PAIRE source choisie.
 --
 -- ⚠️ Les textes par défaut restent dupliqués en filet codé : CODE_DEFAULT_TEMPLATE
 --    / CODE_DEFAULT_INBOUND_OPENING (edge) + DEFAULT_PROMPT_TEMPLATE /
---    DEFAULT_INBOUND_OPENING (shared). La bibliothèque est désormais la source
---    sélectionnable ; le code reste l'ultime garde-fou.
+--    DEFAULT_INBOUND_OPENING (shared). La bibliothèque est la source sélectionnable ;
+--    le code reste l'ultime garde-fou.
 
 CREATE TABLE IF NOT EXISTS prompts (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  title       TEXT NOT NULL,
-  language    TEXT NOT NULL CHECK (language IN ('fr', 'en', 'es', 'de', 'it')),
-  kind        TEXT NOT NULL CHECK (kind IN ('outbound', 'inbound')),
-  body        TEXT NOT NULL,
-  is_default  BOOLEAN NOT NULL DEFAULT false,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_by  UUID REFERENCES profiles(id)
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title         TEXT NOT NULL,
+  language      TEXT NOT NULL CHECK (language IN ('fr', 'en', 'es', 'de', 'it')),
+  outbound_body TEXT NOT NULL,   -- appel émis par AICOUTE (personnalité + règles)
+  inbound_body  TEXT NOT NULL,   -- appel entrant (ouverture quand le bénéficiaire appelle)
+  is_default    BOOLEAN NOT NULL DEFAULT false,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by    UUID REFERENCES profiles(id)
 );
 
--- Un SEUL défaut par (langue, type). Index partiel → on ne fait JAMAIS d'ON CONFLICT
--- dessus (cf. piège connu PostgREST) : la mise en défaut se fait en 2 temps côté
--- Edge admin-prompts (dé-cocher les autres PUIS cocher).
-CREATE UNIQUE INDEX IF NOT EXISTS prompts_one_default_per_lang_kind
-  ON prompts (language, kind) WHERE is_default;
+-- Une SEULE paire par défaut PAR LANGUE. Index partiel → on ne fait JAMAIS d'ON
+-- CONFLICT dessus (cf. piège connu PostgREST) : la mise en défaut se fait en 2 temps
+-- côté Edge admin-prompts (dé-cocher les autres PUIS cocher).
+CREATE UNIQUE INDEX IF NOT EXISTS prompts_one_default_per_lang
+  ON prompts (language) WHERE is_default;
 
-CREATE INDEX IF NOT EXISTS idx_prompts_lang_kind ON prompts (language, kind);
+CREATE INDEX IF NOT EXISTS idx_prompts_language ON prompts (language);
 
 ALTER TABLE prompts ENABLE ROW LEVEL SECURITY;
 
@@ -63,25 +63,17 @@ CREATE POLICY "admin_write_prompts" ON prompts
 GRANT SELECT ON prompts TO anon, authenticated;
 GRANT ALL    ON prompts TO service_role;
 
--- Seed : migre le contenu du singleton `prompt_templates` → défauts fr (2 types).
-INSERT INTO prompts (title, language, kind, body, is_default)
-SELECT 'Compagnon chaleureux', 'fr', 'outbound', t.template, true
+-- Seed : migre le contenu du singleton `prompt_templates` → paire fr par défaut.
+INSERT INTO prompts (title, language, outbound_body, inbound_body, is_default)
+SELECT 'Compagnon chaleureux', 'fr', t.template, t.inbound_opening, true
 FROM prompt_templates t
-WHERE t.id = 1
-  AND NOT EXISTS (SELECT 1 FROM prompts WHERE language = 'fr' AND kind = 'outbound');
+WHERE t.id = 1 AND t.template IS NOT NULL AND t.inbound_opening IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM prompts WHERE language = 'fr');
 
-INSERT INTO prompts (title, language, kind, body, is_default)
-SELECT 'Accueil chaleureux', 'fr', 'inbound', t.inbound_opening, true
-FROM prompt_templates t
-WHERE t.id = 1 AND t.inbound_opening IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM prompts WHERE language = 'fr' AND kind = 'inbound');
-
--- Mémoire du prompt source choisi par bénéficiaire. Le texte CONCRET reste dans
+-- Mémoire de la PAIRE source choisie par bénéficiaire. Le texte CONCRET reste dans
 -- custom_prompt / inbound_custom_prompt (éditable). ON DELETE SET NULL : supprimer
--- un prompt de la bibliothèque ne casse pas un bénéficiaire (il garde sa copie).
-ALTER TABLE beneficiaries ADD COLUMN IF NOT EXISTS custom_prompt_id  UUID REFERENCES prompts(id) ON DELETE SET NULL;
-ALTER TABLE beneficiaries ADD COLUMN IF NOT EXISTS inbound_prompt_id UUID REFERENCES prompts(id) ON DELETE SET NULL;
+-- une paire de la bibliothèque ne casse pas un bénéficiaire (il garde ses copies).
+ALTER TABLE beneficiaries ADD COLUMN IF NOT EXISTS prompt_id UUID REFERENCES prompts(id) ON DELETE SET NULL;
 
-COMMENT ON TABLE prompts IS 'Bibliothèque de prompts sélectionnables (titre + langue + kind). kind=outbound (personnalité, AICOUTE appelle) | inbound (ouverture, le bénéficiaire appelle). is_default = proposé par défaut pour (langue, type) ET fallback edge.';
-COMMENT ON COLUMN beneficiaries.custom_prompt_id  IS 'Prompt de la bibliothèque (kind=outbound) choisi comme source du snapshot custom_prompt. NULL = défaut plateforme.';
-COMMENT ON COLUMN beneficiaries.inbound_prompt_id IS 'Prompt de la bibliothèque (kind=inbound) choisi comme source du snapshot inbound_custom_prompt. NULL = défaut plateforme.';
+COMMENT ON TABLE prompts IS 'Bibliothèque de prompts sélectionnables. Un prompt = une PAIRE (outbound_body = personnalité/AICOUTE appelle ; inbound_body = ouverture/le bénéficiaire appelle), dans une langue. is_default = paire par défaut pour la langue (1 par langue) ET fallback edge.';
+COMMENT ON COLUMN beneficiaries.prompt_id IS 'Paire de prompts (table prompts) choisie comme source des snapshots custom_prompt + inbound_custom_prompt. NULL = défaut plateforme.';

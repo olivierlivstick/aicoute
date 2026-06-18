@@ -90,10 +90,8 @@ export interface Beneficiary {
   ai_persona_name: string
   conversation_style: ConversationStyle
   custom_prompt: string | null
-  /** Prompt de la bibliothèque (kind=outbound) choisi comme source du snapshot custom_prompt. NULL = défaut. */
-  custom_prompt_id: string | null
-  /** Prompt de la bibliothèque (kind=inbound) choisi comme source de l'ouverture entrante. NULL = défaut. */
-  inbound_prompt_id: string | null
+  /** Paire de prompts (table prompts) choisie comme source des snapshots émis + entrant. NULL = défaut. */
+  prompt_id: string | null
   report_recipients: string[]
   is_active: boolean
   onboarding_completed: boolean
@@ -102,19 +100,17 @@ export interface Beneficiary {
 }
 
 /**
- * Bibliothèque de prompts sélectionnables (table `prompts`).
- *   - kind 'outbound' : personnalité + règles (AICOUTE appelle le bénéficiaire)
- *   - kind 'inbound'  : ouverture des appels entrants (le bénéficiaire appelle)
- * `is_default` = proposé par défaut pour (langue, type) + fallback edge.
+ * Bibliothèque de prompts sélectionnables (table `prompts`). Un prompt = une PAIRE :
+ *   - outbound_body : personnalité + règles (AICOUTE appelle le bénéficiaire)
+ *   - inbound_body  : ouverture des appels entrants (le bénéficiaire appelle)
+ * `is_default` = paire proposée par défaut pour la langue (1 par langue) + fallback edge.
  */
-export type PromptKind = 'outbound' | 'inbound'
-
 export interface Prompt {
   id: string
   title: string
   language: string
-  kind: PromptKind
-  body: string
+  outbound_body: string
+  inbound_body: string
   is_default: boolean
   created_at: string
   updated_at: string
