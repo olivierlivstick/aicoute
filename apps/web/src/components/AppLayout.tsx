@@ -3,7 +3,7 @@ import {
   LayoutDashboard,
   BookHeart,
   Phone,
-  Radar,
+  ShieldAlert,
   UserCog,
   ShieldCheck,
   LogOut,
@@ -19,7 +19,7 @@ const mainNav = [
   { to: '/dashboard',  icon: LayoutDashboard, label: 'Tableau de bord' },
   { to: '/contexte',   icon: BookHeart,       label: 'Bénéficiaires' },
   { to: '/historique', icon: Phone,           label: 'Appels' },
-  { to: '/veille',     icon: Radar,           label: 'Veille' },
+  { to: '/signaux',    icon: ShieldAlert,     label: 'Signaux' },
 ]
 
 const accountNav = [

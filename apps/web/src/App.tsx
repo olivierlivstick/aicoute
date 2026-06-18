@@ -39,7 +39,7 @@ import { BeneficiaryWizard } from '@/pages/beneficiary/BeneficiaryWizard'
 import { ContextePage } from '@/pages/contexte/ContextePage'
 import { HistoriquePage } from '@/pages/historique/HistoriquePage'
 import { CallDetailPage } from '@/pages/historique/CallDetail'
-import { VeillePage } from '@/pages/veille/VeillePage'
+import { SignauxPage } from '@/pages/signaux/SignauxPage'
 import { ComptePage } from '@/pages/compte/ComptePage'
 import { SimulateCallPage } from '@/pages/call/SimulateCall'
 
@@ -113,7 +113,9 @@ export function App() {
           <Route path="/contexte"        element={<ContextePage />} />
           <Route path="/historique"      element={<HistoriquePage />} />
           <Route path="/historique/:id"  element={<CallDetailPage />} />
-          <Route path="/veille"          element={<VeillePage />} />
+          <Route path="/signaux"         element={<SignauxPage />} />
+          {/* Ancienne page « Veille » remplacée par « Signaux ». */}
+          <Route path="/veille"          element={<Navigate to="/signaux" replace />} />
           <Route path="/compte"          element={<ComptePage />} />
 
           {/* Création d'un bénéficiaire (wizard onboarding) */}
