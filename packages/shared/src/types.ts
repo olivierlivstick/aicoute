@@ -90,9 +90,32 @@ export interface Beneficiary {
   ai_persona_name: string
   conversation_style: ConversationStyle
   custom_prompt: string | null
+  /** Prompt de la bibliothèque (kind=outbound) choisi comme source du snapshot custom_prompt. NULL = défaut. */
+  custom_prompt_id: string | null
+  /** Prompt de la bibliothèque (kind=inbound) choisi comme source de l'ouverture entrante. NULL = défaut. */
+  inbound_prompt_id: string | null
   report_recipients: string[]
   is_active: boolean
   onboarding_completed: boolean
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Bibliothèque de prompts sélectionnables (table `prompts`).
+ *   - kind 'outbound' : personnalité + règles (AICOUTE appelle le bénéficiaire)
+ *   - kind 'inbound'  : ouverture des appels entrants (le bénéficiaire appelle)
+ * `is_default` = proposé par défaut pour (langue, type) + fallback edge.
+ */
+export type PromptKind = 'outbound' | 'inbound'
+
+export interface Prompt {
+  id: string
+  title: string
+  language: string
+  kind: PromptKind
+  body: string
+  is_default: boolean
   created_at: string
   updated_at: string
 }

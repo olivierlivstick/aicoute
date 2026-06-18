@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/Label'
 import { Input } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
 import { VoicePicker } from '@/components/VoicePicker'
+import { PromptSelect } from '@/components/PromptSelect'
 import type { WizardData } from '../BeneficiaryWizard'
 import type { ConversationStyle } from '@modect/shared'
 
@@ -17,6 +18,8 @@ const schema = z.object({
   conversation_style: z.enum(['warm', 'playful', 'calm', 'formal']),
   language_preference: z.string().min(2),
   report_language:     z.string().min(2),
+  custom_prompt_id:    z.string().nullable().optional(),
+  inbound_prompt_id:   z.string().nullable().optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -55,11 +58,16 @@ export function Step5AIConfig({ data, onPrev, onSubmit, saving }: Props) {
       conversation_style: data.conversation_style ?? 'warm',
       language_preference: data.language_preference ?? 'fr',
       report_language:     data.report_language ?? 'fr',
+      custom_prompt_id:    data.custom_prompt_id ?? null,
+      inbound_prompt_id:   data.inbound_prompt_id ?? null,
     },
   })
 
   const selectedGemini = watch('gemini_voice')
   const selectedStyle  = watch('conversation_style')
+  const selectedLang   = watch('language_preference')
+  const customPromptId  = watch('custom_prompt_id') ?? null
+  const inboundPromptId = watch('inbound_prompt_id') ?? null
 
   // ai_voice/gemini_voice sont des string côté form (le VoicePicker ne produit
   // que des ids valides du catalogue) → cast vers WizardData.
@@ -152,6 +160,32 @@ export function Step5AIConfig({ data, onPrev, onSubmit, saving }: Props) {
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
+        </div>
+      </div>
+
+      {/* Prompts (selon la langue des conversations). Modifiable ensuite dans la fiche. */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div>
+          <Label>Prompt — appels émis par AICOUTE</Label>
+          <p className="text-xs text-slate-400 mb-1">Personnalité du compagnon. Personnalisable après la création.</p>
+          <PromptSelect
+            language={selectedLang}
+            kind="outbound"
+            value={customPromptId}
+            autoSelectDefault
+            onChange={(p) => setValue('custom_prompt_id', p?.id ?? null, { shouldDirty: true })}
+          />
+        </div>
+        <div>
+          <Label>Prompt — appels reçus par AICOUTE</Label>
+          <p className="text-xs text-slate-400 mb-1">Ouverture quand le bénéficiaire appelle. Personnalisable ensuite.</p>
+          <PromptSelect
+            language={selectedLang}
+            kind="inbound"
+            value={inboundPromptId}
+            autoSelectDefault
+            onChange={(p) => setValue('inbound_prompt_id', p?.id ?? null, { shouldDirty: true })}
+          />
         </div>
       </div>
     </StepLayout>

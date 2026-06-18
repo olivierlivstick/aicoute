@@ -52,7 +52,6 @@ import { AdminQualitePage } from '@/pages/admin/AdminQualite'
 import { AdminBeneficiairesPage } from '@/pages/admin/AdminBeneficiaires'
 import { AdminBeneficiaireDetailPage } from '@/pages/admin/AdminBeneficiaireDetail'
 import { AdminSantePage } from '@/pages/admin/AdminSante'
-import { AdminPromptPage } from '@/pages/admin/AdminPrompt'
 
 export function App() {
   return (
@@ -132,7 +131,8 @@ export function App() {
           <Route path="/admin/appels"        element={<RequireAdmin><AdminAppelsPage       /></RequireAdmin>} />
           <Route path="/admin/qualite"       element={<RequireAdmin><AdminQualitePage      /></RequireAdmin>} />
           <Route path="/admin/sante"         element={<RequireAdmin><AdminSantePage        /></RequireAdmin>} />
-          <Route path="/admin/prompt"        element={<RequireAdmin><AdminPromptPage       /></RequireAdmin>} />
+          {/* Prompt système (singleton) → bibliothèque de prompts dans l'onglet Prompts de Santé système. */}
+          <Route path="/admin/prompt"        element={<Navigate to="/admin/sante?tab=prompts" replace />} />
 
           {/* --- Redirections legacy --- */}
           {/* Planning n'est plus une page : il vit dans un onglet de la fiche bénéficiaire. */}

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Clock, RefreshCcw, Sparkles, ExternalLink, Activity, Mic, Download, Phone, SlidersHorizontal, Save, RotateCcw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock, RefreshCcw, Sparkles, ExternalLink, Activity, Mic, Download, Phone, SlidersHorizontal, Save, RotateCcw, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { PromptsLibrarySection } from './PromptsLibrary'
 
 interface StuckCall {
   id: string
@@ -35,7 +36,10 @@ export function AdminSantePage() {
   const [snap, setSnap] = useState<HealthSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [tab, setTab] = useState<'sante' | 'veille' | 'tuning'>('sante')
+  const [tab, setTab] = useState<'sante' | 'veille' | 'prompts' | 'tuning'>(() => {
+    const t = new URLSearchParams(window.location.search).get('tab')
+    return t === 'veille' || t === 'prompts' || t === 'tuning' ? t : 'sante'
+  })
 
   async function load() {
     setRefreshing(true)
@@ -100,10 +104,13 @@ export function AdminSantePage() {
           <div className="flex gap-1 mb-6 border-b border-creme-sable">
             <TabButton active={tab === 'sante'}  onClick={() => setTab('sante')}  icon={Activity}  label="Santé" />
             <TabButton active={tab === 'veille'} onClick={() => setTab('veille')} icon={Sparkles}  label="Veille" />
+            <TabButton active={tab === 'prompts'} onClick={() => setTab('prompts')} icon={FileText} label="Prompts" />
             <TabButton active={tab === 'tuning'} onClick={() => setTab('tuning')} icon={SlidersHorizontal} label="Fine-tuning" />
           </div>
 
-          {tab === 'tuning' ? (
+          {tab === 'prompts' ? (
+            <PromptsLibrarySection />
+          ) : tab === 'tuning' ? (
             <FineTuningSection />
           ) : tab === 'sante' ? (
             <>

@@ -4,15 +4,15 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   Bot, MessageCircle, Sparkles, Globe, Phone, DoorOpen,
-  Play, Pause, Loader2, RotateCcw, ChevronDown, ChevronRight,
+  Play, Pause, Loader2, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
-import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { resolvePromptPlaceholders, resolveGeminiVoice, voicesForEngine } from '@modect/shared'
-import type { Beneficiary, ConversationStyle } from '@modect/shared'
+import type { Beneficiary, ConversationStyle, Prompt } from '@modect/shared'
 import { VoicePicker } from '@/components/VoicePicker'
+import { PromptSelect } from '@/components/PromptSelect'
 import { EditableCard, EditLabel, EditFooter, useSection, STYLES, LANGUAGES, langLabel } from '../cards'
 
 // Champs inbound absents du type Beneficiary partagé (cf. preferred_engine).
@@ -266,47 +266,51 @@ function PromptCard({ beneficiary, onSaved }: CardProps) {
 
 function PromptEdit({ beneficiary, onSaved, close }: EditProps) {
   const { save, saving, error } = useSection(beneficiary)
-  const { register, handleSubmit, setValue } = useForm({
+  const { register, handleSubmit, setValue, getValues } = useForm({
     values: { custom_prompt: beneficiary.custom_prompt ?? '' },
   })
-  const [resetting, setResetting] = useState(false)
+  const [selected, setSelected] = useState<Prompt | null>(null)
 
-  const resetFromDefault = async () => {
-    setResetting(true)
-    const { data } = await supabase.from('prompt_templates').select('template').eq('id', 1).maybeSingle()
-    const tpl = (data as { template: string } | null)?.template
-    if (tpl) {
-      const resolved = resolvePromptPlaceholders(tpl, {
-        first_name: beneficiary.first_name,
-        ai_persona_name: beneficiary.ai_persona_name,
-        conversation_style: beneficiary.conversation_style,
-        language_preference: beneficiary.language_preference,
-        gender: beneficiary.gender ?? null,
-      })
-      setValue('custom_prompt', resolved, { shouldDirty: true })
-    }
-    setResetting(false)
+  const resolveBody = (body: string) => resolvePromptPlaceholders(body, {
+    first_name: beneficiary.first_name,
+    ai_persona_name: beneficiary.ai_persona_name,
+    conversation_style: beneficiary.conversation_style,
+    language_preference: beneficiary.language_preference,
+    gender: beneficiary.gender ?? null,
+  })
+
+  const apply = (p: Prompt | null) => {
+    if (!p) { setSelected(null); return }
+    const current = getValues('custom_prompt')?.trim()
+    if (current && !window.confirm(`Remplacer le texte actuel par le prompt « ${p.title} » ?`)) return
+    setValue('custom_prompt', resolveBody(p.body), { shouldDirty: true })
+    setSelected(p)
   }
 
   const submit = handleSubmit(async (v) => {
     const trimmed = v.custom_prompt?.trim()
-    const ok = await save({ custom_prompt: trimmed ? trimmed : null })
+    const ok = await save({
+      custom_prompt: trimmed ? trimmed : null,
+      custom_prompt_id: selected?.id ?? beneficiary.custom_prompt_id ?? null,
+    })
     if (ok) { onSaved(); close() }
   })
 
   return (
     <form onSubmit={submit}>
-      <div className="flex items-center justify-between mb-1.5">
-        <EditLabel>Instructions propres à {beneficiary.first_name}</EditLabel>
-        <button
-          type="button"
-          onClick={resetFromDefault}
-          disabled={resetting}
-          className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-primary transition-colors disabled:opacity-50"
-        >
-          <RotateCcw size={12} className={resetting ? 'animate-spin' : ''} /> Réinitialiser depuis le défaut
-        </button>
+      <div className="mb-3">
+        <EditLabel>Modèle de prompt</EditLabel>
+        <PromptSelect
+          language={beneficiary.language_preference}
+          kind="outbound"
+          value={selected?.id ?? beneficiary.custom_prompt_id}
+          onChange={apply}
+        />
+        <p className="text-xs text-slate-400 mt-1 normal-case tracking-normal">
+          Choisir un modèle remplit le texte ci-dessous — vous pouvez ensuite le personnaliser librement.
+        </p>
       </div>
+      <EditLabel>Instructions propres à {beneficiary.first_name}</EditLabel>
       <Textarea rows={12} className="font-mono text-sm leading-relaxed" {...register('custom_prompt')} />
       <p className="text-xs text-slate-400 mt-1.5">Laisser vide pour utiliser le prompt par défaut de la plateforme.</p>
       <EditFooter onCancel={close} saving={saving} error={error} />
@@ -343,47 +347,50 @@ function InboundOpeningCard({ beneficiary, onSaved }: CardProps) {
 
 function InboundOpeningEdit({ beneficiary, onSaved, close }: EditProps) {
   const { save, saving, error } = useSection(beneficiary)
-  const { register, handleSubmit, setValue } = useForm({
+  const { register, handleSubmit, setValue, getValues } = useForm({
     values: { inbound_custom_prompt: inb(beneficiary).inbound_custom_prompt ?? '' },
   })
-  const [resetting, setResetting] = useState(false)
+  const [selected, setSelected] = useState<Prompt | null>(null)
 
-  const resetFromDefault = async () => {
-    setResetting(true)
-    const { data } = await supabase.from('prompt_templates').select('inbound_opening').eq('id', 1).maybeSingle()
-    const tpl = (data as { inbound_opening: string | null } | null)?.inbound_opening
-    if (tpl) {
-      const resolved = resolvePromptPlaceholders(tpl, {
-        first_name: beneficiary.first_name,
-        ai_persona_name: beneficiary.ai_persona_name,
-        conversation_style: beneficiary.conversation_style,
-        language_preference: beneficiary.language_preference,
-        gender: beneficiary.gender ?? null,
-      })
-      setValue('inbound_custom_prompt', resolved, { shouldDirty: true })
-    }
-    setResetting(false)
+  const apply = (p: Prompt | null) => {
+    if (!p) { setSelected(null); return }
+    const current = getValues('inbound_custom_prompt')?.trim()
+    if (current && !window.confirm(`Remplacer le texte actuel par le prompt « ${p.title} » ?`)) return
+    const resolved = resolvePromptPlaceholders(p.body, {
+      first_name: beneficiary.first_name,
+      ai_persona_name: beneficiary.ai_persona_name,
+      conversation_style: beneficiary.conversation_style,
+      language_preference: beneficiary.language_preference,
+      gender: beneficiary.gender ?? null,
+    })
+    setValue('inbound_custom_prompt', resolved, { shouldDirty: true })
+    setSelected(p)
   }
 
   const submit = handleSubmit(async (v) => {
     const trimmed = v.inbound_custom_prompt?.trim()
-    const ok = await save({ inbound_custom_prompt: trimmed ? trimmed : null } as unknown as Partial<Beneficiary>)
+    const ok = await save({
+      inbound_custom_prompt: trimmed ? trimmed : null,
+      inbound_prompt_id: selected?.id ?? beneficiary.inbound_prompt_id ?? null,
+    } as unknown as Partial<Beneficiary>)
     if (ok) { onSaved(); close() }
   })
 
   return (
     <form onSubmit={submit}>
-      <div className="flex items-center justify-between mb-1.5">
-        <EditLabel>Ouverture pour {beneficiary.first_name}</EditLabel>
-        <button
-          type="button"
-          onClick={resetFromDefault}
-          disabled={resetting}
-          className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-primary transition-colors disabled:opacity-50"
-        >
-          <RotateCcw size={12} className={resetting ? 'animate-spin' : ''} /> Réinitialiser depuis le défaut
-        </button>
+      <div className="mb-3">
+        <EditLabel>Modèle d'ouverture</EditLabel>
+        <PromptSelect
+          language={beneficiary.language_preference}
+          kind="inbound"
+          value={selected?.id ?? beneficiary.inbound_prompt_id}
+          onChange={apply}
+        />
+        <p className="text-xs text-slate-400 mt-1 normal-case tracking-normal">
+          Choisir un modèle remplit le texte ci-dessous — vous pouvez ensuite le personnaliser librement.
+        </p>
       </div>
+      <EditLabel>Ouverture pour {beneficiary.first_name}</EditLabel>
       <Textarea rows={5} className="font-mono text-sm leading-relaxed" {...register('inbound_custom_prompt')} />
       <p className="text-xs text-slate-400 mt-1.5">Laisser vide pour utiliser l'ouverture par défaut de la plateforme.</p>
       <EditFooter onCancel={close} saving={saving} error={error} />

@@ -56,18 +56,15 @@ export function BeneficiaryWizard() {
     setSaving(true)
     setError(null)
 
-    // Snapshot du prompt par défaut → copie CONCRÈTE (variables résolues) pour ce
-    // bénéficiaire : le prompt principal (sortant) ET l'ouverture des appels
-    // entrants. Si la lecture échoue, on laisse NULL → fallback sur le défaut au
-    // moment de l'appel.
+    // Snapshot des prompts CHOISIS dans la bibliothèque → copie CONCRÈTE (variables
+    // résolues) pour ce bénéficiaire : le prompt principal (sortant) ET l'ouverture
+    // des appels entrants. Si aucun prompt choisi/disponible, on laisse NULL →
+    // fallback sur le défaut de la bibliothèque au moment de l'appel.
     let customPrompt: string | null = null
     let inboundCustomPrompt: string | null = null
-    const { data: tpl } = await supabase
-      .from('prompt_templates')
-      .select('template, inbound_opening')
-      .eq('id', 1)
-      .maybeSingle()
-    const tplRow = tpl as { template: string; inbound_opening: string | null } | null
+    const outId = final.custom_prompt_id ?? null
+    const inId  = final.inbound_prompt_id ?? null
+    const promptIds = [outId, inId].filter(Boolean) as string[]
     const resolveInput = {
       first_name:          final.first_name ?? '',
       ai_persona_name:     final.ai_persona_name ?? 'Marie',
@@ -75,11 +72,14 @@ export function BeneficiaryWizard() {
       language_preference: final.language_preference ?? 'fr',
       gender:              final.gender ?? null,
     }
-    if (tplRow?.template) {
-      customPrompt = resolvePromptPlaceholders(tplRow.template, resolveInput)
-    }
-    if (tplRow?.inbound_opening) {
-      inboundCustomPrompt = resolvePromptPlaceholders(tplRow.inbound_opening, resolveInput)
+    if (promptIds.length) {
+      const { data: rows } = await supabase
+        .from('prompts')
+        .select('id, body')
+        .in('id', promptIds)
+      const byId = new Map((rows as { id: string; body: string }[] | null ?? []).map((r) => [r.id, r.body]))
+      if (outId && byId.has(outId)) customPrompt = resolvePromptPlaceholders(byId.get(outId)!, resolveInput)
+      if (inId && byId.has(inId))   inboundCustomPrompt = resolvePromptPlaceholders(byId.get(inId)!, resolveInput)
     }
 
     const result = await createBeneficiary({
@@ -106,7 +106,9 @@ export function BeneficiaryWizard() {
       ai_persona_name: final.ai_persona_name ?? 'Marie',
       conversation_style: final.conversation_style ?? 'warm',
       custom_prompt: customPrompt,
+      custom_prompt_id: outId,
       inbound_custom_prompt: inboundCustomPrompt,
+      inbound_prompt_id: inId,
       is_active: true,
       onboarding_completed: true,
       // preferred_engine absent du type Beneficiary partagé → cast (cf. WizardData)
