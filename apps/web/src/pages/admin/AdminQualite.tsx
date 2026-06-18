@@ -44,7 +44,7 @@ type Source = 'calls' | 'demos' | 'both'
 
 const PERIOD_DAYS: Record<Period, number> = { '8d': 8, '30d': 30 }
 
-export function AdminQualitePage() {
+export function QualiteSection() {
   const [rows, setRows]         = useState<CallRow[]>([])
   const [demoRows, setDemoRows] = useState<DemoRow[]>([])
   const [loading, setLoading]   = useState(true)
@@ -124,12 +124,11 @@ export function AdminQualitePage() {
   function onScopeKind(k: ScopeKind) { setScope(k); setScopeId('') }
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 py-8">
+    <div>
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-widest text-accent-700 font-semibold mb-1">Administration</p>
-          <h1 className="font-serif text-3xl font-semibold text-brun-900">Qualité de la conversation</h1>
-          <p className="text-slate-500 mt-1">Métriques de fluidité agrégées (Étape 0 — observation). {all.count} appel{all.count > 1 ? 's' : ''} mesuré{all.count > 1 ? 's' : ''} sur la période.</p>
+          <h2 className="font-serif text-2xl font-semibold text-brun-900">Qualité de la conversation</h2>
+          <p className="text-slate-500 mt-1 text-sm">Métriques de fluidité agrégées (Étape 0 — observation). {all.count} appel{all.count > 1 ? 's' : ''} mesuré{all.count > 1 ? 's' : ''} sur la période.</p>
         </div>
         <button
           onClick={load}

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Clock, RefreshCcw, Sparkles, ExternalLink, Activity, Mic, Download, Phone, SlidersHorizontal, Save, RotateCcw, FileText } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock, RefreshCcw, Sparkles, ExternalLink, Activity, Mic, Download, Phone, SlidersHorizontal, Save, RotateCcw, FileText, BarChart3 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { PromptsLibrarySection } from './PromptsLibrary'
+import { QualiteSection } from './AdminQualite'
 
 interface StuckCall {
   id: string
@@ -36,9 +37,9 @@ export function AdminSantePage() {
   const [snap, setSnap] = useState<HealthSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [tab, setTab] = useState<'sante' | 'veille' | 'prompts' | 'tuning'>(() => {
+  const [tab, setTab] = useState<'prompts' | 'sante' | 'tuning' | 'veille' | 'qualite'>(() => {
     const t = new URLSearchParams(window.location.search).get('tab')
-    return t === 'veille' || t === 'prompts' || t === 'tuning' ? t : 'sante'
+    return t === 'veille' || t === 'prompts' || t === 'tuning' || t === 'qualite' ? t : 'sante'
   })
 
   async function load() {
@@ -82,18 +83,20 @@ export function AdminSantePage() {
     <div className="max-w-[1400px] mx-auto px-4 py-8">
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-widest text-accent-700 font-semibold mb-1">Administration</p>
-          <h1 className="font-serif text-3xl font-semibold text-brun-900">Santé système</h1>
-          <p className="text-slate-500 mt-1">Calls bloqués + signaux du worker schedule-calls. Auto-refresh 30 s.</p>
+          <p className="text-xs uppercase tracking-widest text-accent-700 font-semibold mb-1">Back-office</p>
+          <h1 className="font-serif text-3xl font-semibold text-brun-900">Administration</h1>
+          <p className="text-slate-500 mt-1">Prompts, santé système, fine-tuning, veille et qualité de la conversation.</p>
         </div>
-        <button
-          onClick={load}
-          disabled={refreshing}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-creme-sable bg-white text-sm text-brun-700 hover:bg-creme transition-colors disabled:opacity-50"
-        >
-          <RefreshCcw size={14} className={refreshing ? 'animate-spin' : ''} />
-          Rafraîchir
-        </button>
+        {tab === 'sante' && (
+          <button
+            onClick={load}
+            disabled={refreshing}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-creme-sable bg-white text-sm text-brun-700 hover:bg-creme transition-colors disabled:opacity-50"
+          >
+            <RefreshCcw size={14} className={refreshing ? 'animate-spin' : ''} />
+            Rafraîchir
+          </button>
+        )}
       </header>
 
       {loading || !snap ? (
@@ -102,16 +105,19 @@ export function AdminSantePage() {
         <>
           {/* Onglets : Santé (monitoring) / Veille (modèles + tests) */}
           <div className="flex gap-1 mb-6 border-b border-creme-sable">
-            <TabButton active={tab === 'sante'}  onClick={() => setTab('sante')}  icon={Activity}  label="Santé" />
-            <TabButton active={tab === 'veille'} onClick={() => setTab('veille')} icon={Sparkles}  label="Veille" />
             <TabButton active={tab === 'prompts'} onClick={() => setTab('prompts')} icon={FileText} label="Prompts" />
+            <TabButton active={tab === 'sante'}  onClick={() => setTab('sante')}  icon={Activity}  label="Santé système" />
             <TabButton active={tab === 'tuning'} onClick={() => setTab('tuning')} icon={SlidersHorizontal} label="Fine-tuning" />
+            <TabButton active={tab === 'veille'} onClick={() => setTab('veille')} icon={Sparkles}  label="Veille" />
+            <TabButton active={tab === 'qualite'} onClick={() => setTab('qualite')} icon={BarChart3} label="Qualité" />
           </div>
 
           {tab === 'prompts' ? (
             <PromptsLibrarySection />
           ) : tab === 'tuning' ? (
             <FineTuningSection />
+          ) : tab === 'qualite' ? (
+            <QualiteSection />
           ) : tab === 'sante' ? (
             <>
               {/* Pulse */}
