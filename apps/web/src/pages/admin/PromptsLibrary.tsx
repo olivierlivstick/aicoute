@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Plus, Trash2, Check, Info, X, Search, ArrowUp, ArrowDown, ArrowUpDown, ChevronRight, PhoneOutgoing, PhoneIncoming } from 'lucide-react'
+import { Plus, Trash2, Copy, Check, Info, X, Search, ArrowUp, ArrowDown, ArrowUpDown, ChevronRight, PhoneOutgoing, PhoneIncoming } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { usePrompts } from '@/hooks/usePrompts'
 import { Button } from '@/components/ui/Button'
@@ -91,6 +91,19 @@ export function PromptsLibrarySection() {
   async function setDefault(p: Prompt) {
     setBusyId(p.id)
     const ok = await call('set-default', { id: p.id })
+    setBusyId(null)
+    if (ok) await refetch()
+  }
+
+  async function duplicate(p: Prompt) {
+    setBusyId(p.id)
+    const ok = await call('create', {
+      title: `${p.title} (copie)`,
+      language: p.language,
+      outbound_body: p.outbound_body,
+      inbound_body: p.inbound_body,
+      is_default: false,   // une copie n'est jamais le défaut
+    })
     setBusyId(null)
     if (ok) await refetch()
   }
@@ -212,6 +225,15 @@ export function PromptsLibrarySection() {
                         className="inline-flex items-center gap-1 text-sm text-primary font-medium hover:underline"
                       >
                         Modifier <ChevronRight size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => duplicate(p)}
+                        disabled={busyId === p.id}
+                        title="Dupliquer"
+                        className="text-slate-400 hover:text-primary transition-colors disabled:opacity-50"
+                      >
+                        <Copy size={15} />
                       </button>
                       <button
                         type="button"

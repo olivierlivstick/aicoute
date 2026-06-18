@@ -459,7 +459,7 @@ app.post('/scheduled-call', async (req, res) => {
   }
 
   try {
-    const { call_id: callId, phone, engine: engineRaw } = req.body ?? {}
+    const { call_id: callId, phone, engine: engineRaw, max_duration_minutes: maxDurationMinutes } = req.body ?? {}
     if (!callId || typeof callId !== 'string') {
       return res.status(400).json({ error: 'call_id requis' })
     }
@@ -479,6 +479,18 @@ app.post('/scheduled-call', async (req, res) => {
 
     // call_id + engine passés via query → /scheduled-outgoing les retransmet via <Parameter>
     const queryParts = [`call_id=${encodeURIComponent(callId)}`, `engine=${encodeURIComponent(engine)}`]
+
+    // Coupure DURE alignée sur la durée du planning : la cible douce du prompt ne
+    // suffit pas si le bénéficiaire ne raccroche pas (cas vécu : appel 5 min planifié
+    // resté ouvert 15 min). On ajoute une marge (grace) pour laisser l'IA conclure
+    // sans couper en plein « au revoir », puis on plafonne au filet global.
+    const mins = Number(maxDurationMinutes)
+    if (Number.isFinite(mins) && mins > 0) {
+      const grace = Number(process.env.SCHEDULED_DURATION_GRACE_SECONDS || 60)
+      const maxSeconds = Math.min(Math.round(mins * 60 + grace), MAX_SCHEDULED_CALL_SECONDS)
+      queryParts.push(`max_seconds=${maxSeconds}`)
+    }
+
     const outgoingUrl = `${publicBase}/scheduled-outgoing?${queryParts.join('&')}`
 
     // statusCallback : Twilio nous notifie des changements de statut de l'appel
@@ -641,13 +653,15 @@ app.all('/scheduled-outgoing', (req, res) => {
   const host    = req.headers['x-forwarded-host'] || req.headers.host
   const callId  = (req.query.call_id ?? req.body?.call_id ?? '').toString()
   const engine  = (req.query.engine  ?? req.body?.engine  ?? 'openai').toString()
-  console.log(`📩 /scheduled-outgoing reçu (callId: ${callId ? callId.slice(0, 8) + '…' : 'no'}, engine=${engine})`)
+  const maxSec  = (req.query.max_seconds ?? req.body?.max_seconds ?? '').toString()
+  console.log(`📩 /scheduled-outgoing reçu (callId: ${callId ? callId.slice(0, 8) + '…' : 'no'}, engine=${engine}${maxSec ? `, max=${maxSec}s` : ''})`)
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
     <Stream url="wss://${host}/scheduled-media-stream">
       <Parameter name="call_id" value="${escapeXml(callId)}" />
       <Parameter name="engine" value="${escapeXml(engine)}" />
+      ${maxSec ? `<Parameter name="max_seconds" value="${escapeXml(maxSec)}" />` : ''}
     </Stream>
   </Connect>
 </Response>`
@@ -1038,7 +1052,8 @@ wssWeb.on('connection', (clientWs, req) => {
 // flush final via save-transcript (qui chaîne generate-summary + email aidant).
 //
 // Le MÊME handler sert les deux canaux — seule la coupure de durée diffère :
-//   - planifié : MAX_SCHEDULED_CALL_SECONDS (900s)
+//   - planifié : max_seconds = durée du planning + marge (transmis via
+//                <Parameter> par /scheduled-outgoing) ; repli filet MAX_SCHEDULED_CALL_SECONDS (900s)
 //   - entrant  : max_seconds par bénéficiaire (inbound_max_duration_seconds),
 //                transmis via <Parameter name="max_seconds"> par /inbound-voice.
 // Pas de tracking demo_calls ici (c'est wss/wssWeb) ; c'est la table `calls`.
@@ -1091,8 +1106,10 @@ function handleAicouteCallConnection(twilioWs, { label }) {
       // détecte un répondeur (cf. registre aicouteCallsBySid).
       if (callSid) aicouteCallsBySid.set(callSid, { markAborted: () => { aborted = true } })
 
-      // Coupe-circuit propre au canal entrant : si max_seconds est fourni et
-      // plus court que la limite par défaut, on resserre le timer.
+      // Coupe-circuit dur par appel : si max_seconds est fourni (entrant =
+      // inbound_max_duration_seconds ; planifié = durée du planning + marge) et plus
+      // court que le filet global, on resserre le timer. Évite qu'un appel reste
+      // ouvert jusqu'à MAX_SCHEDULED_CALL_SECONDS si le bénéficiaire ne raccroche pas.
       const maxSeconds = Number(params.max_seconds) || 0
       if (maxSeconds > 0 && maxSeconds < MAX_SCHEDULED_CALL_SECONDS) {
         clearTimeout(safetyTimer)

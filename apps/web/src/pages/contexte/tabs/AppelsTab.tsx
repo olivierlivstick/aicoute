@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
-import { Phone, PhoneIncoming, PhoneOutgoing, Lightbulb } from 'lucide-react'
+import { Phone, PhoneIncoming, PhoneOutgoing, Lightbulb, ExternalLink, Activity, Mail, RefreshCcw, PhoneCall } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import { FluidityModal, type FluidityMetrics, type RecordingAnalysis, type TuningSnapshot } from '@/components/FluidityModal'
+import { RecordingButton } from '@/components/RecordingButton'
 import type { Beneficiary } from '@modect/shared'
 
 // Coût Twilio estimé par la durée tant que le coût réel n'est pas remonté
@@ -32,6 +35,12 @@ interface CallRow {
   ai_cost_eur_real: number | null
   twilio_cost_eur: number | null
   origin: string | null
+  engine: 'openai' | 'gemini' | null
+  report_email_sent_at: string | null
+  fluidity_metrics: FluidityMetrics | null
+  recording_analysis: RecordingAnalysis | null
+  tuning_snapshot: TuningSnapshot | null
+  recording_path: string | null
 }
 
 type CallType = 'received' | 'emitted'
@@ -47,6 +56,20 @@ const twilioCost = (c: CallRow): { value: number; estimated: boolean } => {
   return { value: 0, estimated: false }
 }
 
+/** Extrait le message métier d'un échec supabase.functions.invoke (cf. AdminAppels). */
+async function invokeErrorMessage(err: unknown): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ctx = (err as any)?.context
+  if (ctx && typeof ctx.clone === 'function') {
+    try {
+      const body = await ctx.clone().json()
+      const parts = [body?.error, body?.detail].filter(Boolean)
+      if (parts.length) return parts.join(' — ')
+    } catch { /* pas du JSON */ }
+  }
+  return err instanceof Error ? err.message : 'erreur inconnue'
+}
+
 function mondayKey(iso: string): { key: string; monday: Date } {
   const d = new Date(iso)
   const day = (d.getDay() + 6) % 7 // 0 = lundi
@@ -56,27 +79,94 @@ function mondayKey(iso: string): { key: string; monday: Date } {
   return { key: monday.toISOString().slice(0, 10), monday }
 }
 
+type QualityPayload = {
+  metrics:  FluidityMetrics | null
+  analysis: RecordingAnalysis | null
+  engine:   string | null
+  duration: number | null
+  tuning:   TuningSnapshot | null
+}
+
 export function AppelsTab({ beneficiary }: { beneficiary: Beneficiary }) {
   const [calls, setCalls] = useState<CallRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [qualityFor, setQualityFor] = useState<QualityPayload | null>(null)
 
-  useEffect(() => {
-    let active = true
+  const load = useCallback(async () => {
     setLoading(true)
-    supabase
+    const { data } = await supabase
       .from('calls')
-      .select('id, status, scheduled_at, started_at, duration_seconds, ai_cost_eur_real, twilio_cost_eur, origin')
+      .select('id, status, scheduled_at, started_at, duration_seconds, ai_cost_eur_real, twilio_cost_eur, origin, engine, report_email_sent_at, fluidity_metrics, recording_analysis, tuning_snapshot, recording_path')
       .eq('beneficiary_id', beneficiary.id)
       .in('status', ['completed', 'missed', 'failed'])
       .order('scheduled_at', { ascending: false })
       .limit(300)
-      .then(({ data }) => {
-        if (!active) return
-        setCalls((data as CallRow[] | null) ?? [])
-        setLoading(false)
-      })
-    return () => { active = false }
+    setCalls((data as CallRow[] | null) ?? [])
+    setLoading(false)
   }, [beneficiary.id])
+
+  useEffect(() => { load() }, [load])
+
+  /** Provoque un appel SORTANT non planifié maintenant (test de prompt). */
+  async function triggerUnplanned() {
+    if (!confirm(`Provoquer un appel maintenant vers ${beneficiary.first_name} ? (appel de test, non planifié)`)) return
+    setBusy('new')
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const callsTable = supabase.from('calls') as any
+      const { data: created, error } = await callsTable
+        .insert({ beneficiary_id: beneficiary.id, status: 'scheduled', scheduled_at: new Date().toISOString(), attempt_number: 1 })
+        .select('id')
+        .single()
+      if (error || !created) throw new Error(error?.message ?? 'Insert failed')
+      const { error: invokeErr } = await supabase.functions.invoke('initiate-call', { body: { call_id: (created as { id: string }).id } })
+      if (invokeErr) throw invokeErr
+      alert(`Appel lancé vers ${beneficiary.first_name}. Il apparaîtra dans la liste une fois terminé.`)
+    } catch (err) {
+      alert(`Échec du déclenchement : ${await invokeErrorMessage(err)}`)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /** Relance un appel SORTANT en échec/sans réponse → nouvel appel. */
+  async function relaunch(beneficiaryId: string, sourceId: string) {
+    setBusy(sourceId)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const callsTable = supabase.from('calls') as any
+      const { data: created, error } = await callsTable
+        .insert({ beneficiary_id: beneficiaryId, status: 'scheduled', scheduled_at: new Date().toISOString(), attempt_number: 1 })
+        .select('id')
+        .single()
+      if (error || !created) throw new Error(error?.message ?? 'Insert failed')
+      const { error: invokeErr } = await supabase.functions.invoke('initiate-call', { body: { call_id: (created as { id: string }).id } })
+      if (invokeErr) throw invokeErr
+      alert('Relance lancée.')
+    } catch (err) {
+      alert(`Échec de la relance : ${await invokeErrorMessage(err)}`)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /** Renvoie le compte-rendu par email à l'aidant (Edge resend-report, idempotent). */
+  async function resendReport(callId: string) {
+    if (!confirm("Renvoyer le compte-rendu par email à l'aidant ?")) return
+    setBusy(callId)
+    try {
+      const { data, error } = await supabase.functions.invoke('resend-report', { body: { call_id: callId } })
+      if (error) throw error
+      const mode = (data as { mode?: string })?.mode
+      alert(mode === 'generated' ? 'Compte-rendu généré et email envoyé.' : 'Email de compte-rendu renvoyé.')
+      await load()
+    } catch (err) {
+      alert(`Échec du renvoi : ${await invokeErrorMessage(err)}`)
+    } finally {
+      setBusy(null)
+    }
+  }
 
   // Buckets hebdomadaires (lun-dim) pour le graphe — uniquement les appels avec durée.
   const weeks = useMemo(() => {
@@ -119,8 +209,30 @@ export function AppelsTab({ beneficiary }: { beneficiary: Beneficiary }) {
     )
   }
 
+  const noPhone = !beneficiary.phone || !beneficiary.phone.trim()
+
   return (
     <div className="space-y-5">
+      {/* Provoquer un appel de test (non planifié) */}
+      <section className="bg-surface rounded-2xl border border-creme-sable shadow-[0_1px_2px_rgba(61,40,23,0.04)] p-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-title text-[15px] font-semibold text-slate-800">Tester un appel</h3>
+          <p className="text-[13px] text-slate-500 mt-0.5">
+            Déclenche un appel sortant immédiat vers {beneficiary.first_name} avec le prompt actuel — pratique pour valider une configuration.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={triggerUnplanned}
+          disabled={busy === 'new' || noPhone}
+          title={noPhone ? 'Aucun numéro de téléphone renseigné' : undefined}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary-600 transition-colors disabled:opacity-50 shrink-0"
+        >
+          <PhoneCall size={15} className={busy === 'new' ? 'animate-pulse' : ''} />
+          Provoquer un appel
+        </button>
+      </section>
+
       {/* Graphe minutes par semaine */}
       <section className="bg-surface rounded-2xl border border-creme-sable shadow-[0_1px_2px_rgba(61,40,23,0.04)]">
         <header className="flex items-center gap-2.5 px-5 pt-4 pb-3">
@@ -162,7 +274,7 @@ export function AppelsTab({ beneficiary }: { beneficiary: Beneficiary }) {
         </div>
       </section>
 
-      {/* Tableau historique des coûts */}
+      {/* Tableau historique des coûts + actions */}
       <section className="bg-surface rounded-2xl border border-creme-sable shadow-[0_1px_2px_rgba(61,40,23,0.04)]">
         <header className="flex items-center gap-2.5 px-5 pt-4 pb-3">
           <span className="grid place-items-center w-7 h-7 rounded-lg bg-creme text-primary">
@@ -184,6 +296,7 @@ export function AppelsTab({ beneficiary }: { beneficiary: Beneficiary }) {
                     <th className="font-semibold px-2 py-2.5 text-right">Coût IA</th>
                     <th className="font-semibold px-2 py-2.5 text-right">Coût Twilio</th>
                     <th className="font-semibold px-2 py-2.5 text-right">Coût total</th>
+                    <th className="font-semibold px-2 py-2.5">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-creme-sable">
@@ -193,6 +306,9 @@ export function AppelsTab({ beneficiary }: { beneficiary: Beneficiary }) {
                     const ai = c.ai_cost_eur_real ?? 0
                     const total = ai + tw.value
                     const d = new Date(c.started_at ?? c.scheduled_at)
+                    const canResend   = c.status === 'completed'
+                    const canRelaunch = (c.status === 'missed' || c.status === 'failed') && callType(c.origin) === 'received'
+                    const hasQuality  = !!(c.recording_analysis || c.fluidity_metrics)
                     return (
                       <tr key={c.id} className="hover:bg-creme/40 transition-colors">
                         <td className="px-2 py-3 whitespace-nowrap">
@@ -215,6 +331,43 @@ export function AppelsTab({ beneficiary }: { beneficiary: Beneficiary }) {
                           {tw.value > 0 ? `${tw.estimated ? '~' : ''}${eur(tw.value)}` : '—'}
                         </td>
                         <td className="px-2 py-3 text-right tabular-nums font-mono text-[12.5px] font-semibold text-brun-900">{total > 0 ? eur(total) : '—'}</td>
+                        <td className="px-2 py-3">
+                          <div className="flex items-center gap-3 whitespace-nowrap">
+                            <Link to={`/historique/${c.id}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                              <ExternalLink size={12} /> Détail
+                            </Link>
+                            {hasQuality && (
+                              <button
+                                onClick={() => setQualityFor({ metrics: c.fluidity_metrics, analysis: c.recording_analysis, engine: c.engine, duration: c.duration_seconds, tuning: c.tuning_snapshot })}
+                                className="inline-flex items-center gap-1 text-xs text-accent-700 hover:underline"
+                                title={c.recording_analysis ? 'Fluidité mesurée sur l\'enregistrement (vérité terrain)' : 'Fluidité (mesure live, approximative)'}
+                              >
+                                <Activity size={12} /> Qualité
+                              </button>
+                            )}
+                            <RecordingButton path={c.recording_path} />
+                            {canResend && (
+                              <button
+                                onClick={() => resendReport(c.id)}
+                                disabled={busy === c.id}
+                                className="inline-flex items-center gap-1 text-xs text-sauge hover:underline disabled:opacity-50"
+                                title={c.report_email_sent_at ? 'Renvoyer le compte-rendu par email' : 'Compte-rendu non encore envoyé — envoyer maintenant'}
+                              >
+                                <Mail size={12} className={busy === c.id ? 'animate-pulse' : ''} />
+                                {c.report_email_sent_at ? 'Renvoyer le mail' : 'Envoyer le mail'}
+                              </button>
+                            )}
+                            {canRelaunch && (
+                              <button
+                                onClick={() => relaunch(beneficiary.id, c.id)}
+                                disabled={busy === c.id}
+                                className="inline-flex items-center gap-1 text-xs text-accent-700 hover:underline disabled:opacity-50"
+                              >
+                                <RefreshCcw size={12} className={busy === c.id ? 'animate-spin' : ''} /> Relancer
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     )
                   })}
@@ -226,6 +379,7 @@ export function AppelsTab({ beneficiary }: { beneficiary: Beneficiary }) {
                     <td className="px-2 py-3 text-right tabular-nums font-mono text-[12.5px]">{eur(totals.ai)}</td>
                     <td className="px-2 py-3 text-right tabular-nums font-mono text-[12.5px]">{eur(totals.twilio)}</td>
                     <td className="px-2 py-3 text-right tabular-nums font-mono text-[12.5px] text-primary">{eur(totals.total)}</td>
+                    <td className="px-2 py-3" />
                   </tr>
                 </tfoot>
               </table>
@@ -236,6 +390,17 @@ export function AppelsTab({ beneficiary }: { beneficiary: Beneficiary }) {
           </p>
         </div>
       </section>
+
+      {qualityFor && (
+        <FluidityModal
+          metrics={qualityFor.metrics}
+          analysis={qualityFor.analysis}
+          engine={qualityFor.engine}
+          durationSeconds={qualityFor.duration}
+          tuningSnapshot={qualityFor.tuning}
+          onClose={() => setQualityFor(null)}
+        />
+      )}
     </div>
   )
 }
