@@ -98,10 +98,16 @@ export function PromptsLibrarySection() {
     if (ok) await refetch()
   }
 
+  // Valeurs par défaut défensives : une ligne mal formée (ex. schéma DB non encore
+  // migré) ne doit jamais faire planter l'éditeur (les champs alimentent des .trim()).
   const openEdit = (p: Prompt, focus: FocusField) => setDraft({
-    id: p.id, title: p.title, language: p.language,
-    outbound_body: p.outbound_body, inbound_body: p.inbound_body,
-    is_default: p.is_default, focus,
+    id: p.id,
+    title: p.title ?? '',
+    language: p.language ?? 'fr',
+    outbound_body: p.outbound_body ?? '',
+    inbound_body: p.inbound_body ?? '',
+    is_default: !!p.is_default,
+    focus,
   })
 
   return (
@@ -282,7 +288,7 @@ function DraftEditor({
 
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-creme-sable">
         <Button type="button" variant="ghost" onClick={onCancel}>Annuler</Button>
-        <Button onClick={onSave} loading={saving} disabled={!draft.title.trim() || !draft.outbound_body.trim() || !draft.inbound_body.trim()}>
+        <Button onClick={onSave} loading={saving} disabled={!draft.title?.trim() || !draft.outbound_body?.trim() || !draft.inbound_body?.trim()}>
           <Check size={14} className="mr-1" /> Enregistrer
         </Button>
       </div>
