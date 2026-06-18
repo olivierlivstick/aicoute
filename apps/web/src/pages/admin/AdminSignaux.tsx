@@ -69,7 +69,6 @@ const SEVERITY_META: Record<Severity, { label: string; tone: string; rank: numbe
   medium: { label: 'Modérée', tone: 'bg-orange-50 text-orange-700', rank: 1 },
   low:    { label: 'Faible',  tone: 'bg-amber-50 text-amber-700',   rank: 2 },
 }
-type SeverityFilter = 'all' | Severity
 
 /** Rang de la sévérité la plus élevée d'un appel (0 = la plus grave). */
 function maxSeverityRank(r: SignalRow): number {
@@ -80,8 +79,6 @@ function maxSeverityRank(r: SignalRow): number {
 const STATUS_PRIORITY: Record<FollowStatus, number> = {
   todo: 0, in_progress: 1, dismissed: 2, done: 3,
 }
-
-type StatusFilter = 'open' | 'all' | FollowStatus
 
 function effectiveDate(r: SignalRow): string {
   return r.started_at ?? r.notified_at ?? r.scheduled_at
@@ -97,9 +94,26 @@ export function AdminSignauxPage() {
   // Map call_id → actions (plus récente d'abord)
   const [actions, setActions] = useState<Record<string, SignalAction[]>>({})
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<StatusFilter>('open')
-  const [sevFilter, setSevFilter] = useState<SeverityFilter>('all')
+  // Filtres MULTI-sélection. Set vide = « tout afficher » (aucun filtre).
+  // Défaut statut = non-résolus (à traiter + en cours).
+  const [statusSel, setStatusSel] = useState<Set<FollowStatus>>(new Set(['todo', 'in_progress']))
+  const [sevSel, setSevSel] = useState<Set<Severity>>(new Set())
   const [followFor, setFollowFor] = useState<SignalRow | null>(null)
+
+  function toggleStatus(s: FollowStatus) {
+    setStatusSel((prev) => {
+      const next = new Set(prev)
+      next.has(s) ? next.delete(s) : next.add(s)
+      return next
+    })
+  }
+  function toggleSev(s: Severity) {
+    setSevSel((prev) => {
+      const next = new Set(prev)
+      next.has(s) ? next.delete(s) : next.add(s)
+      return next
+    })
+  }
 
   useEffect(() => { load() }, [])
 
@@ -145,16 +159,11 @@ export function AdminSignauxPage() {
 
   const visible = useMemo(() => {
     let list = rows
-    if (filter === 'open') {
-      list = list.filter((r) => {
-        const s = currentStatus(r.id)
-        return s === 'todo' || s === 'in_progress'
-      })
-    } else if (filter !== 'all') {
-      list = list.filter((r) => currentStatus(r.id) === filter)
+    if (statusSel.size > 0) {
+      list = list.filter((r) => statusSel.has(currentStatus(r.id)))
     }
-    if (sevFilter !== 'all') {
-      list = list.filter((r) => (r.alerts ?? []).some((a) => a.severity === sevFilter))
+    if (sevSel.size > 0) {
+      list = list.filter((r) => (r.alerts ?? []).some((a) => sevSel.has(a.severity)))
     }
     return [...list].sort((a, b) => {
       // 1) non-résolus d'abord, 2) plus grave d'abord, 3) plus récent d'abord
@@ -167,7 +176,7 @@ export function AdminSignauxPage() {
       return new Date(effectiveDate(b)).getTime() - new Date(effectiveDate(a)).getTime()
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, actions, filter, sevFilter])
+  }, [rows, actions, statusSel, sevSel])
 
   const openCount = useMemo(
     () => rows.filter((r) => ['todo', 'in_progress'].includes(currentStatus(r.id))).length,
@@ -207,46 +216,31 @@ export function AdminSignauxPage() {
         </p>
       </header>
 
-      {/* Filtres de statut */}
-      <div className="flex flex-wrap gap-1 mb-2">
-        {([
-          { value: 'open', label: 'À traiter' },
-          { value: 'all',  label: 'Tous' },
-          ...STATUS_ORDER.map((s) => ({ value: s, label: STATUS_META[s].label })),
-        ] as Array<{ value: StatusFilter; label: string }>).map((o) => (
-          <button
-            key={o.value}
-            onClick={() => setFilter(o.value)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              filter === o.value
-                ? 'bg-primary text-white'
-                : 'bg-white border border-creme-sable text-slate-600 hover:bg-creme'
-            }`}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Filtre de sévérité */}
-      <div className="flex flex-wrap items-center gap-1 mb-5">
-        <span className="text-[10px] uppercase tracking-wider text-slate-400 mr-1">Sévérité</span>
-        {([
-          { value: 'all', label: 'Toutes' },
-          ...(['high', 'medium', 'low'] as Severity[]).map((s) => ({ value: s, label: SEVERITY_META[s].label })),
-        ] as Array<{ value: SeverityFilter; label: string }>).map((o) => (
-          <button
-            key={o.value}
-            onClick={() => setSevFilter(o.value)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              sevFilter === o.value
-                ? 'bg-accent-600 text-white'
-                : 'bg-white border border-creme-sable text-slate-600 hover:bg-creme'
-            }`}
-          >
-            {o.label}
-          </button>
-        ))}
+      {/* Filtres — une seule ligne : STATUT (multi) puis SÉVÉRITÉ (multi).
+          Set vide = tout afficher (pastille « Tous/Toutes » active). */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-5">
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-slate-400 mr-1">Statut</span>
+          <FilterPill active={statusSel.size === 0} onClick={() => setStatusSel(new Set())} tone="primary">
+            Tous
+          </FilterPill>
+          {STATUS_ORDER.map((s) => (
+            <FilterPill key={s} active={statusSel.has(s)} onClick={() => toggleStatus(s)} tone="primary">
+              {STATUS_META[s].label}
+            </FilterPill>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-slate-400 mr-1">Sévérité</span>
+          <FilterPill active={sevSel.size === 0} onClick={() => setSevSel(new Set())} tone="accent">
+            Toutes
+          </FilterPill>
+          {(['high', 'medium', 'low'] as Severity[]).map((s) => (
+            <FilterPill key={s} active={sevSel.has(s)} onClick={() => toggleSev(s)} tone="accent">
+              {SEVERITY_META[s].label}
+            </FilterPill>
+          ))}
+        </div>
       </div>
 
       {loading ? (
@@ -342,8 +336,8 @@ export function AdminSignauxPage() {
                 <tr>
                   <td colSpan={7} className="px-5 py-10 text-center text-slate-400 text-sm">
                     <ShieldAlert size={24} className="mx-auto mb-2 text-slate-300" />
-                    {filter === 'open' && sevFilter === 'all'
-                      ? 'Aucun signal en attente de traitement. 🎉'
+                    {statusSel.size === 0 && sevSel.size === 0
+                      ? 'Aucun signal détecté pour l\'instant. 🎉'
                       : 'Aucun signal ne correspond à ces filtres.'}
                   </td>
                 </tr>
@@ -363,6 +357,26 @@ export function AdminSignauxPage() {
         />
       )}
     </div>
+  )
+}
+
+/** Pastille de filtre toggle (multi-sélection). */
+function FilterPill({ active, onClick, tone, children }: {
+  active:   boolean
+  onClick:  () => void
+  tone:     'primary' | 'accent'
+  children: React.ReactNode
+}) {
+  const activeCls = tone === 'primary' ? 'bg-primary text-white' : 'bg-accent-600 text-white'
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+        active ? activeCls : 'bg-white border border-creme-sable text-slate-600 hover:bg-creme'
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 
