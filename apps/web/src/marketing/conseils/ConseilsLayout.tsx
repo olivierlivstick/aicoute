@@ -10,6 +10,7 @@ import { useEffect, type ReactNode } from 'react'
 import { Header } from '@/marketing/components/Header'
 import { Footer } from '@/marketing/components/Footer'
 import { Icon } from '@/marketing/components/icons'
+import { SIGNUP_URL } from '@/config/links'
 
 /* ------------------------------------------------------------------- SEO -- */
 export type Seo = { title: string; description: string; canonical: string }
@@ -296,11 +297,11 @@ export function ReliefCard({
 }
 
 /* ----------------------------------------------------------------- CTA -- */
-// ⚠️ L'URL secondaire pointe vers app.modect.com (ANCIEN domaine) : intégrée
-// telle quelle pour l'instant, dans le MÊME onglet — à migrer vers app.aicoute.fr
-// (ou mieux, vers SIGNUP_URL de @/config/links qui résout app.<domaine-courant>).
+// CTA secondaire → inscription back-office. Via SIGNUP_URL (@/config/links) qui
+// résout app.<domaine-courant>/auth/register → app.aicoute.fr/auth/register sur la
+// vitrine de prod (convention partagée avec Header/Hero/FinalCTA).
 const PRIMARY_CTA_HREF = '/#essai'
-const SECONDARY_CTA_HREF = 'https://app.modect.com/auth/register'
+const SECONDARY_CTA_HREF = SIGNUP_URL
 
 export function ConseilsCTA({ note }: { note?: string }) {
   return (
