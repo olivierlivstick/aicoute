@@ -130,6 +130,8 @@ export interface Campaign {
   ends_on: string | null
   prompt_id: string | null
   language: string
+  /** Prénom que l'IA utilise pour se présenter ({{persona}}) sur les appels de la campagne. */
+  ai_persona_name: string
   daily_start_time: string
   daily_end_time: string
   timezone: string

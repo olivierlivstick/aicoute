@@ -57,6 +57,14 @@ export function useCampaigns() {
 
   useEffect(() => { refetch() }, [refetch])
 
+  // Rafraîchissement périodique tant qu'une campagne tourne (compteurs vivants).
+  const anyRunning = campaigns.some((c) => c.status === 'running')
+  useEffect(() => {
+    if (!anyRunning) return
+    const t = setInterval(() => { refetch() }, 30_000)
+    return () => clearInterval(t)
+  }, [anyRunning, refetch])
+
   const create = useCallback(async (title: string): Promise<string | null> => {
     if (!user?.id) return null
     const { data, error: err } = await supabase

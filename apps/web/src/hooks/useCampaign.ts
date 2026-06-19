@@ -56,6 +56,14 @@ export function useCampaign(id: string | undefined) {
 
   useEffect(() => { reload() }, [reload])
 
+  // Tant que la campagne tourne, on rafraîchit (le worker passe des appels en
+  // tâche de fond) → l'onglet Activité et les compteurs se mettent à jour seuls.
+  useEffect(() => {
+    if (campaign?.status !== 'running') return
+    const t = setInterval(() => { reload() }, 20_000)
+    return () => clearInterval(t)
+  }, [campaign?.status, reload])
+
   const update = useCallback(async (patch: Partial<Campaign>) => {
     if (!id) return false
     const { error: err } = await supabase.from('campaigns').update(patch).eq('id', id)
@@ -95,6 +103,35 @@ export function useCampaign(id: string | undefined) {
     return true
   }, [id])
 
+  /**
+   * Déclenche un appel IMMÉDIAT pour un bénéficiaire, hors file/plage horaire
+   * (bouton « Appeler »). L'appel utilise le contexte de la campagne (prompt,
+   * persona, langue, durée) car il porte `campaign_id`. Comme tout appel de
+   * campagne, un aboutissement le marque `completed` → plus rappelé ensuite.
+   */
+  const callNow = useCallback(async (beneficiaryId: string) => {
+    if (!id) return false
+    const { data, error: insErr } = await supabase
+      .from('calls')
+      .insert({
+        beneficiary_id: beneficiaryId,
+        campaign_id:    id,
+        origin:         'campaign',
+        status:         'scheduled',
+        scheduled_at:   new Date().toISOString(),
+        attempt_number: 1,
+      })
+      .select('id')
+      .single()
+    if (insErr || !data) { setError(insErr?.message ?? 'insert échoué'); return false }
+    const { error: invErr } = await supabase.functions.invoke('initiate-call', {
+      body: { call_id: (data as { id: string }).id },
+    })
+    if (invErr) { setError(invErr.message); return false }
+    await reload()
+    return true
+  }, [id, reload])
+
   /** GO : passe en `running` et ouvre une période d'activité si aucune n'est ouverte. */
   const start = useCallback(async () => {
     if (!id) return false
@@ -123,5 +160,5 @@ export function useCampaign(id: string | undefined) {
     return true
   }, [id, reload])
 
-  return { campaign, members, periods, loading, error, reload, update, remove, addMembers, removeMember, start, pause }
+  return { campaign, members, periods, loading, error, reload, update, remove, addMembers, removeMember, callNow, start, pause }
 }

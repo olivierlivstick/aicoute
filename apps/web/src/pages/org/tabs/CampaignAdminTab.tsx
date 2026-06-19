@@ -36,6 +36,7 @@ export function CampaignAdminTab({ c }: { c: CampaignCtx }) {
   const [comment, setComment] = useState(camp.comment ?? '')
   const [startsOn, setStartsOn] = useState(camp.starts_on ?? '')
   const [endsOn, setEndsOn] = useState(camp.ends_on ?? '')
+  const [personaName, setPersonaName] = useState(camp.ai_persona_name ?? 'Marie')
   const [language, setLanguage] = useState(camp.language)
   const [promptId, setPromptId] = useState<string | null>(camp.prompt_id)
   const [dailyStart, setDailyStart] = useState((camp.daily_start_time ?? '09:00').slice(0, 5))
@@ -59,6 +60,7 @@ export function CampaignAdminTab({ c }: { c: CampaignCtx }) {
       comment: comment.trim() || null,
       starts_on: startsOn || null,
       ends_on: endsOn || null,
+      ai_persona_name: personaName.trim() || 'Marie',
       language,
       prompt_id: promptId,
       daily_start_time: dailyStart,
@@ -98,6 +100,12 @@ export function CampaignAdminTab({ c }: { c: CampaignCtx }) {
       <div className="grid grid-cols-2 gap-4">
         <Field label="Date de début"><input type="date" className={inputCls} value={startsOn} onChange={(e) => setStartsOn(e.target.value)} /></Field>
         <Field label="Date de fin"><input type="date" className={inputCls} value={endsOn} onChange={(e) => setEndsOn(e.target.value)} /></Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Prénom de l'appelant (IA)" hint="Le prénom que l'IA donne en se présentant aux bénéficiaires.">
+          <input className={inputCls} value={personaName} onChange={(e) => setPersonaName(e.target.value)} placeholder="Ex. Marie" />
+        </Field>
       </div>
 
       <div className="grid grid-cols-2 gap-4">

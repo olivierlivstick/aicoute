@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Plus, X, Search } from 'lucide-react'
+import { Plus, X, Search, PhoneCall } from 'lucide-react'
 import type { useCampaign } from '@/hooks/useCampaign'
 import { useOrgBeneficiaries } from '@/hooks/useOrgBeneficiaries'
 import { Modal } from '@/pages/org/Modal'
@@ -8,6 +8,16 @@ type CampaignCtx = ReturnType<typeof useCampaign>
 
 export function CampaignMembersTab({ c }: { c: CampaignCtx }) {
   const [showAdd, setShowAdd] = useState(false)
+  const [callingId, setCallingId] = useState<string | null>(null)
+
+  async function handleCall(b: { id: string; first_name: string; last_name: string; phone: string | null }) {
+    if (!b.phone) return
+    if (!confirm(`Appeler maintenant ${b.first_name} ${b.last_name} (${b.phone}) ?`)) return
+    setCallingId(b.id)
+    const ok = await c.callNow(b.id)
+    setCallingId(null)
+    if (!ok) alert("Échec du déclenchement de l'appel.")
+  }
 
   return (
     <div className="max-w-3xl">
@@ -35,9 +45,20 @@ export function CampaignMembersTab({ c }: { c: CampaignCtx }) {
                   <td className="px-4 py-3 text-slate-500">{b.phone || <span className="text-amber-600">pas de téléphone</span>}</td>
                   <td className="px-4 py-3 text-slate-400">{b.comment}</td>
                   <td className="px-4 py-3 text-right">
-                    <button onClick={() => c.removeMember(b.id)} title="Retirer" className="text-slate-400 hover:text-red-600">
-                      <X size={16} />
-                    </button>
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        onClick={() => handleCall(b)}
+                        disabled={!b.phone || callingId === b.id}
+                        title={b.phone ? 'Appeler maintenant' : 'Pas de téléphone'}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:text-slate-300 disabled:no-underline"
+                      >
+                        <PhoneCall size={14} className={callingId === b.id ? 'animate-pulse' : ''} />
+                        {callingId === b.id ? 'Appel…' : 'Appeler'}
+                      </button>
+                      <button onClick={() => c.removeMember(b.id)} title="Retirer" className="text-slate-400 hover:text-red-600">
+                        <X size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

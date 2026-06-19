@@ -96,14 +96,14 @@ export async function loadCallContext(
 
   // Appel de CAMPAGNE (org) : la campagne porte le prompt, la langue et la durée
   // (les bénéficiaires d'org sont « légers », sans config IA propre).
-  let campaign: { prompt_id: string | null; language: string; max_call_minutes: number } | null = null
+  let campaign: { prompt_id: string | null; language: string; max_call_minutes: number; ai_persona_name: string | null } | null = null
   if (isCampaign) {
     const campRes = await supabase
       .from('campaigns')
-      .select('prompt_id, language, max_call_minutes')
+      .select('prompt_id, language, max_call_minutes, ai_persona_name')
       .eq('id', call.campaign_id)
       .single()
-    campaign = (campRes.data as { prompt_id: string | null; language: string; max_call_minutes: number } | null) ?? null
+    campaign = (campRes.data as { prompt_id: string | null; language: string; max_call_minutes: number; ai_persona_name: string | null } | null) ?? null
   }
 
   // 2. Bénéficiaire
@@ -223,9 +223,13 @@ export async function loadCallContext(
     defaultTemplate = (cpRes.data as { outbound_body: string } | null)?.outbound_body ?? defaultTemplate
   }
 
-  // La campagne porte la langue → on l'aligne sur le bénéficiaire en mémoire pour
-  // la résolution des variables ({{langue}}) et le bloc LANGUE du contexte.
-  if (isCampaign) beneficiary.language_preference = lang
+  // La campagne porte la langue ET le prénom de l'appelant → on les aligne sur le
+  // bénéficiaire en mémoire pour la résolution des variables ({{langue}}, {{persona}})
+  // et le bloc LANGUE du contexte.
+  if (isCampaign) {
+    beneficiary.language_preference = lang
+    if (campaign?.ai_persona_name) beneficiary.ai_persona_name = campaign.ai_persona_name
+  }
 
   // 5. Planning (sinon défauts). Pour un appel ENTRANT il n'y a pas de schedule →
   //    la durée cible suit le coupe-circuit entrant du bénéficiaire (sinon 10 min).

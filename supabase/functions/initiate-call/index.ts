@@ -95,8 +95,15 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // 3. Déclencher l'appel Twilio via voice-bridge — propage le moteur préféré
-    const engine = beneficiary.preferred_engine === 'gemini' ? 'gemini' : 'openai'
+    // 3. Déclencher l'appel Twilio via voice-bridge — propage le moteur.
+    //    Appels de CAMPAGNE (org) : Gemini IMPOSÉ (décision produit Gemini-only ;
+    //    les bénéficiaires d'org n'ont pas de sélecteur de moteur et le défaut SQL
+    //    preferred_engine est 'openai' → on ne s'y fie pas). Sinon : moteur du
+    //    bénéficiaire (aidant).
+    const isCampaignCall = !!(call as { campaign_id?: string | null }).campaign_id
+    const engine = isCampaignCall
+      ? 'gemini'
+      : (beneficiary.preferred_engine === 'gemini' ? 'gemini' : 'openai')
     const bridgeRes = await fetch(`${voiceBridgeUrl}/scheduled-call`, {
       method: 'POST',
       headers: {

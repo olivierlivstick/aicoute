@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Play, Pause } from 'lucide-react'
+import { Play, Pause, AlertTriangle } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import type { useCampaign } from '@/hooks/useCampaign'
+import { campaignWindowState } from '@/pages/org/campaignWindow'
 
 type CampaignCtx = ReturnType<typeof useCampaign>
 
@@ -18,6 +19,17 @@ export function CampaignActivityTab({ c }: { c: CampaignCtx }) {
   }
 
   const noMembers = c.members.length === 0
+  const noPhone = c.members.filter((m) => !m.phone || !m.phone.trim()).length
+
+  // Statut d'activité honnête quand la campagne tourne (miroir du worker).
+  const runningSubtitle = () => {
+    switch (campaignWindowState(camp)) {
+      case 'calling':        return 'Appels en cours — dans la plage horaire configurée.'
+      case 'waiting_window': return `En attente de la plage horaire (${camp.daily_start_time.slice(0, 5)}–${camp.daily_end_time.slice(0, 5)}).`
+      case 'before_start':   return camp.starts_on ? `Démarre le ${formatDate(camp.starts_on, { day: 'numeric', month: 'long' })}.` : 'En attente de la date de début.'
+      case 'after_end':      return 'Période de campagne terminée.'
+    }
+  }
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -29,7 +41,7 @@ export function CampaignActivityTab({ c }: { c: CampaignCtx }) {
           </p>
           <p className="mt-0.5 text-xs text-slate-500">
             {running
-              ? 'Les appels sont passés automatiquement pendant la plage horaire configurée.'
+              ? runningSubtitle()
               : noMembers
                 ? 'Ajoutez des bénéficiaires avant de lancer la campagne.'
                 : 'Lancez la campagne pour démarrer la file d’appels.'}
@@ -47,6 +59,13 @@ export function CampaignActivityTab({ c }: { c: CampaignCtx }) {
           {running ? <><Pause size={16} /> Mettre en pause</> : <><Play size={16} /> Lancer (GO)</>}
         </button>
       </div>
+
+      {noPhone > 0 && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm text-amber-800">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>{noPhone} bénéficiaire(s) sans téléphone ne seront pas appelés. Renseignez leur numéro dans l’onglet Bénéficiaires.</span>
+        </div>
+      )}
 
       {/* Périodes d'activité */}
       <div>
