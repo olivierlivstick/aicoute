@@ -1,15 +1,16 @@
 import { Navigate } from 'react-router-dom'
-import { useIsAdmin } from '@/hooks/useIsAdmin'
+import { useAccountKind } from '@/hooks/useAccountKind'
 
 /**
- * Symétrique de <RequireAdmin> : redirige les comptes admin vers leur module
- * dédié /admin pour éviter de leur afficher la navigation aidant (qui n'a pas
- * de sens — un admin n'a pas de bénéficiaire propre).
+ * Symétrique de <RequireAdmin> : redirige les comptes qui n'ont rien à faire sur
+ * le parcours aidant « particulier » vers leur module dédié — admin → /admin,
+ * organisation → /org. Un admin n'a pas de bénéficiaire propre, une organisation
+ * a son propre dashboard (campagnes).
  *
  * Doit être imbriqué SOUS <AuthGuard>.
  */
 export function AidantOnly({ children }: { children: React.ReactNode }) {
-  const { isAdmin, loading } = useIsAdmin()
+  const { isAdmin, isOrganization, loading } = useAccountKind()
 
   if (loading) {
     return (
@@ -19,9 +20,8 @@ export function AidantOnly({ children }: { children: React.ReactNode }) {
     )
   }
 
-  if (isAdmin) {
-    return <Navigate to="/admin" replace />
-  }
+  if (isAdmin) return <Navigate to="/admin" replace />
+  if (isOrganization) return <Navigate to="/org/campagnes" replace />
 
   return <>{children}</>
 }

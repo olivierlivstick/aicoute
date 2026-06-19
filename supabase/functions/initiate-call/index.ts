@@ -50,7 +50,7 @@ Deno.serve(async (req: Request) => {
     //    ne raccroche pas).
     const { data: call, error: callError } = await supabase
       .from('calls')
-      .select('id, beneficiary_id, status, schedule_id, session_schedules(max_duration_minutes)')
+      .select('id, beneficiary_id, status, schedule_id, campaign_id, session_schedules(max_duration_minutes), campaigns(max_call_minutes)')
       .eq('id', call_id)
       .single()
 
@@ -58,8 +58,12 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Call introuvable', detail: callError?.message }, 404)
     }
 
+    // Coupure dure : durée du planning (appel récurrent) OU durée max de la
+    // campagne (appel de campagne org), sinon filet global côté voice-bridge.
     const maxDurationMinutes =
-      (call.session_schedules as { max_duration_minutes?: number } | null)?.max_duration_minutes ?? null
+      (call.session_schedules as { max_duration_minutes?: number } | null)?.max_duration_minutes ??
+      (call.campaigns as { max_call_minutes?: number } | null)?.max_call_minutes ??
+      null
 
     // 2. Récupérer le bénéficiaire (numéro, persona pour logs, moteur préféré)
     const { data: beneficiary, error: benError } = await supabase

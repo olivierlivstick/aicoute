@@ -82,15 +82,29 @@ export async function loadCallContext(
     id: string
     beneficiary_id: string
     schedule_id: string | null
+    campaign_id: string | null
     attempt_number: number
-    origin: string | null            // 'scheduled' (défaut) | 'inbound'
+    origin: string | null            // 'scheduled' (défaut) | 'inbound' | 'campaign'
     session_schedules: {
       max_duration_minutes: number
       suggested_topics: string[] | null
       special_instructions: string | null
     } | null
   }
-  const isInbound = call.origin === 'inbound'
+  const isInbound  = call.origin === 'inbound'
+  const isCampaign = call.origin === 'campaign' && !!call.campaign_id
+
+  // Appel de CAMPAGNE (org) : la campagne porte le prompt, la langue et la durée
+  // (les bénéficiaires d'org sont « légers », sans config IA propre).
+  let campaign: { prompt_id: string | null; language: string; max_call_minutes: number } | null = null
+  if (isCampaign) {
+    const campRes = await supabase
+      .from('campaigns')
+      .select('prompt_id, language, max_call_minutes')
+      .eq('id', call.campaign_id)
+      .single()
+    campaign = (campRes.data as { prompt_id: string | null; language: string; max_call_minutes: number } | null) ?? null
+  }
 
   // 2. Bénéficiaire
   const benRes = await supabase
@@ -185,7 +199,9 @@ export async function loadCallContext(
   //       défaut paire (langue) → défaut paire (fr) → null → CODE_DEFAULT_* (edge).
   //     custom_prompt étant quasi toujours snapshotté, ce chemin sert surtout de
   //     filet (bénéficiaire sans copie concrète).
-  const lang = (beneficiary.language_preference ?? 'fr').toLowerCase()
+  // Pour une campagne, la LANGUE et le prompt sont ceux de la campagne (pas du
+  // bénéficiaire « léger »).
+  const lang = (campaign?.language ?? beneficiary.language_preference ?? 'fr').toLowerCase()
   const promptsRes = await supabase
     .from('prompts')
     .select('language, outbound_body, inbound_body')
@@ -193,15 +209,32 @@ export async function loadCallContext(
     .in('language', [lang, 'fr'])
   const promptRows = (promptsRes.data as Array<{ language: string; outbound_body: string; inbound_body: string }> | null) ?? []
   const defaultPair = promptRows.find((r) => r.language === lang) ?? promptRows.find((r) => r.language === 'fr') ?? null
-  const defaultTemplate       = defaultPair?.outbound_body ?? null
   const defaultInboundOpening = defaultPair?.inbound_body ?? null
+
+  // Template par défaut = celui de la langue. Pour une campagne avec un prompt
+  // explicite, ce prompt PRIME (il EST le template appliqué à tous les appels).
+  let defaultTemplate = defaultPair?.outbound_body ?? null
+  if (campaign?.prompt_id) {
+    const cpRes = await supabase
+      .from('prompts')
+      .select('outbound_body')
+      .eq('id', campaign.prompt_id)
+      .single()
+    defaultTemplate = (cpRes.data as { outbound_body: string } | null)?.outbound_body ?? defaultTemplate
+  }
+
+  // La campagne porte la langue → on l'aligne sur le bénéficiaire en mémoire pour
+  // la résolution des variables ({{langue}}) et le bloc LANGUE du contexte.
+  if (isCampaign) beneficiary.language_preference = lang
 
   // 5. Planning (sinon défauts). Pour un appel ENTRANT il n'y a pas de schedule →
   //    la durée cible suit le coupe-circuit entrant du bénéficiaire (sinon 10 min).
   const schedule = call.session_schedules ?? {
-    max_duration_minutes: isInbound
-      ? Math.max(1, Math.round((beneficiary.inbound_max_duration_seconds ?? 600) / 60))
-      : 15,
+    max_duration_minutes: isCampaign
+      ? (campaign?.max_call_minutes ?? 5)
+      : isInbound
+        ? Math.max(1, Math.round((beneficiary.inbound_max_duration_seconds ?? 600) / 60))
+        : 15,
     suggested_topics:     null,
     special_instructions: null,
   }
@@ -209,8 +242,11 @@ export async function loadCallContext(
   // 6. Construction du prompt : custom_prompt (concret, par bénéficiaire) prioritaire,
   //    sinon le template par défaut interpolé. Pour un appel ENTRANT, on ajoute le
   //    bloc d'ouverture (surcharge bénéficiaire concrète → défaut DB → filet code).
+  // Campagne : pas de custom_prompt par bénéficiaire (le template campagne fait foi)
+  // ni d'ouverture entrante (un appel de campagne est SORTANT).
+  const customForPrompt = isCampaign ? null : beneficiary.custom_prompt
   const basePrompt   = buildSystemPrompt(
-    beneficiary, memories, schedule, previousCall, defaultTemplate, beneficiary.custom_prompt,
+    beneficiary, memories, schedule, previousCall, defaultTemplate, customForPrompt,
     isInbound
       ? { defaultOpening: defaultInboundOpening, customOpening: beneficiary.inbound_custom_prompt }
       : null,

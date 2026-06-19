@@ -83,6 +83,8 @@ export interface Beneficiary {
   topics_to_avoid: string | null
   personality_notes: string | null
   health_notes: string | null
+  /** Commentaire libre (dashboard organisation : ex. « Chambre 12 », « malentendant »). */
+  comment: string | null
   language_preference: string
   report_language: string
   ai_voice: AIVoice
@@ -114,6 +116,37 @@ export interface Prompt {
   is_default: boolean
   created_at: string
   updated_at: string
+}
+
+// ── Campagnes d'appels en masse (dashboard organisation) ─────────────────────
+export type CampaignStatus = 'draft' | 'running' | 'paused' | 'completed'
+
+export interface Campaign {
+  id: string
+  org_id: string
+  title: string
+  comment: string | null
+  starts_on: string | null
+  ends_on: string | null
+  prompt_id: string | null
+  language: string
+  daily_start_time: string
+  daily_end_time: string
+  timezone: string
+  max_concurrent_calls: number
+  max_call_minutes: number
+  retry_count: number
+  retry_interval_minutes: number
+  status: CampaignStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface CampaignActivityPeriod {
+  id: string
+  campaign_id: string
+  started_at: string
+  ended_at: string | null
 }
 
 export interface SessionSchedule {

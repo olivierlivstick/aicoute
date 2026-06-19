@@ -3,7 +3,8 @@ import { AuthGuard } from '@/components/AuthGuard'
 import { AppLayout } from '@/components/AppLayout'
 import { RequireAdmin } from '@/components/RequireAdmin'
 import { AidantOnly } from '@/components/AidantOnly'
-import { useIsAdmin } from '@/hooks/useIsAdmin'
+import { OrgOnly } from '@/components/OrgOnly'
+import { useAccountKind } from '@/hooks/useAccountKind'
 import { Home } from '@/marketing/Home'
 import { PublicReportPage } from '@/pages/public/PublicReport'
 import { PurchaseSuccessPage } from '@/pages/public/PurchaseSuccess'
@@ -55,6 +56,14 @@ import { AdminSignauxPage } from '@/pages/admin/AdminSignaux'
 import { AdminBeneficiairesPage } from '@/pages/admin/AdminBeneficiaires'
 import { AdminBeneficiaireDetailPage } from '@/pages/admin/AdminBeneficiaireDetail'
 import { AdminSantePage } from '@/pages/admin/AdminSante'
+
+// Org pages (back-office organisation, account_type='organization')
+import { OrgLayout } from '@/pages/org/OrgLayout'
+import { OrgBeneficiairesPage } from '@/pages/org/OrgBeneficiaires'
+import { OrgCampagnesPage } from '@/pages/org/OrgCampagnes'
+import { OrgCampagneDetailPage } from '@/pages/org/OrgCampagneDetail'
+import { OrgAppelsPage } from '@/pages/org/OrgAppels'
+import { OrgSignauxPage } from '@/pages/org/OrgSignaux'
 
 export function App() {
   return (
@@ -158,6 +167,25 @@ export function App() {
           <Route path="/setup"           element={<Navigate to="/compte"     replace />} />
         </Route>
 
+        {/* --- Back-office ORGANISATION (account_type='organization') ---
+            Layout + sidebar dédiés, distincts du parcours aidant. Chaque route
+            est gardée par <OrgOnly> (admin → /admin, aidant → /dashboard). */}
+        <Route
+          element={
+            <AuthGuard>
+              <OrgLayout />
+            </AuthGuard>
+          }
+        >
+          <Route path="/org"               element={<Navigate to="/org/campagnes" replace />} />
+          <Route path="/org/beneficiaires" element={<OrgOnly><OrgBeneficiairesPage /></OrgOnly>} />
+          <Route path="/org/campagnes"     element={<OrgOnly><OrgCampagnesPage    /></OrgOnly>} />
+          <Route path="/org/campagnes/:id" element={<OrgOnly><OrgCampagneDetailPage /></OrgOnly>} />
+          <Route path="/org/appels"        element={<OrgOnly><OrgAppelsPage       /></OrgOnly>} />
+          <Route path="/org/signaux"       element={<OrgOnly><OrgSignauxPage      /></OrgOnly>} />
+          <Route path="/org/compte"        element={<OrgOnly><ComptePage          /></OrgOnly>} />
+        </Route>
+
         {/* 404 : back-office → dashboard ; vitrine → accueil */}
         <Route
           path="*"
@@ -173,9 +201,10 @@ export function App() {
 // vers /auth/login. Pendant le chargement du profil, on ne rend rien pour éviter de
 // flasher une mauvaise destination.
 function AppHostRoot() {
-  const { isAdmin, loading } = useIsAdmin()
+  const { isAdmin, isOrganization, loading } = useAccountKind()
   if (loading) return null
-  return <Navigate to={isAdmin ? '/admin' : '/dashboard'} replace />
+  const dest = isAdmin ? '/admin' : isOrganization ? '/org/campagnes' : '/dashboard'
+  return <Navigate to={dest} replace />
 }
 
 // Redirige /reports/:id → /historique/:id en préservant l'ID

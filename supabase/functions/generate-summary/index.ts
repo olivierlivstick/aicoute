@@ -282,6 +282,11 @@ RÈGLES GÉNÉRALES :
     //      - le rapport n'a pas déjà été envoyé (idempotence sur report_email_sent_at)
     const alreadySent     = !!call.report_email_sent_at
     const notifyOptIn     = beneficiary.notify_call_report !== false  // default TRUE
+    // Appels de CAMPAGNE (org) : PAS d'email par appel (cela spammerait une boîte
+    // unique sur des centaines d'appels). Les signaux remontent dans /org/signaux ;
+    // le compte-rendu reste consultable. Le résumé + les alertes sont quand même
+    // calculés et stockés ci-dessus.
+    const isCampaignCall  = call.origin === 'campaign'
     let   reportEmailSent = false
 
     // Destinataires : aidant (en premier) + proches déclarés sur le bénéficiaire
@@ -291,7 +296,7 @@ RÈGLES GÉNÉRALES :
       ...(Array.isArray(beneficiary.report_recipients) ? beneficiary.report_recipients : []),
     ])
 
-    if (notifyOptIn && recipients.length > 0 && !alreadySent) {
+    if (notifyOptIn && !isCampaignCall && recipients.length > 0 && !alreadySent) {
       const callDate = new Date(call.ended_at ?? call.scheduled_at)
       const durationMin = call.duration_seconds
         ? Math.round(call.duration_seconds / 60)
