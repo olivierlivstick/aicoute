@@ -4,16 +4,12 @@
 // paragraphe, cartes numérotées 01/02/03, grille de bénéfices, section
 // « engagement » à 4 blocs). Aucun CTA ne pointe vers l'inscription self-service ;
 // tout converge vers le formulaire B2B #contact-etablissements.
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useEffect } from 'react'
 import { Header } from '@/marketing/components/Header'
 import { Footer } from '@/marketing/components/Footer'
 import { Icon } from '@/marketing/components/icons'
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-const inputClass =
-  'w-full px-4 py-3 rounded-md border border-creme-sable bg-white text-brun-900 placeholder:text-brun-700/40 focus:outline-none focus:border-terracotta focus:ring-2 focus:ring-terracotta/20 disabled:opacity-60'
+import { OrgBackLink, OrgReassurance } from '@/marketing/components/orgLayout'
+import { OrganisationContact } from '@/marketing/components/OrganisationContact'
 
 // SEO / métadonnées de la page (best-effort côté client : la page n'est pas
 // prérendue, on met à jour title + canonical + og/twitter au montage et on
@@ -69,7 +65,27 @@ export function EtablissementsPage() {
         <CadreEthique />
         <Modele />
         <Pilote />
-        <ContactEtablissements />
+        {/* Bloc de réassurance commun à toutes les pages Organisations. */}
+        <OrgReassurance />
+        {/* CTA = formulaire partagé (même composant que /municipalites & /assurances,
+            même Edge Function `contact-form`). Section id inchangée → ancres OK. */}
+        <OrganisationContact
+          anchorId="contact-etablissements"
+          eyebrow="Parlons de votre établissement"
+          title="Offrez à chacun de vos résidents une voix qui prend le temps."
+          intro="Parlons de votre établissement, de vos résidents, et de la façon dont Aicoute peut s'y intégrer. Réponse sous 48 h ouvrées."
+          messageHeading="— Demande ÉTABLISSEMENT (B2B) —"
+          orgLabel="Établissement"
+          orgPlaceholder="Résidence Les Tilleuls"
+          messagePlaceholder="Parlez-nous de votre établissement et de votre projet."
+          submitLabel="Demander une présentation"
+          volume={{
+            label: 'Nombre de résidents',
+            sublabel: '(approximatif)',
+            placeholder: 'Ex. 80',
+            messageLabel: 'Nombre de résidents (approx.)',
+          }}
+        />
       </main>
       <Footer />
     </div>
@@ -80,7 +96,8 @@ export function EtablissementsPage() {
 function Hero() {
   return (
     <section className="bg-creme">
-      <div className="max-w-container mx-auto px-6 lg:px-8 pt-12 md:pt-20 pb-20 md:pb-28">
+      <div className="max-w-container mx-auto px-6 lg:px-8 pt-8 md:pt-12 pb-20 md:pb-28">
+        <OrgBackLink className="mb-8" />
         <div className="grid md:grid-cols-2 gap-10 md:gap-16 items-center">
           {/* Colonne texte */}
           <div className="order-2 md:order-1">
@@ -499,277 +516,6 @@ function Pilote() {
             >
               Mettre en place un pilote
             </a>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-/* ----------------------------------------------- CONTACT B2B (formulaire) -- */
-type Status = 'idle' | 'sending' | 'sent' | 'error'
-
-function ContactEtablissements() {
-  const [nom, setNom] = useState('')
-  const [fonction, setFonction] = useState('')
-  const [etablissement, setEtablissement] = useState('')
-  const [residents, setResidents] = useState('')
-  const [email, setEmail] = useState('')
-  const [telephone, setTelephone] = useState('')
-  const [message, setMessage] = useState('')
-  // Honeypot anti-spam : même dispositif que le formulaire de contact de la home.
-  const [company, setCompany] = useState('')
-  const [status, setStatus] = useState<Status>('idle')
-  const [error, setError] = useState<string | null>(null)
-
-  const sending = status === 'sending'
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-
-    if (!nom.trim() || !etablissement.trim() || !email.trim() || !message.trim()) {
-      setError('Merci de renseigner au minimum votre nom, votre établissement, votre email et un message.')
-      return
-    }
-    if (!EMAIL_RE.test(email.trim())) {
-      setError('Votre adresse email semble incorrecte.')
-      return
-    }
-
-    // On réutilise l'Edge Function `contact-form` (mêmes champs firstName/lastName/
-    // email/message + honeypot). Les champs B2B sont assemblés dans le message pour
-    // arriver dans l'email sans modifier le backend déjà déployé.
-    const parts = nom.trim().split(/\s+/)
-    const firstName = parts[0]
-    const lastName = parts.length > 1 ? parts.slice(1).join(' ') : '—'
-
-    const composedMessage =
-      `— Demande ÉTABLISSEMENT (B2B) —\n\n` +
-      `Nom : ${nom.trim()}\n` +
-      `Fonction : ${fonction.trim() || '—'}\n` +
-      `Établissement : ${etablissement.trim()}\n` +
-      `Nombre de résidents (approx.) : ${residents.trim() || '—'}\n` +
-      `Téléphone : ${telephone.trim() || '—'}\n\n` +
-      `Message :\n${message.trim()}`
-
-    setStatus('sending')
-    try {
-      const { data, error: invokeError } = await supabase.functions.invoke('contact-form', {
-        body: {
-          firstName,
-          lastName,
-          email: email.trim(),
-          message: composedMessage,
-          company, // honeypot — doit rester vide
-        },
-      })
-      if (invokeError || (data && (data as { error?: string }).error)) {
-        throw new Error((data as { error?: string })?.error ?? invokeError?.message)
-      }
-      setStatus('sent')
-      setNom('')
-      setFonction('')
-      setEtablissement('')
-      setResidents('')
-      setEmail('')
-      setTelephone('')
-      setMessage('')
-    } catch {
-      setStatus('error')
-      setError("L'envoi a échoué. Réessayez dans un instant ou écrivez-nous à contact@aicoute.fr.")
-    }
-  }
-
-  return (
-    <section id="contact-etablissements" className="bg-creme-sable py-20 md:py-28">
-      <div className="max-w-container mx-auto px-6 lg:px-8">
-        <div className="grid md:grid-cols-3 gap-12 items-start">
-          <div className="md:sticky md:top-24">
-            <p className="text-xs uppercase tracking-[0.18em] text-terracotta-dark mb-5">
-              Parlons de votre établissement
-            </p>
-            <h2 className="font-serif font-normal text-3xl md:text-4xl text-brun-900 leading-[1.15] text-balance">
-              Offrez à chacun de vos résidents une voix qui prend le temps.
-            </h2>
-            <p className="mt-5 text-brun-700 leading-relaxed">
-              Parlons de votre établissement, de vos résidents, et de la façon
-              dont Aicoute peut s'y intégrer. Réponse sous 48&nbsp;h ouvrées.
-            </p>
-            <p className="mt-4 text-brun-700">
-              <a
-                href="mailto:contact@aicoute.fr"
-                className="text-terracotta-dark link-underline font-medium"
-              >
-                contact@aicoute.fr
-              </a>
-            </p>
-          </div>
-
-          <div className="md:col-span-2">
-            {status === 'sent' ? (
-              <div className="bg-white rounded-xl border border-creme-sable p-8 flex items-start gap-4">
-                <span className="shrink-0 w-10 h-10 rounded-full bg-sauge/15 text-sauge flex items-center justify-center">
-                  <Icon.Check size={20} />
-                </span>
-                <div>
-                  <h3 className="text-brun-900 font-medium text-lg">Demande envoyée</h3>
-                  <p className="mt-1 text-brun-700 leading-relaxed">
-                    Merci&nbsp;! Votre demande est bien partie. Nous revenons vers
-                    vous sous 48&nbsp;h ouvrées.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <form
-                onSubmit={handleSubmit}
-                className="bg-white rounded-xl border border-creme-sable p-6 md:p-8 space-y-5"
-              >
-                <div className="grid sm:grid-cols-2 gap-5">
-                  <div>
-                    <label htmlFor="etab-nom" className="block text-sm font-medium text-brun-900 mb-1.5">
-                      Nom
-                    </label>
-                    <input
-                      id="etab-nom"
-                      type="text"
-                      autoComplete="name"
-                      value={nom}
-                      onChange={(e) => setNom(e.target.value)}
-                      disabled={sending}
-                      className={inputClass}
-                      placeholder="Marie Dupont"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="etab-fonction" className="block text-sm font-medium text-brun-900 mb-1.5">
-                      Fonction
-                    </label>
-                    <input
-                      id="etab-fonction"
-                      type="text"
-                      autoComplete="organization-title"
-                      value={fonction}
-                      onChange={(e) => setFonction(e.target.value)}
-                      disabled={sending}
-                      className={inputClass}
-                      placeholder="Directrice, cadre de santé, animatrice…"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid sm:grid-cols-2 gap-5">
-                  <div>
-                    <label htmlFor="etab-etablissement" className="block text-sm font-medium text-brun-900 mb-1.5">
-                      Établissement
-                    </label>
-                    <input
-                      id="etab-etablissement"
-                      type="text"
-                      autoComplete="organization"
-                      value={etablissement}
-                      onChange={(e) => setEtablissement(e.target.value)}
-                      disabled={sending}
-                      className={inputClass}
-                      placeholder="Résidence Les Tilleuls"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="etab-residents" className="block text-sm font-medium text-brun-900 mb-1.5">
-                      Nombre de résidents <span className="text-brun-700/60">(approximatif)</span>
-                    </label>
-                    <input
-                      id="etab-residents"
-                      type="text"
-                      inputMode="numeric"
-                      value={residents}
-                      onChange={(e) => setResidents(e.target.value)}
-                      disabled={sending}
-                      className={inputClass}
-                      placeholder="Ex. 80"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid sm:grid-cols-2 gap-5">
-                  <div>
-                    <label htmlFor="etab-email" className="block text-sm font-medium text-brun-900 mb-1.5">
-                      Email
-                    </label>
-                    <input
-                      id="etab-email"
-                      type="email"
-                      autoComplete="email"
-                      inputMode="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      disabled={sending}
-                      className={inputClass}
-                      placeholder="marie.dupont@etablissement.fr"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="etab-telephone" className="block text-sm font-medium text-brun-900 mb-1.5">
-                      Téléphone
-                    </label>
-                    <input
-                      id="etab-telephone"
-                      type="tel"
-                      autoComplete="tel"
-                      inputMode="tel"
-                      value={telephone}
-                      onChange={(e) => setTelephone(e.target.value)}
-                      disabled={sending}
-                      className={inputClass}
-                      placeholder="06 12 34 56 78"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="etab-message" className="block text-sm font-medium text-brun-900 mb-1.5">
-                    Message
-                  </label>
-                  <textarea
-                    id="etab-message"
-                    rows={5}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    disabled={sending}
-                    className={`${inputClass} resize-none`}
-                    placeholder="Parlez-nous de votre établissement et de votre projet."
-                  />
-                </div>
-
-                {/* Honeypot — caché aux humains, leurré aux bots. Ne pas supprimer. */}
-                <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
-                  <label htmlFor="etab-company">Société (laisser vide)</label>
-                  <input
-                    id="etab-company"
-                    type="text"
-                    tabIndex={-1}
-                    autoComplete="off"
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                  />
-                </div>
-
-                {error && (
-                  <p className="text-sm text-brique" role="alert">
-                    {error}
-                  </p>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={sending}
-                  className="inline-flex items-center gap-2 bg-terracotta hover:bg-terracotta-dark text-creme font-medium px-6 py-3 rounded-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {sending ? 'Envoi…' : 'Demander une présentation'}
-                  {!sending && <Icon.ArrowRight size={18} />}
-                </button>
-              </form>
-            )}
           </div>
         </div>
       </div>

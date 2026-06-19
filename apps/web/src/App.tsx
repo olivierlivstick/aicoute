@@ -15,6 +15,9 @@ import { RGPDPage } from '@/marketing/legal/RGPD'
 import { IAActPage } from '@/marketing/legal/IAAct'
 import { CharteEthiquePage } from '@/marketing/legal/CharteEthique'
 import { EtablissementsPage } from '@/marketing/Etablissements'
+import { OrganisationsPage } from '@/marketing/Organisations'
+import { MunicipalitesPage } from '@/marketing/Municipalites'
+import { AssurancesPage } from '@/marketing/Assurances'
 import { ConseilsIndexPage } from '@/marketing/conseils/ConseilsIndex'
 import { RompreIsolementPage } from '@/marketing/conseils/RompreIsolement'
 import { ParentSeulVivreLoinPage } from '@/marketing/conseils/ParentSeulVivreLoin'
@@ -83,7 +86,11 @@ export function App() {
         <Route path="/achat/annule" element={<Navigate to="/#tarifs" replace />} />
 
         {/* Pages de contenu (vitrine, publiques) */}
+        {/* Section « Organisations » : hub + 3 spokes (B2B/B2G, CTA = contact). */}
+        <Route path="/organisations" element={<OrganisationsPage />} />
         <Route path="/etablissements" element={<EtablissementsPage />} />
+        <Route path="/municipalites" element={<MunicipalitesPage />} />
+        <Route path="/assurances" element={<AssurancesPage />} />
         <Route path="/a-propos" element={<AboutPage />} />
         <Route path="/mentions-legales" element={<MentionsLegalesPage />} />
         <Route path="/cgu" element={<CGUPage />} />

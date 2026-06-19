@@ -1,7 +1,18 @@
 // Header sticky avec changement subtil de bordure au scroll
 import { useState, useEffect } from 'react'
 import { Logo } from '@/components/Logo'
+import { Icon } from '@/marketing/components/icons'
 import { LOGIN_URL, SIGNUP_URL } from '@/config/links'
+
+// Section « Organisations » : le hub en tête, puis les 3 offres (spokes). Desktop =
+// dropdown ; mobile = lien vers le hub. Remplace l'ancienne entrée « Établissements »
+// du premier niveau.
+const ORG_LINKS = [
+  { href: '/organisations', label: "Vue d'ensemble" },
+  { href: '/etablissements', label: 'Établissements' },
+  { href: '/municipalites', label: 'Collectivités' },
+  { href: '/assurances', label: 'Assureurs & mutuelles' },
+]
 
 export function Header() {
   const [scrolled, setScrolled] = useState(false)
@@ -34,7 +45,6 @@ export function Header() {
     { href: '#tarifs', label: 'Tarifs' },
     { href: '#securite', label: 'Sécurité' },
     { href: '#faq', label: 'FAQ' },
-    { href: '/etablissements', label: 'Établissements' },
   ]
 
   return (
@@ -58,6 +68,36 @@ export function Header() {
               {l.label}
             </a>
           ))}
+
+          {/* Organisations — dropdown desktop (ouvert au survol / focus, SSR-safe :
+              affichage piloté en CSS, aucun accès window au rendu). */}
+          <div className="relative group">
+            <a
+              href="/organisations"
+              className="inline-flex items-center gap-1 text-sm text-brun-900 hover:text-terracotta-dark transition-colors"
+              aria-haspopup="true"
+            >
+              Organisations
+              <Icon.ChevronDown
+                size={14}
+                className="transition-transform group-hover:rotate-180"
+              />
+            </a>
+            {/* pt-2 = pont de survol pour ne pas perdre le hover dans l'interstice */}
+            <div className="absolute left-1/2 -translate-x-1/2 top-full pt-2 opacity-0 invisible translate-y-1 group-hover:opacity-100 group-hover:visible group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 transition-all duration-150">
+              <div className="w-60 bg-creme border border-creme-sable rounded-lg shadow-lg shadow-brun-900/5 p-2">
+                {ORG_LINKS.map((l) => (
+                  <a
+                    key={l.href}
+                    href={l.href}
+                    className="block px-3 py-2 rounded-md text-sm text-brun-900 hover:bg-creme-sable hover:text-terracotta-dark transition-colors"
+                  >
+                    {l.label}
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
         </nav>
 
         <div className="hidden md:flex items-center gap-5">
@@ -107,6 +147,10 @@ export function Header() {
                 {l.label}
               </a>
             ))}
+            {/* Mobile : un seul lien vers le hub Organisations (pas de sous-menu). */}
+            <a href="/organisations" className="py-2 text-brun-900" onClick={() => setMobileOpen(false)}>
+              Organisations
+            </a>
             <div className="flex items-center gap-3 pt-2 border-t border-creme-sable mt-1">
               <a
                 href={LOGIN_URL}

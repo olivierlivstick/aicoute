@@ -34,7 +34,7 @@ export function Footer() {
       links: [
         { label: 'À propos', href: '/a-propos' },
         { label: 'Conseils', href: '/conseils' },
-        { label: 'Établissements', href: '/etablissements' },
+        { label: 'Organisations', href: '/organisations' },
         { label: 'Charte éthique', href: '/charte-ethique' },
         { label: 'Contact', href: '/#contact' },
       ],
