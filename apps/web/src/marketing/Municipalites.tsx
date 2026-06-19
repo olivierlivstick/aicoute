@@ -95,7 +95,7 @@ export function MunicipalitesPage() {
               <div className="order-1 md:order-2">
                 <OrgHeroImage
                   src="/organisations/aicoute-hero-municipalites.png"
-                  alt="Tableau de bord Aicoute « Plan canicule » d'un CCAS : registre communal, appels du jour, et un signal faible remonté à l'agent d'astreinte"
+                  alt="Façade de mairie avec, en surimpression, le tableau de bord Aicoute « Plan canicule » d'un CCAS : registre communal et signal faible remonté à l'agent d'astreinte"
                 />
               </div>
             </div>

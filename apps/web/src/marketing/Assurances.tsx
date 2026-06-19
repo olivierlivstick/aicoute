@@ -105,7 +105,7 @@ export function AssurancesPage() {
               <div className="order-1 md:order-2">
                 <OrgHeroImage
                   src="/organisations/aicoute-hero-assurances.png"
-                  alt="Tableau de bord Aicoute « Appels & veille » : planning d'appels récurrents et signaux faibles remontés dans le dispositif d'assistance"
+                  alt="Conseiller·ère en assistance avec casque téléphonique et, en surimpression, le tableau de bord Aicoute « Signaux récents » remontés dans le dispositif"
                 />
               </div>
             </div>
