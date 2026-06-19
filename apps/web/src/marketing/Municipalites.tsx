@@ -11,7 +11,7 @@ import {
   SectionHeader,
   OrgBackLink,
   OrgReassurance,
-  OrgImagePlaceholder,
+  OrgHeroImage,
   useMarketingSeo,
 } from '@/marketing/components/orgLayout'
 import { OrganisationContact } from '@/marketing/components/OrganisationContact'
@@ -93,9 +93,9 @@ export function MunicipalitesPage() {
                 </p>
               </div>
               <div className="order-1 md:order-2">
-                <OrgImagePlaceholder
-                  ratio="aspect-[4/5] md:aspect-[5/6]"
-                  label="aîné·e au téléphone / agent de CCAS / mairie — registre digne"
+                <OrgHeroImage
+                  src="/organisations/aicoute-hero-municipalites.png"
+                  alt="Tableau de bord Aicoute « Plan canicule » d'un CCAS : registre communal, appels du jour, et un signal faible remonté à l'agent d'astreinte"
                 />
               </div>
             </div>

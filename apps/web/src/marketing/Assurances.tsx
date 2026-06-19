@@ -12,7 +12,7 @@ import {
   SectionHeader,
   OrgBackLink,
   OrgReassurance,
-  OrgImagePlaceholder,
+  OrgHeroImage,
   useMarketingSeo,
 } from '@/marketing/components/orgLayout'
 import { OrganisationContact } from '@/marketing/components/OrganisationContact'
@@ -103,9 +103,9 @@ export function AssurancesPage() {
                 </p>
               </div>
               <div className="order-1 md:order-2">
-                <OrgImagePlaceholder
-                  ratio="aspect-[4/5] md:aspect-[5/6]"
-                  label="registre rassurant et premium (assuré âgé serein / relation de confiance)"
+                <OrgHeroImage
+                  src="/organisations/aicoute-hero-assurances.png"
+                  alt="Tableau de bord Aicoute « Appels & veille » : planning d'appels récurrents et signaux faibles remontés dans le dispositif d'assistance"
                 />
               </div>
             </div>

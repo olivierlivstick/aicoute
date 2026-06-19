@@ -156,6 +156,29 @@ export function OrgImagePlaceholder({
   )
 }
 
+/* ------------------------------------------------------- HERO IMAGE -- */
+// Visuel de hero (même habillage que le hero de /etablissements : lueur dorée +
+// coins arrondis). Ratio naturel de l'image (h-auto) → aucun rognage du mockup.
+export function OrgHeroImage({
+  src,
+  alt,
+  className = '',
+}: {
+  src: string
+  alt: string
+  className?: string
+}) {
+  return (
+    <div className={`relative ${className}`}>
+      {/* Soleil chaud en arrière-plan */}
+      <div className="absolute -top-6 -right-6 w-40 h-40 rounded-full bg-ocre/35 blur-2xl" />
+      <div className="relative rounded-xl overflow-hidden w-full shadow-sm">
+        <img src={src} alt={alt} className="w-full h-auto" loading="eager" />
+      </div>
+    </div>
+  )
+}
+
 /* ------------------------------------------------ RÉASSURANCE COMMUNE -- */
 // Bloc partagé par toutes les pages Organisations : ce qui ne change pas d'un
 // métier à l'autre. Les {{…}} sont des placeholders de contenu à compléter.
