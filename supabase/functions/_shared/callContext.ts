@@ -96,14 +96,15 @@ export async function loadCallContext(
 
   // Appel de CAMPAGNE (org) : la campagne porte le prompt, la langue et la durée
   // (les bénéficiaires d'org sont « légers », sans config IA propre).
-  let campaign: { prompt_id: string | null; language: string; max_call_minutes: number; ai_persona_name: string | null } | null = null
+  type CampaignCtx = { prompt_id: string | null; custom_prompt: string | null; language: string; max_call_minutes: number; ai_persona_name: string | null }
+  let campaign: CampaignCtx | null = null
   if (isCampaign) {
     const campRes = await supabase
       .from('campaigns')
-      .select('prompt_id, language, max_call_minutes, ai_persona_name')
+      .select('prompt_id, custom_prompt, language, max_call_minutes, ai_persona_name')
       .eq('id', call.campaign_id)
       .single()
-    campaign = (campRes.data as { prompt_id: string | null; language: string; max_call_minutes: number; ai_persona_name: string | null } | null) ?? null
+    campaign = (campRes.data as CampaignCtx | null) ?? null
   }
 
   // 2. Bénéficiaire
@@ -211,8 +212,9 @@ export async function loadCallContext(
   const defaultPair = promptRows.find((r) => r.language === lang) ?? promptRows.find((r) => r.language === 'fr') ?? null
   const defaultInboundOpening = defaultPair?.inbound_body ?? null
 
-  // Template par défaut = celui de la langue. Pour une campagne avec un prompt
-  // explicite, ce prompt PRIME (il EST le template appliqué à tous les appels).
+  // Template par défaut = celui de la langue. Pour une campagne : le prompt de la
+  // bibliothèque (prompt_id) prime sur le défaut, et le prompt ÉDITÉ (custom_prompt)
+  // prime sur tout. Reste un TEMPLATE (variables résolues par buildSystemPrompt).
   let defaultTemplate = defaultPair?.outbound_body ?? null
   if (campaign?.prompt_id) {
     const cpRes = await supabase
@@ -221,6 +223,9 @@ export async function loadCallContext(
       .eq('id', campaign.prompt_id)
       .single()
     defaultTemplate = (cpRes.data as { outbound_body: string } | null)?.outbound_body ?? defaultTemplate
+  }
+  if (campaign?.custom_prompt && campaign.custom_prompt.trim()) {
+    defaultTemplate = campaign.custom_prompt
   }
 
   // La campagne porte la langue ET le prénom de l'appelant → on les aligne sur le

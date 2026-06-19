@@ -24,6 +24,7 @@ interface SignalRow {
   scheduled_at: string
   started_at: string | null
   notified_at: string | null
+  campaign_id: string | null
   alerts: CallAlert[] | null
   recording_path: string | null
   beneficiaries: { id: string; first_name: string; last_name: string } | null
@@ -56,16 +57,24 @@ export function OrgSignauxPage() {
   const [loading, setLoading] = useState(true)
   const [statusSel, setStatusSel] = useState<Set<FollowStatus>>(new Set(['todo', 'in_progress']))
   const [sevSel, setSevSel] = useState<Set<AlertSeverity>>(new Set())
+  const [campaignSel, setCampaignSel] = useState<string>('all')
+  const [campaigns, setCampaigns] = useState<{ id: string; title: string }[]>([])
   const [followFor, setFollowFor] = useState<SignalRow | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
 
   useEffect(() => { load() }, [])
 
+  // Liste des campagnes (pour le filtre déroulant).
+  useEffect(() => {
+    supabase.from('campaigns').select('id, title').order('created_at', { ascending: false })
+      .then(({ data }) => setCampaigns((data ?? []) as { id: string; title: string }[]))
+  }, [])
+
   async function load() {
     setLoading(true)
     const { data: callsData } = await supabase
       .from('calls')
-      .select('id, scheduled_at, started_at, notified_at, alerts, recording_path, beneficiaries(id, first_name, last_name)')
+      .select('id, scheduled_at, started_at, notified_at, campaign_id, alerts, recording_path, beneficiaries(id, first_name, last_name)')
       .neq('alerts', '[]')
       .order('scheduled_at', { ascending: false })
       .limit(300)
@@ -100,13 +109,14 @@ export function OrgSignauxPage() {
     let list = rows
     if (statusSel.size > 0) list = list.filter((r) => statusSel.has(currentStatus(r.id)))
     if (sevSel.size > 0) list = list.filter((r) => (r.alerts ?? []).some((a) => sevSel.has(a.severity)))
+    if (campaignSel !== 'all') list = list.filter((r) => r.campaign_id === campaignSel)
     return [...list].sort((a, b) => {
       const da = new Date(effectiveDate(a)).getTime()
       const db = new Date(effectiveDate(b)).getTime()
       return da !== db ? db - da : maxSeverityRank(a) - maxSeverityRank(b)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, actions, statusSel, sevSel])
+  }, [rows, actions, statusSel, sevSel, campaignSel])
 
   const openCount = useMemo(
     () => rows.filter((r) => ['todo', 'in_progress'].includes(currentStatus(r.id))).length,
@@ -150,6 +160,21 @@ export function OrgSignauxPage() {
           {(['high', 'medium', 'low'] as AlertSeverity[]).map((s) => (
             <Pill key={s} active={sevSel.has(s)} onClick={() => toggle(sevSel, setSevSel, s)}>{SEVERITY_META[s].label}</Pill>
           ))}
+        </div>
+
+        {/* Filtre campagne — à droite de la ligne. */}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wider text-slate-400">Campagne</span>
+          <select
+            value={campaignSel}
+            onChange={(e) => setCampaignSel(e.target.value)}
+            className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary"
+          >
+            <option value="all">Toutes les campagnes</option>
+            {campaigns.map((c) => (
+              <option key={c.id} value={c.id}>{c.title}</option>
+            ))}
+          </select>
         </div>
       </div>
 

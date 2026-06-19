@@ -52,6 +52,8 @@ import { AdminDashboardPage } from '@/pages/admin/AdminDashboard'
 import { AdminComptesPage } from '@/pages/admin/AdminComptes'
 import { AdminCompteDetailPage } from '@/pages/admin/AdminCompteDetail'
 import { AdminAppelsPage } from '@/pages/admin/AdminAppels'
+import { AdminCampagnesPage } from '@/pages/admin/AdminCampagnes'
+import { AdminCampagneDetailPage } from '@/pages/admin/AdminCampagneDetail'
 import { AdminSignauxPage } from '@/pages/admin/AdminSignaux'
 import { AdminBeneficiairesPage } from '@/pages/admin/AdminBeneficiaires'
 import { AdminBeneficiaireDetailPage } from '@/pages/admin/AdminBeneficiaireDetail'
@@ -146,6 +148,8 @@ export function App() {
           <Route path="/admin/comptes/:id"   element={<RequireAdmin><AdminCompteDetailPage /></RequireAdmin>} />
           <Route path="/admin/beneficiaires" element={<RequireAdmin><AdminBeneficiairesPage /></RequireAdmin>} />
           <Route path="/admin/beneficiaires/:id" element={<RequireAdmin><AdminBeneficiaireDetailPage /></RequireAdmin>} />
+          <Route path="/admin/campagnes"     element={<RequireAdmin><AdminCampagnesPage     /></RequireAdmin>} />
+          <Route path="/admin/campagnes/:id" element={<RequireAdmin><AdminCampagneDetailPage /></RequireAdmin>} />
           <Route path="/admin/appels"        element={<RequireAdmin><AdminAppelsPage       /></RequireAdmin>} />
           <Route path="/admin/signaux"       element={<RequireAdmin><AdminSignauxPage      /></RequireAdmin>} />
           {/* Qualité fusionnée dans la page Administration (/admin/sante). */}

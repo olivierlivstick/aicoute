@@ -16,6 +16,14 @@ export interface CampaignStats {
   calls_todo: number
 }
 
+export type JournalKind = 'go' | 'pause' | 'launched' | 'in_progress' | 'completed' | 'missed' | 'failed'
+export interface JournalEntry {
+  id: string
+  at: string
+  kind: JournalKind
+  label: string
+}
+
 /**
  * Détail d'une campagne : configuration, membres (bénéficiaires), périodes
  * d'activité (segments GO→PAUSE) + actions. RLS scopée org.
@@ -27,6 +35,7 @@ export function useCampaign(id: string | undefined) {
   // beneficiary_id → date/heure de l'appel ABOUTI (si abouti)
   const [connectedAt, setConnectedAt] = useState<Record<string, string>>({})
   const [stats, setStats] = useState<CampaignStats>({ calls_made: 0, minutes_spent: 0, calls_todo: 0 })
+  const [journal, setJournal] = useState<JournalEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -36,7 +45,7 @@ export function useCampaign(id: string | undefined) {
       supabase.from('campaigns').select('*').eq('id', id).single(),
       supabase.from('campaign_beneficiaries').select('beneficiary_id, beneficiaries(*)').eq('campaign_id', id),
       supabase.from('campaign_activity_periods').select('*').eq('campaign_id', id).order('started_at', { ascending: false }),
-      supabase.from('calls').select('beneficiary_id, status, notified_at, started_at, ended_at, duration_seconds, created_at').eq('campaign_id', id),
+      supabase.from('calls').select('id, beneficiary_id, status, notified_at, started_at, ended_at, duration_seconds, created_at').eq('campaign_id', id),
     ])
     if (campRes.error) { setError(campRes.error.message); setLoading(false); return }
 
@@ -49,7 +58,7 @@ export function useCampaign(id: string | undefined) {
     setMembers(memberList)
 
     const calls = (callRes.data ?? []) as {
-      beneficiary_id: string; status: string; notified_at: string | null
+      id: string; beneficiary_id: string; status: string; notified_at: string | null
       started_at: string | null; ended_at: string | null; duration_seconds: number | null; created_at: string
     }[]
 
@@ -101,6 +110,35 @@ export function useCampaign(id: string | undefined) {
         connections: inWindow.filter((k) => k.status === 'completed').length,
       }
     }))
+
+    // Journal d'activité : GO/PAUSE + cycle de vie des appels, le plus récent d'abord.
+    const nameOf = (bid: string) => {
+      const m = memberList.find((x) => x.id === bid)
+      return m ? `${m.first_name} ${m.last_name}` : 'un bénéficiaire'
+    }
+    const entries: JournalEntry[] = []
+    for (const p of rawPeriods) {
+      entries.push({ id: `go-${p.id}`, at: p.started_at, kind: 'go', label: 'Campagne lancée' })
+      if (p.ended_at) entries.push({ id: `pause-${p.id}`, at: p.ended_at, kind: 'pause', label: 'Campagne mise en pause' })
+    }
+    for (const k of calls) {
+      const who = nameOf(k.beneficiary_id)
+      const fallback = k.ended_at ?? k.notified_at ?? k.started_at ?? k.created_at
+      if (k.notified_at) entries.push({ id: `launch-${k.id}-${k.notified_at}`, at: k.notified_at, kind: 'launched', label: `Appel lancé vers ${who}` })
+      if (k.status === 'completed') {
+        const mins = k.duration_seconds ? ` (${Math.max(1, Math.round(k.duration_seconds / 60))} min)` : ''
+        entries.push({ id: `done-${k.id}`, at: k.ended_at ?? fallback, kind: 'completed', label: `Conversation établie avec ${who}${mins}` })
+      } else if (k.status === 'in_progress') {
+        entries.push({ id: `prog-${k.id}`, at: k.started_at ?? fallback, kind: 'in_progress', label: `Conversation en cours avec ${who}` })
+      } else if (k.status === 'missed') {
+        entries.push({ id: `miss-${k.id}`, at: fallback, kind: 'missed', label: `Sans réponse — ${who}` })
+      } else if (k.status === 'failed') {
+        entries.push({ id: `fail-${k.id}`, at: fallback, kind: 'failed', label: `Échec de l'appel — ${who}` })
+      }
+    }
+    entries.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    setJournal(entries.slice(0, 50))
+
     setLoading(false)
   }, [id])
 
@@ -210,5 +248,5 @@ export function useCampaign(id: string | undefined) {
     return true
   }, [id, reload])
 
-  return { campaign, members, periods, connectedAt, stats, loading, error, reload, update, remove, addMembers, removeMember, callNow, start, pause }
+  return { campaign, members, periods, connectedAt, stats, journal, loading, error, reload, update, remove, addMembers, removeMember, callNow, start, pause }
 }

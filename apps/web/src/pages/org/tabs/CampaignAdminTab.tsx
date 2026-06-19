@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Trash2 } from 'lucide-react'
+import { Trash2, FileDown } from 'lucide-react'
 import type { useCampaign } from '@/hooks/useCampaign'
-import { PromptSelect } from '@/components/PromptSelect'
+import { usePrompts } from '@/hooks/usePrompts'
 
 type CampaignCtx = ReturnType<typeof useCampaign>
 
@@ -39,6 +39,7 @@ export function CampaignAdminTab({ c }: { c: CampaignCtx }) {
   const [personaName, setPersonaName] = useState(camp.ai_persona_name ?? 'Marie')
   const [language, setLanguage] = useState(camp.language)
   const [promptId, setPromptId] = useState<string | null>(camp.prompt_id)
+  const [promptBody, setPromptBody] = useState(camp.custom_prompt ?? '')
   const [dailyStart, setDailyStart] = useState((camp.daily_start_time ?? '09:00').slice(0, 5))
   const [dailyEnd, setDailyEnd] = useState((camp.daily_end_time ?? '18:00').slice(0, 5))
   const [timezone, setTimezone] = useState(camp.timezone)
@@ -50,6 +51,9 @@ export function CampaignAdminTab({ c }: { c: CampaignCtx }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+
+  const { prompts } = usePrompts({ language })
+  const selectedPrompt = prompts.find((p) => p.id === promptId) ?? null
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -63,6 +67,7 @@ export function CampaignAdminTab({ c }: { c: CampaignCtx }) {
       ai_persona_name: personaName.trim() || 'Marie',
       language,
       prompt_id: promptId,
+      custom_prompt: promptBody.trim() || null,
       daily_start_time: dailyStart,
       daily_end_time: dailyEnd,
       timezone,
@@ -114,9 +119,45 @@ export function CampaignAdminTab({ c }: { c: CampaignCtx }) {
             {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
           </select>
         </Field>
-        <Field label="Prompt utilisé" hint="Personnalité + règles appliquées à tous les appels de la campagne.">
-          <PromptSelect language={language} value={promptId} onChange={(p) => setPromptId(p?.id ?? null)} autoSelectDefault />
+        <Field label="Modèle de prompt (bibliothèque)" hint="Base appliquée si l'éditeur ci-dessous est vide.">
+          <select className={inputCls} value={promptId ?? ''} onChange={(e) => setPromptId(e.target.value || null)}>
+            <option value="">— Défaut de la langue —</option>
+            {prompts.map((p) => (
+              <option key={p.id} value={p.id}>{p.title}{p.is_default ? ' — défaut' : ''}</option>
+            ))}
+          </select>
         </Field>
+      </div>
+
+      {/* Éditeur de prompt propre à la campagne */}
+      <div>
+        <div className="mb-1 flex items-center justify-between">
+          <label className="block text-sm font-medium text-slate-700">Prompt de la campagne</label>
+          <button
+            type="button"
+            onClick={() => selectedPrompt && setPromptBody(selectedPrompt.outbound_body)}
+            disabled={!selectedPrompt}
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:text-slate-300 disabled:no-underline"
+            title={selectedPrompt ? 'Remplace l’éditeur par le texte du modèle sélectionné' : 'Choisissez un modèle'}
+          >
+            <FileDown size={13} /> Charger le modèle dans l'éditeur
+          </button>
+        </div>
+        <textarea
+          className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 font-mono text-[13px] leading-relaxed text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary"
+          rows={12}
+          value={promptBody}
+          onChange={(e) => setPromptBody(e.target.value)}
+          placeholder="Laissez vide pour utiliser le modèle ci-dessus tel quel, ou écrivez/éditez votre version ici…"
+        />
+        <p className="mt-1 text-xs text-slate-400">
+          Personnalité + règles appliquées à tous les appels. Variables disponibles :{' '}
+          <code className="rounded bg-slate-100 px-1">{'{{persona}}'}</code>{' '}
+          <code className="rounded bg-slate-100 px-1">{'{{prenom}}'}</code>{' '}
+          <code className="rounded bg-slate-100 px-1">{'{{langue}}'}</code>{' '}
+          <code className="rounded bg-slate-100 px-1">{'{{style}}'}</code>{' '}
+          <code className="rounded bg-slate-100 px-1">{'{{il_elle}}'}</code> (remplacées à chaque appel).
+        </p>
       </div>
 
       <div className="grid grid-cols-3 gap-4">

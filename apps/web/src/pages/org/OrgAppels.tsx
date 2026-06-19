@@ -14,6 +14,7 @@ interface CallRow {
   scheduled_at: string
   started_at: string | null
   duration_seconds: number | null
+  campaign_id: string | null
   engine: string | null
   fluidity_metrics: FluidityMetrics | null
   recording_analysis: RecordingAnalysis | null
@@ -29,15 +30,24 @@ export function OrgAppelsPage() {
   const [query, setQuery] = useState('')
   const [detailId, setDetailId] = useState<string | null>(null)
   const [quality, setQuality] = useState<CallRow | null>(null)
+  const [campaignTitles, setCampaignTitles] = useState<Record<string, string>>({})
 
   useEffect(() => {
     supabase
       .from('calls')
-      .select('id, status, scheduled_at, started_at, duration_seconds, engine, fluidity_metrics, recording_analysis, tuning_snapshot, recording_path, beneficiaries(first_name, last_name)')
+      .select('id, status, scheduled_at, started_at, duration_seconds, campaign_id, engine, fluidity_metrics, recording_analysis, tuning_snapshot, recording_path, beneficiaries(first_name, last_name)')
       .neq('status', 'scheduled')
       .order('scheduled_at', { ascending: false })
       .limit(500)
       .then(({ data }) => { setCalls((data ?? []) as unknown as CallRow[]); setLoading(false) })
+  }, [])
+
+  useEffect(() => {
+    supabase.from('campaigns').select('id, title').then(({ data }) => {
+      const map: Record<string, string> = {}
+      for (const c of (data ?? []) as { id: string; title: string }[]) map[c.id] = c.title
+      setCampaignTitles(map)
+    })
   }, [])
 
   const rows = useMemo(() => {
@@ -70,6 +80,7 @@ export function OrgAppelsPage() {
             <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wide text-slate-400">
               <th className="px-4 py-3 font-semibold">Date</th>
               <th className="px-4 py-3 font-semibold">Bénéficiaire</th>
+              <th className="px-4 py-3 font-semibold">Campagne</th>
               <th className="px-4 py-3 font-semibold">Statut</th>
               <th className="px-4 py-3 font-semibold">Durée</th>
               <th className="px-4 py-3 text-right font-semibold">Actions</th>
@@ -77,9 +88,9 @@ export function OrgAppelsPage() {
           </thead>
           <tbody className="divide-y divide-slate-50">
             {loading ? (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">Chargement…</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">Chargement…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-12 text-center text-slate-400">
+              <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400">
                 <Phone size={26} className="mx-auto mb-2 text-slate-300" />
                 {query ? 'Aucun résultat.' : 'Aucun appel réalisé pour l’instant.'}
               </td></tr>
@@ -90,6 +101,9 @@ export function OrgAppelsPage() {
                 </td>
                 <td className="px-4 py-3 text-slate-800">
                   {c.beneficiaries ? `${c.beneficiaries.last_name} ${c.beneficiaries.first_name}` : '—'}
+                </td>
+                <td className="px-4 py-3 text-slate-500">
+                  {c.campaign_id ? (campaignTitles[c.campaign_id] ?? '—') : <span className="text-slate-300">—</span>}
                 </td>
                 <td className="px-4 py-3"><CallStatusBadge status={c.status} /></td>
                 <td className="px-4 py-3 text-slate-500">{c.duration_seconds ? formatDuration(c.duration_seconds) : '—'}</td>

@@ -129,6 +129,8 @@ export interface Campaign {
   starts_on: string | null
   ends_on: string | null
   prompt_id: string | null
+  /** Prompt (template à variables) propre à la campagne, éditable. NULL → prompt_id → défaut langue. */
+  custom_prompt: string | null
   language: string
   /** Prénom que l'IA utilise pour se présenter ({{persona}}) sur les appels de la campagne. */
   ai_persona_name: string

@@ -3,17 +3,9 @@ import { Play, Pause, AlertTriangle } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import type { useCampaign } from '@/hooks/useCampaign'
 import { campaignWindowState } from '@/pages/org/campaignWindow'
+import { CampaignKpis, CampaignJournal, CampaignPeriods } from '@/pages/org/campaignViews'
 
 type CampaignCtx = ReturnType<typeof useCampaign>
-
-function KpiCard({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3.5">
-      <p className="text-2xl font-serif font-semibold text-slate-800">{value}</p>
-      <p className="mt-0.5 text-xs text-slate-500">{label}</p>
-    </div>
-  )
-}
 
 export function CampaignActivityTab({ c }: { c: CampaignCtx }) {
   const camp = c.campaign!
@@ -42,12 +34,7 @@ export function CampaignActivityTab({ c }: { c: CampaignCtx }) {
 
   return (
     <div className="max-w-3xl space-y-6">
-      {/* KPI en-tête */}
-      <div className="grid grid-cols-3 gap-4">
-        <KpiCard label="Appels passés" value={c.stats.calls_made} />
-        <KpiCard label="Temps passé" value={`${c.stats.minutes_spent} min`} />
-        <KpiCard label="Appels à passer" value={c.stats.calls_todo} />
-      </div>
+      <CampaignKpis stats={c.stats} />
 
       {/* Interrupteur GO / PAUSE */}
       <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white px-5 py-4">
@@ -83,38 +70,8 @@ export function CampaignActivityTab({ c }: { c: CampaignCtx }) {
         </div>
       )}
 
-      {/* Périodes d'activité */}
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-slate-700">Périodes d'activité</h3>
-        <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="px-4 py-3 font-semibold">Début</th>
-                <th className="px-4 py-3 font-semibold">Fin</th>
-                <th className="px-4 py-3 text-center font-semibold">Appels passés</th>
-                <th className="px-4 py-3 text-center font-semibold">Appels aboutis</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {c.periods.length === 0 ? (
-                <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400">Aucune période — la campagne n'a pas encore été lancée.</td></tr>
-              ) : c.periods.map((p) => (
-                <tr key={p.id}>
-                  <td className="px-4 py-3 text-slate-600">{formatDate(p.started_at, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {p.ended_at
-                      ? formatDate(p.ended_at, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-                      : <span className="text-sauge">en cours</span>}
-                  </td>
-                  <td className="px-4 py-3 text-center text-slate-700">{p.calls_made}</td>
-                  <td className="px-4 py-3 text-center text-slate-700">{p.connections}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <CampaignJournal entries={c.journal} live={running} />
+      <CampaignPeriods periods={c.periods} />
     </div>
   )
 }
