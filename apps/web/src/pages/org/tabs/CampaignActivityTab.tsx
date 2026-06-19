@@ -6,6 +6,15 @@ import { campaignWindowState } from '@/pages/org/campaignWindow'
 
 type CampaignCtx = ReturnType<typeof useCampaign>
 
+function KpiCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3.5">
+      <p className="text-2xl font-serif font-semibold text-slate-800">{value}</p>
+      <p className="mt-0.5 text-xs text-slate-500">{label}</p>
+    </div>
+  )
+}
+
 export function CampaignActivityTab({ c }: { c: CampaignCtx }) {
   const camp = c.campaign!
   const running = camp.status === 'running'
@@ -33,6 +42,13 @@ export function CampaignActivityTab({ c }: { c: CampaignCtx }) {
 
   return (
     <div className="max-w-3xl space-y-6">
+      {/* KPI en-tête */}
+      <div className="grid grid-cols-3 gap-4">
+        <KpiCard label="Appels passés" value={c.stats.calls_made} />
+        <KpiCard label="Temps passé" value={`${c.stats.minutes_spent} min`} />
+        <KpiCard label="Appels à passer" value={c.stats.calls_todo} />
+      </div>
+
       {/* Interrupteur GO / PAUSE */}
       <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white px-5 py-4">
         <div>

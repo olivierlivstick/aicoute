@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Plus, X, Search, PhoneCall } from 'lucide-react'
+import { formatDate } from '@/lib/utils'
 import type { useCampaign } from '@/hooks/useCampaign'
 import { useOrgBeneficiaries } from '@/hooks/useOrgBeneficiaries'
 import { Modal } from '@/pages/org/Modal'
@@ -38,12 +39,26 @@ export function CampaignMembersTab({ c }: { c: CampaignCtx }) {
           </p>
         ) : (
           <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wide text-slate-400">
+                <th className="px-4 py-3 font-semibold">Bénéficiaire</th>
+                <th className="px-4 py-3 font-semibold">Téléphone</th>
+                <th className="px-4 py-3 font-semibold">Commentaire</th>
+                <th className="px-4 py-3 font-semibold">Appel abouti</th>
+                <th className="px-4 py-3 text-right font-semibold">Actions</th>
+              </tr>
+            </thead>
             <tbody className="divide-y divide-slate-50">
               {c.members.map((b) => (
                 <tr key={b.id} className="hover:bg-slate-50/50">
                   <td className="px-4 py-3 font-medium text-slate-800">{b.last_name} {b.first_name}</td>
                   <td className="px-4 py-3 text-slate-500">{b.phone || <span className="text-amber-600">pas de téléphone</span>}</td>
                   <td className="px-4 py-3 text-slate-400">{b.comment}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-slate-500">
+                    {c.connectedAt[b.id]
+                      ? formatDate(c.connectedAt[b.id], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                      : <span className="text-slate-300">—</span>}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
                       <button

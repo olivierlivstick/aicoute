@@ -7,6 +7,15 @@ export interface PeriodWithStats extends CampaignActivityPeriod {
   connections: number
 }
 
+export interface CampaignStats {
+  /** Appels effectués (tentatives terminées : abouti / sans réponse / échec). */
+  calls_made: number
+  /** Temps de conversation cumulé (minutes, appels aboutis). */
+  minutes_spent: number
+  /** Bénéficiaires restant à joindre (avec téléphone, ni joints ni épuisés). */
+  calls_todo: number
+}
+
 /**
  * Détail d'une campagne : configuration, membres (bénéficiaires), périodes
  * d'activité (segments GO→PAUSE) + actions. RLS scopée org.
@@ -15,6 +24,9 @@ export function useCampaign(id: string | undefined) {
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [members, setMembers] = useState<Beneficiary[]>([])
   const [periods, setPeriods] = useState<PeriodWithStats[]>([])
+  // beneficiary_id → date/heure de l'appel ABOUTI (si abouti)
+  const [connectedAt, setConnectedAt] = useState<Record<string, string>>({})
+  const [stats, setStats] = useState<CampaignStats>({ calls_made: 0, minutes_spent: 0, calls_todo: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -24,19 +36,57 @@ export function useCampaign(id: string | undefined) {
       supabase.from('campaigns').select('*').eq('id', id).single(),
       supabase.from('campaign_beneficiaries').select('beneficiary_id, beneficiaries(*)').eq('campaign_id', id),
       supabase.from('campaign_activity_periods').select('*').eq('campaign_id', id).order('started_at', { ascending: false }),
-      supabase.from('calls').select('status, notified_at, started_at, created_at').eq('campaign_id', id),
+      supabase.from('calls').select('beneficiary_id, status, notified_at, started_at, ended_at, duration_seconds, created_at').eq('campaign_id', id),
     ])
     if (campRes.error) { setError(campRes.error.message); setLoading(false); return }
 
-    setCampaign(campRes.data as Campaign)
-    setMembers(
-      ((memberRes.data ?? []) as unknown as { beneficiaries: Beneficiary }[])
-        .map((r) => r.beneficiaries)
-        .filter(Boolean)
-        .sort((a, b) => a.last_name.localeCompare(b.last_name))
-    )
+    const camp = campRes.data as Campaign
+    setCampaign(camp)
+    const memberList = ((memberRes.data ?? []) as unknown as { beneficiaries: Beneficiary }[])
+      .map((r) => r.beneficiaries)
+      .filter(Boolean)
+      .sort((a, b) => a.last_name.localeCompare(b.last_name))
+    setMembers(memberList)
 
-    const calls = (callRes.data ?? []) as { status: string; notified_at: string | null; started_at: string | null; created_at: string }[]
+    const calls = (callRes.data ?? []) as {
+      beneficiary_id: string; status: string; notified_at: string | null
+      started_at: string | null; ended_at: string | null; duration_seconds: number | null; created_at: string
+    }[]
+
+    // Date/heure d'aboutissement par bénéficiaire (appel `completed` le plus récent).
+    const connected: Record<string, string> = {}
+    for (const k of calls) {
+      if (k.status !== 'completed') continue
+      const t = k.started_at ?? k.ended_at ?? k.created_at
+      if (!connected[k.beneficiary_id] || new Date(t) > new Date(connected[k.beneficiary_id])) {
+        connected[k.beneficiary_id] = t
+      }
+    }
+    setConnectedAt(connected)
+
+    // KPI agrégés de la campagne (tous segments confondus).
+    const TERMINAL = new Set(['completed', 'missed', 'failed'])
+    const maxAttempts = camp.retry_count + 1
+    const byBenef = new Map<string, typeof calls>()
+    for (const k of calls) {
+      const arr = byBenef.get(k.beneficiary_id) ?? []
+      arr.push(k)
+      byBenef.set(k.beneficiary_id, arr)
+    }
+    const callsMade = calls.filter((k) => TERMINAL.has(k.status)).length
+    const minutesSpent = Math.round(
+      calls.filter((k) => k.status === 'completed').reduce((s, k) => s + (k.duration_seconds ?? 0), 0) / 60,
+    )
+    let callsTodo = 0
+    for (const m of memberList) {
+      if (!m.phone || !m.phone.trim() || m.is_active === false) continue
+      const bc = byBenef.get(m.id) ?? []
+      if (bc.some((k) => k.status === 'completed')) continue                       // joint
+      if (bc.filter((k) => TERMINAL.has(k.status)).length >= maxAttempts) continue // épuisé
+      callsTodo++
+    }
+    setStats({ calls_made: callsMade, minutes_spent: minutesSpent, calls_todo: callsTodo })
+
     const rawPeriods = (periodRes.data ?? []) as CampaignActivityPeriod[]
     setPeriods(rawPeriods.map((p) => {
       const lo = new Date(p.started_at).getTime()
@@ -160,5 +210,5 @@ export function useCampaign(id: string | undefined) {
     return true
   }, [id, reload])
 
-  return { campaign, members, periods, loading, error, reload, update, remove, addMembers, removeMember, callNow, start, pause }
+  return { campaign, members, periods, connectedAt, stats, loading, error, reload, update, remove, addMembers, removeMember, callNow, start, pause }
 }
