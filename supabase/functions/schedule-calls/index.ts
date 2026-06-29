@@ -26,7 +26,7 @@
  */
 
 import { getSupabaseAdmin }              from '../_shared/supabaseAdmin.ts'
-import { sendEmail, noAnswerEmailHtml, trialEndedEmailHtml }  from '../_shared/email.ts'
+import { sendEmail, noAnswerEmailHtml, trialEndedEmailHtml, normalizeRecipients }  from '../_shared/email.ts'
 import { normalizeReportLang, DATE_LOCALE, EMAIL_STRINGS } from '../_shared/reportI18n.ts'
 import { evaluateSubscriptionForCall } from '../_shared/subscription.ts'
 import { logEvent }                      from '../_shared/systemEvents.ts'
@@ -185,48 +185,129 @@ async function passA_main(
 }
 
 // ============================================================================
-// Pass B — Détection no-answer (calls bloqués en 'notified')
+// Pass B — Politique no-answer (relances + email final)
 // ============================================================================
+// Découplée du statut 'notified' (cf. migration 20260629000001) : le webhook
+// Twilio /scheduled-status (et l'AMD) marque l'appel 'missed' en quelques
+// secondes, donc on NE PEUT PLUS attendre un appel bloqué en 'notified' pour
+// décider de la relance. On agit sur les appels DÉJÀ 'missed'/'failed' d'un
+// planning récurrent qui n'ont pas encore été arbitrés (no_answer_handled_at
+// IS NULL), quel que soit QUI les a marqués. Deux sous-étapes :
+//
+//   B1 — Filet « webhook perdu » : un appel resté 'notified' au-delà de
+//        no_answer_timeout_seconds → on le passe 'missed' (sans rien décider de
+//        plus : B2 le récupérera, possiblement au même tick).
+//   B2 — Arbitrage : pour chaque appel 'missed'/'failed' non traité d'un
+//        schedule, créer une relance si attempt_number ≤ retry_count, sinon
+//        envoyer l'email « pas de réponse » à l'aidant + aux proches. On pose
+//        no_answer_handled_at en PREMIER (claim-then-act, condition IS NULL)
+//        pour qu'un chevauchement de ticks ne double ni la relance ni l'email.
 
 async function passB_noAnswer(
   supabase: Supabase,
   appUrl: string,
   results: { retried: number; noAnswer: number; errors: string[] },
 ): Promise<void> {
-  // On lit large (90s en plus du timeout maxi de 600s = 690s) puis on filtre par schedule
+  await passB1_markStaleNotified(supabase, results)
+  await passB2_handleMissed(supabase, appUrl, results)
+}
+
+/** B1 — Filet de sécurité si le statusCallback Twilio est perdu : un appel resté
+ *  en 'notified' au-delà du timeout passe 'missed'. La relance/email est laissée
+ *  à B2 (qui le verra au même tick, no_answer_handled_at étant NULL). */
+async function passB1_markStaleNotified(
+  supabase: Supabase,
+  results: { errors: string[] },
+): Promise<void> {
+  // Borne large : on relit ensuite le timeout précis du schedule (30→600s).
   const cutoff = new Date(Date.now() - 30_000).toISOString()
 
   const { data: stuck, error } = await supabase
     .from('calls')
-    .select('id, beneficiary_id, schedule_id, status, scheduled_at, notified_at, attempt_number')
+    .select('id, schedule_id, notified_at')
     .eq('status', 'notified')
     .lt('notified_at', cutoff)
 
-  if (error) throw new Error(`Fetch stuck calls: ${error.message}`)
+  if (error) throw new Error(`Fetch stuck notified calls: ${error.message}`)
   if (!stuck || stuck.length === 0) return
 
-  for (const call of stuck as CallRow[]) {
+  for (const call of stuck as Array<{ id: string; schedule_id: string | null; notified_at: string | null }>) {
     try {
       if (!call.schedule_id || !call.notified_at) continue
 
       const { data: schedule } = await supabase
         .from('session_schedules')
-        .select('id, retry_count, retry_interval_minutes, notify_on_no_answer, no_answer_timeout_seconds, beneficiaries(first_name, last_name, caregiver_id, report_language, profiles(email, full_name))')
+        .select('no_answer_timeout_seconds')
         .eq('id', call.schedule_id)
         .single()
-
       if (!schedule) continue
 
       const elapsedMs = Date.now() - new Date(call.notified_at).getTime()
       if (elapsedMs < schedule.no_answer_timeout_seconds * 1000) continue
 
-      // Marquer le call courant comme manqué
       await supabase
         .from('calls')
         .update({ status: 'missed', ended_at: new Date().toISOString() })
         .eq('id', call.id)
+        .eq('status', 'notified')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[schedule-calls/B1] Erreur call ${call.id}:`, msg)
+      results.errors.push(`B1:${call.id}: ${msg}`)
+    }
+  }
+}
 
-      // Peut-on encore retry ?
+/** B2 — Arbitrage des appels non aboutis d'un planning récurrent. */
+async function passB2_handleMissed(
+  supabase: Supabase,
+  appUrl: string,
+  results: { retried: number; noAnswer: number; errors: string[] },
+): Promise<void> {
+  // 'missed' = no-answer / occupé / répondeur (AMD). 'failed' = échec technique
+  // (Twilio failed/canceled) — relancé aussi (décision produit). schedule_id non
+  // NULL exclut nativement les appels entrants et de campagne.
+  const { data: pending, error } = await supabase
+    .from('calls')
+    .select('id, beneficiary_id, schedule_id, scheduled_at, attempt_number')
+    .in('status', ['missed', 'failed'])
+    .not('schedule_id', 'is', null)
+    .is('no_answer_handled_at', null)
+
+  if (error) throw new Error(`Fetch pending no-answer calls: ${error.message}`)
+  if (!pending || pending.length === 0) return
+
+  for (const call of pending as CallRow[]) {
+    try {
+      // Claim : poser le marqueur AVANT d'agir. Si une autre exécution l'a déjà
+      // pris (race entre ticks), la condition IS NULL ne matche pas → on saute.
+      const { data: claimed } = await supabase
+        .from('calls')
+        .update({ no_answer_handled_at: new Date().toISOString() })
+        .eq('id', call.id)
+        .is('no_answer_handled_at', null)
+        .select('id')
+        .maybeSingle()
+      if (!claimed) continue
+
+      // Garde-fou anti-acharnement : un appel non abouti vieux de plus de 6 h
+      // (cron en retard, appel resté bloqué…) est marqué traité sans relance ni
+      // email — on ne relance pas un rendez-vous périmé. Cohérent avec la passe D.
+      const ageMs = Date.now() - new Date(call.scheduled_at).getTime()
+      if (ageMs > 6 * 3600_000) {
+        console.log(`[schedule-calls/B2] Appel non abouti périmé (>6h) ignoré call=${call.id}`)
+        continue
+      }
+
+      const { data: schedule } = await supabase
+        .from('session_schedules')
+        .select('id, retry_count, retry_interval_minutes, notify_on_no_answer, beneficiaries(first_name, last_name, caregiver_id, report_language, report_recipients, profiles(email, full_name))')
+        .eq('id', call.schedule_id!)
+        .single()
+
+      if (!schedule) continue
+
+      // Peut-on encore relancer ? retry_count = nb de rappels EN PLUS du 1er appel.
       const canRetry = call.attempt_number <= schedule.retry_count
       if (canRetry) {
         const nextScheduledAt = new Date(Date.now() + schedule.retry_interval_minutes * 60_000).toISOString()
@@ -237,29 +318,33 @@ async function passB_noAnswer(
           scheduled_at:   nextScheduledAt,
           attempt_number: call.attempt_number + 1,
         })
-        console.log(`[schedule-calls/B] No-answer → retry #${call.attempt_number + 1} planifié à ${nextScheduledAt}`)
+        console.log(`[schedule-calls/B2] Non abouti → relance #${call.attempt_number + 1} planifiée à ${nextScheduledAt}`)
         results.retried++
       } else {
-        // Plus de retry possible → email aidant si demandé
+        // Plus de relance possible → email « pas de réponse » à l'aidant + proches.
         results.noAnswer++
         await logEvent(supabase, {
           level:   'warn',
-          source:  'schedule-calls/B',
+          source:  'schedule-calls/B2',
           call_id: call.id,
-          message: `No-answer définitif après ${call.attempt_number} tentatives`,
+          message: `No-answer définitif après ${call.attempt_number} tentative(s)`,
           payload: { schedule_id: call.schedule_id, attempt_number: call.attempt_number },
         })
         if (schedule.notify_on_no_answer) {
-          // @ts-expect-error embedded select shape
-          const beneficiary = schedule.beneficiaries
+          // deno-lint-ignore no-explicit-any
+          const beneficiary = (schedule as any).beneficiaries
           const caregiver   = beneficiary?.profiles
-          if (caregiver?.email) {
+          const recipients  = normalizeRecipients([
+            caregiver?.email,
+            ...(beneficiary?.report_recipients ?? []),
+          ])
+          if (recipients.length > 0) {
             const reportLang = normalizeReportLang(beneficiary.report_language)
             await sendEmail({
-              to:      caregiver.email,
+              to:      recipients,
               subject: EMAIL_STRINGS[reportLang].noAnswerSubject(beneficiary.first_name),
               html: noAnswerEmailHtml({
-                caregiver_name:   caregiver.full_name ?? 'Aidant',
+                caregiver_name:   caregiver?.full_name ?? 'Aidant',
                 beneficiary_name: `${beneficiary.first_name} ${beneficiary.last_name}`,
                 attempts:         call.attempt_number,
                 call_time:        new Date(call.scheduled_at).toLocaleString(DATE_LOCALE[reportLang], {
@@ -271,12 +356,12 @@ async function passB_noAnswer(
             })
           }
         }
-        console.log(`[schedule-calls/B] No-answer définitif (${call.attempt_number} tentatives) call=${call.id}`)
+        console.log(`[schedule-calls/B2] No-answer définitif (${call.attempt_number} tentative(s)) call=${call.id}`)
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[schedule-calls/B] Erreur call ${call.id}:`, msg)
-      results.errors.push(`B:${call.id}: ${msg}`)
+      console.error(`[schedule-calls/B2] Erreur call ${call.id}:`, msg)
+      results.errors.push(`B2:${call.id}: ${msg}`)
     }
   }
 }
