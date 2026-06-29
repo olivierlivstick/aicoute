@@ -219,14 +219,15 @@ export function reportEmailHtml(params: {
 }
 
 export function noAnswerEmailHtml(params: {
-  caregiver_name:   string
-  beneficiary_name: string
-  attempts:         number
-  call_time:        string
-  app_url:          string
-  lang?:            ReportLang
+  caregiver_name:         string
+  beneficiary_name:       string
+  beneficiary_first_name: string
+  attempts:               number
+  call_time:              string
+  app_url:                string
+  lang?:                  ReportLang
 }): string {
-  const { caregiver_name, beneficiary_name, attempts, call_time, app_url } = params
+  const { caregiver_name, beneficiary_name, beneficiary_first_name, attempts, call_time, app_url } = params
   const lang = normalizeReportLang(params.lang)
   const s    = EMAIL_STRINGS[lang]
   return `<!DOCTYPE html>
@@ -246,7 +247,7 @@ export function noAnswerEmailHtml(params: {
         ${s.noAnswerIntro(beneficiary_name, call_time, attempts)}
       </p>
       <p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 24px">
-        ${s.noAnswerReassurance}
+        ${s.noAnswerReassurance(beneficiary_first_name)}
       </p>
       <div style="text-align:center;margin-top:24px">
         <a href="${app_url}/planning"

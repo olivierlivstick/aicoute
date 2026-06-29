@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: call, error: callErr } = await supabase
       .from('calls')
-      .select('*, beneficiaries(*, profiles(full_name, email))')
+      .select('*, beneficiaries(*, profiles(full_name, email, timezone))')
       .eq('id', call_id)
       .single()
 
@@ -91,8 +91,10 @@ Deno.serve(async (req: Request) => {
     const moodKey     = (['positive', 'neutral', 'concerned'] as const).includes(call.mood_detected)
                         ? call.mood_detected as 'positive' | 'neutral' | 'concerned' : 'neutral'
     const moodLabel   = MOOD_LABELS[reportLang][moodKey]
+    // timeZone explicite (Edge en UTC) → fuseau de l'aidant, défaut Europe/Paris.
     const dateFormatted = callDate.toLocaleDateString(DATE_LOCALE[reportLang], {
       weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+      timeZone: caregiver?.timezone ?? 'Europe/Paris',
     })
 
     // Renvoi → jeton de partage frais (la fenêtre 48h repart de ce renvoi,

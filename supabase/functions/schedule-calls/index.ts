@@ -301,7 +301,7 @@ async function passB2_handleMissed(
 
       const { data: schedule } = await supabase
         .from('session_schedules')
-        .select('id, retry_count, retry_interval_minutes, notify_on_no_answer, beneficiaries(first_name, last_name, caregiver_id, report_language, report_recipients, profiles(email, full_name))')
+        .select('id, retry_count, retry_interval_minutes, notify_on_no_answer, timezone, beneficiaries(first_name, last_name, caregiver_id, report_language, report_recipients, profiles(email, full_name))')
         .eq('id', call.schedule_id!)
         .single()
 
@@ -344,14 +344,18 @@ async function passB2_handleMissed(
               to:      recipients,
               subject: EMAIL_STRINGS[reportLang].noAnswerSubject(beneficiary.first_name),
               html: noAnswerEmailHtml({
-                caregiver_name:   caregiver?.full_name ?? 'Aidant',
-                beneficiary_name: `${beneficiary.first_name} ${beneficiary.last_name}`,
-                attempts:         call.attempt_number,
-                call_time:        new Date(call.scheduled_at).toLocaleString(DATE_LOCALE[reportLang], {
+                caregiver_name:         caregiver?.full_name ?? 'Aidant',
+                beneficiary_name:       `${beneficiary.first_name} ${beneficiary.last_name}`,
+                beneficiary_first_name: beneficiary.first_name,
+                attempts:               call.attempt_number,
+                // Fuseau du planning (défaut Europe/Paris) : sans timeZone, l'Edge
+                // Function formate en UTC → heure décalée dans l'email.
+                call_time:              new Date(call.scheduled_at).toLocaleString(DATE_LOCALE[reportLang], {
                   weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+                  timeZone: schedule.timezone ?? 'Europe/Paris',
                 }),
-                app_url:          appUrl,
-                lang:             reportLang,
+                app_url:                appUrl,
+                lang:                   reportLang,
               }),
             })
           }

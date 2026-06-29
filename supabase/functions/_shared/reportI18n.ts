@@ -83,7 +83,7 @@ export interface EmailStrings {
   // Email « sans réponse »
   noAnswerTagline:     string
   noAnswerIntro:       (beneficiary: string, time: string, attempts: number) => string
-  noAnswerReassurance: string
+  noAnswerReassurance: (first: string) => string
   noAnswerCta:         string
   noAnswerSubject:     (first: string) => string
 }
@@ -103,7 +103,7 @@ export const EMAIL_STRINGS: Record<ReportLang, EmailStrings> = {
     subject: (f, m, c) => `Compte-rendu de l'appel de ${f} — ${c ? '⚠️ ' : ''}${m}`,
     noAnswerTagline: '⚠️ Appel sans réponse',
     noAnswerIntro: (b, t, a) => `Nous n'avons pas réussi à joindre <strong>${b}</strong> lors de l'appel planifié à <strong>${t}</strong>${a > 1 ? `, malgré ${a} tentatives` : ''}.`,
-    noAnswerReassurance: 'Cela peut être normal (sortie, sieste, téléphone hors de portée). Si cette situation se répète, n\'hésitez pas à prendre contact directement avec votre proche.',
+    noAnswerReassurance: (first) => `Cela peut être normal (sortie, sieste, téléphone hors de portée). Nous vous conseillons d'essayer de joindre ${first} par vos propres moyens et, selon, de provoquer une visite à son domicile.`,
     noAnswerCta: 'Vérifier les plannings →',
     noAnswerSubject: (f) => `⚠️ ${f} n'a pas répondu`,
   },
@@ -121,7 +121,7 @@ export const EMAIL_STRINGS: Record<ReportLang, EmailStrings> = {
     subject: (f, m, c) => `Report of the call with ${f} — ${c ? '⚠️ ' : ''}${m}`,
     noAnswerTagline: '⚠️ Unanswered call',
     noAnswerIntro: (b, t, a) => `We were unable to reach <strong>${b}</strong> for the call scheduled at <strong>${t}</strong>${a > 1 ? `, despite ${a} attempts` : ''}.`,
-    noAnswerReassurance: 'This may be perfectly normal (out, napping, phone out of reach). If it keeps happening, feel free to get in touch with your loved one directly.',
+    noAnswerReassurance: (first) => `This may be perfectly normal (out, napping, phone out of reach). We recommend trying to reach ${first} by your own means and, if appropriate, arranging a visit to their home.`,
     noAnswerCta: 'Check the schedule →',
     noAnswerSubject: (f) => `⚠️ ${f} did not answer`,
   },
@@ -139,7 +139,7 @@ export const EMAIL_STRINGS: Record<ReportLang, EmailStrings> = {
     subject: (f, m, c) => `Resumen de la llamada con ${f} — ${c ? '⚠️ ' : ''}${m}`,
     noAnswerTagline: '⚠️ Llamada sin respuesta',
     noAnswerIntro: (b, t, a) => `No hemos podido contactar con <strong>${b}</strong> en la llamada programada a las <strong>${t}</strong>${a > 1 ? `, a pesar de ${a} intentos` : ''}.`,
-    noAnswerReassurance: 'Puede ser algo normal (salida, siesta, teléfono fuera de alcance). Si la situación se repite, no dude en ponerse en contacto directamente con su allegado.',
+    noAnswerReassurance: (first) => `Puede ser algo normal (salida, siesta, teléfono fuera de alcance). Le aconsejamos intentar contactar con ${first} por sus propios medios y, si procede, organizar una visita a su domicilio.`,
     noAnswerCta: 'Revisar la planificación →',
     noAnswerSubject: (f) => `⚠️ ${f} no ha contestado`,
   },
@@ -157,7 +157,7 @@ export const EMAIL_STRINGS: Record<ReportLang, EmailStrings> = {
     subject: (f, m, c) => `Bericht des Anrufs mit ${f} — ${c ? '⚠️ ' : ''}${m}`,
     noAnswerTagline: '⚠️ Anruf ohne Antwort',
     noAnswerIntro: (b, t, a) => `Wir konnten <strong>${b}</strong> beim geplanten Anruf um <strong>${t}</strong> nicht erreichen${a > 1 ? `, trotz ${a} Versuchen` : ''}.`,
-    noAnswerReassurance: 'Das kann ganz normal sein (unterwegs, Mittagsschlaf, Telefon außer Reichweite). Wenn sich das wiederholt, nehmen Sie gerne direkt Kontakt mit Ihrem Angehörigen auf.',
+    noAnswerReassurance: (first) => `Das kann ganz normal sein (unterwegs, Mittagsschlaf, Telefon außer Reichweite). Wir empfehlen, ${first} mit eigenen Mitteln zu erreichen und gegebenenfalls einen Besuch zu Hause zu veranlassen.`,
     noAnswerCta: 'Termine prüfen →',
     noAnswerSubject: (f) => `⚠️ ${f} hat nicht geantwortet`,
   },
@@ -175,7 +175,7 @@ export const EMAIL_STRINGS: Record<ReportLang, EmailStrings> = {
     subject: (f, m, c) => `Resoconto della chiamata con ${f} — ${c ? '⚠️ ' : ''}${m}`,
     noAnswerTagline: '⚠️ Chiamata senza risposta',
     noAnswerIntro: (b, t, a) => `Non siamo riusciti a contattare <strong>${b}</strong> nella chiamata programmata alle <strong>${t}</strong>${a > 1 ? `, nonostante ${a} tentativi` : ''}.`,
-    noAnswerReassurance: 'Può essere del tutto normale (uscita, riposino, telefono non raggiungibile). Se la situazione si ripete, non esiti a contattare direttamente la persona cara.',
+    noAnswerReassurance: (first) => `Può essere del tutto normale (uscita, riposino, telefono non raggiungibile). Le consigliamo di provare a contattare ${first} con i propri mezzi e, se necessario, di organizzare una visita a domicilio.`,
     noAnswerCta: 'Controllare la pianificazione →',
     noAnswerSubject: (f) => `⚠️ ${f} non ha risposto`,
   },

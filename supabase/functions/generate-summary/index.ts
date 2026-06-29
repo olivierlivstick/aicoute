@@ -51,7 +51,7 @@ Deno.serve(async (req: Request) => {
     // 1. Récupérer le call avec le transcript
     const { data: call, error: callErr } = await supabase
       .from('calls')
-      .select('*, beneficiaries(*, profiles(full_name, email))')
+      .select('*, beneficiaries(*, profiles(full_name, email, timezone))')
       .eq('id', call_id)
       .single()
 
@@ -302,9 +302,12 @@ RÈGLES GÉNÉRALES :
         ? Math.round(call.duration_seconds / 60)
         : 0
 
+      // timeZone explicite : l'Edge Function tourne en UTC → sans ça l'heure
+      // affichée dans l'email serait décalée. Fuseau de l'aidant, défaut Europe/Paris.
       const dateFormatted = callDate.toLocaleDateString(DATE_LOCALE[reportLang], {
         weekday: 'long', day: 'numeric', month: 'long',
         hour: '2-digit', minute: '2-digit',
+        timeZone: caregiver?.timezone ?? 'Europe/Paris',
       })
 
       const moodLabel = MOOD_LABELS[reportLang][mood_detected]
