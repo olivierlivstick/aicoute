@@ -7,13 +7,14 @@ import { useAuth } from '@/hooks/useAuth'
 import { useProfile } from '@/hooks/useProfile'
 import { useMinutesBalance } from '@/hooks/useMinutesBalance'
 import { useMinuteLedger } from '@/hooks/useMinuteLedger'
+import { useSubscription } from '@/hooks/useSubscription'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { cn } from '@/lib/utils'
 import { startCheckout } from '@/lib/checkout'
 import { supabase } from '@/lib/supabase'
-import { MINUTE_PACKS, computeFullName, type MinutePurchase, type MinutePackId } from '@modect/shared'
+import { MINUTE_PACKS, PLAN_TIERS, computeFullName, type MinutePurchase, type MinutePackId } from '@modect/shared'
 import { AccountTypeToggle } from '@/components/AccountTypeToggle'
 import { PhoneInput } from '@/components/PhoneInput'
 import { MinutesBalanceCard, LedgerTable, PurchasesTable } from '@/pages/compte/MinutesViews'
@@ -277,10 +278,41 @@ function SoldeTab() {
 function AchatsTab({ purchases, loading, onReload }: { purchases: MinutePurchase[]; loading: boolean; onReload: () => void }) {
   return (
     <div className="space-y-6">
+      <AbonnementCard />
       <BuyPacksCard />
       <RedeemCodeCard onRedeemed={onReload} />
       <PurchasesTable purchases={purchases} loading={loading} />
     </div>
+  )
+}
+
+// ── Abonnement en cours (« Le contrôle ») — distinct des packs de minutes ──
+// Un abonnement récurrent ne s'affiche pas dans l'historique des achats de packs
+// (minute_purchases) : on le montre ici pour que l'abonné voie ce qu'il paie.
+function AbonnementCard() {
+  const { subscription, loading } = useSubscription()
+  if (loading || !subscription || subscription.plan_tier !== 'controle') return null
+  const plan = PLAN_TIERS[subscription.plan_tier]
+  const since = subscription.created_at
+    ? new Date(subscription.created_at).toLocaleDateString('fr-FR')
+    : null
+  return (
+    <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+      <h2 className="font-semibold text-slate-700 mb-3">Mon abonnement</h2>
+      <div className="flex items-center justify-between rounded-xl border border-primary/40 bg-creme/40 p-4">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-accent-700 font-semibold">{plan.name}</p>
+          <p className="mt-1 font-semibold text-slate-800">
+            {plan.priceEur} € <span className="text-sm font-normal text-slate-500">/ mois</span>
+          </p>
+          <p className="text-sm text-slate-500 mt-0.5">{plan.tagline}</p>
+        </div>
+        <span className="shrink-0 rounded-full bg-sauge/15 text-sauge text-xs font-semibold px-3 py-1">Actif</span>
+      </div>
+      <p className="text-xs text-slate-400 mt-3">
+        {since && <>Souscrit le {since}. </>}Cet abonnement est facturé chaque mois et ne consomme pas de minutes.
+      </p>
+    </section>
   )
 }
 

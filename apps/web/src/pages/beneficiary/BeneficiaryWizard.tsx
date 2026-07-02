@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { createBeneficiary } from '@/hooks/useBeneficiary'
 import { createSchedule } from '@/hooks/useSessionSchedule'
 import { useSelectedBeneficiary } from '@/hooks/useSelectedBeneficiary'
+import { claimPendingControl } from '@/lib/controlSubscription'
 import { supabase } from '@/lib/supabase'
 import { resolvePromptPlaceholders } from '@modect/shared'
 import { Step1BasicInfo } from './steps/Step1BasicInfo'
@@ -129,6 +130,10 @@ export function BeneficiaryWizard() {
     // contrôle QUOTIDIEN (7j/7) avec alerte aux proches en cas de non-réponse.
     // Best-effort — en cas d'échec l'utilisateur configure le planning à la main.
     try {
+      // S'assurer que le rattachement de l'abonnement (parcours paiement-d'abord)
+      // est terminé AVANT de lire l'abonnement, sinon une course avec le claim
+      // d'arrière-plan (AppLayout) laisserait le planning non configuré.
+      await claimPendingControl()
       const { data: sub } = await supabase
         .from('subscriptions')
         .select('id')

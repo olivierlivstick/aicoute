@@ -1,0 +1,11 @@
+-- GRANT manquant sur subscriptions pour le service_role.
+--
+-- La table (20260603000002) n'avait qu'un GRANT pour `authenticated` : l'essai
+-- gratuit s'insère côté client (authenticated), jamais en service-role. Le
+-- rattachement de l'abonnement « Le contrôle » (Edge claim-control-subscription)
+-- écrit lui EN SERVICE-ROLE → sans ce GRANT, l'INSERT échoue en « permission
+-- denied for table subscriptions » (cf. bug connu : le service_role n'hérite pas
+-- des privilèges par défaut sur ce projet). Symptôme vécu : la ligne
+-- pending_control_subscriptions passait 'claimed' mais aucune ligne subscriptions
+-- n'était créée → compte abonné sans abonnement.
+GRANT SELECT, INSERT, UPDATE, DELETE ON subscriptions TO service_role;

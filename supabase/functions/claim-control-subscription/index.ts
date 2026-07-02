@@ -110,29 +110,40 @@ Deno.serve(async (req: Request) => {
     // Pose du marqueur d'abonnement sur le compte. Un seul abonnement « vivant »
     // par compte (index unique partiel) : si une ligne trial/active existe déjà,
     // on la bascule sur 'controle' au lieu d'insérer.
-    const subRow = {
-      plan_tier:              'controle',
-      status:                 'active',
-      max_calls_per_week:     PLAN_CONTROLE_MAX_CALLS,
-      stripe_customer_id:     stripeCustomerId,
-      stripe_subscription_id: stripeSubscriptionId,
-    }
-    const { error: insErr } = await admin.from('subscriptions').insert({
-      caregiver_id: caregiverId,
-      ...subRow,
-    })
-    if (insErr) {
-      if (insErr.code === '23505') {
-        // Abonnement vivant déjà présent → on le bascule sur « Le contrôle ».
-        const { error: updErr } = await admin
-          .from('subscriptions')
-          .update(subRow)
-          .eq('caregiver_id', caregiverId)
-          .in('status', ['trial', 'active'])
-        if (updErr) throw new Error(`update subscription: ${updErr.message}`)
-      } else {
-        throw new Error(`insert subscription: ${insErr.message}`)
+    // Si CETTE étape échoue, on ROUVRE l'attente (retour à 'pending') pour qu'un
+    // prochain chargement puisse réessayer — sinon le compte resterait abonné
+    // sans ligne subscriptions (l'attente déjà 'claimed' bloquerait toute reprise).
+    try {
+      const subRow = {
+        plan_tier:              'controle',
+        status:                 'active',
+        max_calls_per_week:     PLAN_CONTROLE_MAX_CALLS,
+        stripe_customer_id:     stripeCustomerId,
+        stripe_subscription_id: stripeSubscriptionId,
       }
+      const { error: insErr } = await admin.from('subscriptions').insert({
+        caregiver_id: caregiverId,
+        ...subRow,
+      })
+      if (insErr) {
+        if (insErr.code === '23505') {
+          // Abonnement vivant déjà présent → on le bascule sur « Le contrôle ».
+          const { error: updErr } = await admin
+            .from('subscriptions')
+            .update(subRow)
+            .eq('caregiver_id', caregiverId)
+            .in('status', ['trial', 'active'])
+          if (updErr) throw new Error(`update subscription: ${updErr.message}`)
+        } else {
+          throw new Error(`insert subscription: ${insErr.message}`)
+        }
+      }
+    } catch (subErr) {
+      await admin
+        .from('pending_control_subscriptions')
+        .update({ status: 'pending', caregiver_id: null, claimed_at: null })
+        .eq('id', pendingId)
+      throw subErr
     }
 
     console.log(`[claim-control-subscription] abonnement rattaché → ${caregiverId}`)

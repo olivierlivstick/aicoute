@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PartyPopper, X } from 'lucide-react'
 import { useSessionSchedules } from '@/hooks/useSessionSchedule'
 import { useSubscription } from '@/hooks/useSubscription'
 import { ScheduleEditor } from '@/pages/planning/ScheduleEditor'
 import { PlanChooser } from '@/pages/planning/PlanChooser'
+import { getPendingControl, claimPendingControl } from '@/lib/controlSubscription'
 import type { Beneficiary } from '@modect/shared'
 
 /**
@@ -29,6 +30,19 @@ export function CaregiverPlanningTab({
 
   const [banner, setBanner] = useState(showCreatedBanner)
   const [starting, setStarting] = useState(false)
+  // Rattachement en attente (abonnement « Le contrôle » payé avant le compte) :
+  // on ne montre PAS l'écran essai tant qu'on ne l'a pas tenté, sinon un abonné
+  // qui a déjà payé verrait à tort la proposition d'essai/pack.
+  const [claiming, setClaiming] = useState(() => getPendingControl() != null)
+
+  useEffect(() => {
+    if (!getPendingControl()) return
+    void claimPendingControl().finally(async () => {
+      await refetchSub()
+      setClaiming(false)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleStartTrial = async () => {
     setStarting(true)
@@ -37,7 +51,7 @@ export function CaregiverPlanningTab({
     if (ok) await refetchSub()
   }
 
-  if (loading || subLoading) {
+  if (loading || subLoading || claiming) {
     return (
       <div className="flex justify-center py-16">
         <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
