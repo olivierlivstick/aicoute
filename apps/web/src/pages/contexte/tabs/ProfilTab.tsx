@@ -451,39 +451,57 @@ function IdentityEdit({ beneficiary, onSaved, close }: EditProps) {
 
 function RecipientsCard({ beneficiary, onSaved }: CardProps) {
   const recipients = beneficiary.report_recipients ?? []
+  const reportOn = beneficiary.notify_call_report !== false  // défaut ON
+
   return (
     <EditableCard
       title="Comptes-rendus envoyés à"
       icon={Mail}
       renderEdit={(close) => <RecipientsEdit beneficiary={beneficiary} onSaved={onSaved} close={close} />}
     >
-      <div className="space-y-2.5">
-        <div className="flex items-center gap-2.5 text-[13.5px] text-slate-700">
-          <span className="grid place-items-center w-7 h-7 rounded-full bg-primary-50 text-primary shrink-0">
-            <Shield size={13} />
-          </span>
-          <span>L'aidant référent reçoit toujours le compte-rendu.</span>
+      {reportOn ? (
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2.5 text-[13.5px] text-slate-700">
+            <span className="grid place-items-center w-7 h-7 rounded-full bg-primary-50 text-primary shrink-0">
+              <Shield size={13} />
+            </span>
+            <span>L'aidant référent reçoit un compte-rendu après chaque appel.</span>
+          </div>
+          {recipients.map((e) => (
+            <div key={e} className="flex items-center gap-2.5 text-[13.5px] text-slate-600">
+              <span className="grid place-items-center w-7 h-7 rounded-full bg-creme text-slate-400 shrink-0">
+                <Mail size={13} />
+              </span>
+              <span className="truncate">{e}</span>
+            </div>
+          ))}
+          <p className="text-xs text-slate-400 pt-1">
+            {recipients.length
+              ? 'Ces proches reçoivent aussi un résumé après chaque appel.'
+              : 'Ajoutez des proches pour qu’ils reçoivent aussi les comptes-rendus.'}
+          </p>
         </div>
-        {recipients.map((e) => (
-          <div key={e} className="flex items-center gap-2.5 text-[13.5px] text-slate-600">
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2.5 text-[13.5px] text-slate-700">
             <span className="grid place-items-center w-7 h-7 rounded-full bg-creme text-slate-400 shrink-0">
               <Mail size={13} />
             </span>
-            <span className="truncate">{e}</span>
+            <span>Compte-rendu après appel <strong>désactivé</strong> — aucun résumé n'est envoyé.</span>
           </div>
-        ))}
-        <p className="text-xs text-slate-400 pt-1">
-          {recipients.length
-            ? 'Ces proches reçoivent un résumé après chaque appel.'
-            : 'Ajoutez des proches pour qu’ils reçoivent aussi les comptes-rendus.'}
-        </p>
-      </div>
+          <p className="text-xs text-slate-400">
+            Vous serez tout de même averti en cas de <strong>non-réponse</strong> du bénéficiaire, si
+            l'option est activée dans le Planning.
+          </p>
+        </div>
+      )}
     </EditableCard>
   )
 }
 
 function RecipientsEdit({ beneficiary, onSaved, close }: EditProps) {
   const { save, saving, error } = useSection(beneficiary)
+  const [reportOn, setReportOn] = useState<boolean>(beneficiary.notify_call_report !== false)
   const [recipients, setRecipients] = useState<string[]>(beneficiary.report_recipients ?? [])
   const [draft, setDraft] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
@@ -502,13 +520,33 @@ function RecipientsEdit({ beneficiary, onSaved, close }: EditProps) {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const ok = await save({ report_recipients: recipients })
+    const ok = await save({ notify_call_report: reportOn, report_recipients: recipients })
     if (ok) { onSaved(); close() }
   }
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      {recipients.length > 0 && (
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          className="mt-1 w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
+          checked={reportOn}
+          onChange={(e) => setReportOn(e.target.checked)}
+        />
+        <span className="text-sm text-slate-600 leading-snug">
+          M'envoyer un <strong>compte-rendu par email après chaque appel</strong>.
+        </span>
+      </label>
+      {!reportOn && (
+        <p className="text-xs text-slate-500 bg-creme rounded-lg px-3 py-2 leading-snug">
+          Aucun compte-rendu ne sera envoyé (ni à vous, ni aux proches). Vous pouvez tout de même
+          être averti en cas de <strong>non-réponse</strong> via l'onglet <strong>Planning</strong>.
+        </p>
+      )}
+
+      <div className={cn('space-y-3 pt-1', !reportOn && 'opacity-50 pointer-events-none')}>
+        <EditLabel>Proches destinataires (en plus de vous)</EditLabel>
+        {recipients.length > 0 && (
         <div className="space-y-2">
           {recipients.map((email) => (
             <div key={email} className="flex items-center gap-2">
@@ -540,7 +578,8 @@ function RecipientsEdit({ beneficiary, onSaved, close }: EditProps) {
           <Plus size={14} /> Ajouter
         </Button>
       </div>
-      {localError && <p className="text-xs text-brique">{localError}</p>}
+        {localError && <p className="text-xs text-brique">{localError}</p>}
+      </div>
       <EditFooter onCancel={close} saving={saving} error={error} />
     </form>
   )

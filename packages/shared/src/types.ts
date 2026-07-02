@@ -95,6 +95,9 @@ export interface Beneficiary {
   /** Paire de prompts (table prompts) choisie comme source des snapshots émis + entrant. NULL = défaut. */
   prompt_id: string | null
   report_recipients: string[]
+  /** Opt-in de l'envoi du compte-rendu par email après CHAQUE appel (défaut true).
+   *  Indépendant de session_schedules.notify_on_no_answer (alerte de non-réponse). */
+  notify_call_report: boolean
   is_active: boolean
   onboarding_completed: boolean
   created_at: string
