@@ -20,3 +20,18 @@ export async function startCheckout(packId: MinutePackId): Promise<void> {
   if (!url) throw new Error('Réponse de paiement invalide.')
   window.location.href = url
 }
+
+/**
+ * Lance l'abonnement « Le contrôle » (récurrent, mode subscription). Parcours
+ * paiement-d'abord : après paiement, Stripe renvoie vers l'inscription
+ * pré-remplie (cf. create-checkout-session → success_url /auth/register?sub=…).
+ */
+export async function startControlCheckout(): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+    body: { plan: 'controle' },
+  })
+  if (error) throw new Error(error.message ?? 'Le paiement n’a pas pu démarrer.')
+  const url = (data as { url?: string } | null)?.url
+  if (!url) throw new Error('Réponse de paiement invalide.')
+  window.location.href = url
+}

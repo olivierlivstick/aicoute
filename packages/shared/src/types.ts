@@ -271,7 +271,9 @@ export interface SummaryResult {
 // --- Abonnements -----------------------------------------------------------
 // Forfaits de la vitrine : Découverte (1/sem) · Confort (3/sem) · Sérénité
 // (7/sem). + un palier d'essai gratuit (3/sem, 1 mois) pour la phase de test.
-export type PlanTier = 'trial' | 'discovery' | 'comfort' | 'serenity'
+// 'controle' = abonnement « Le contrôle » (18 €/mois, 1 appel/jour), souscrit
+// via Stripe en parcours paiement-d'abord (cf. pending_control_subscriptions).
+export type PlanTier = 'trial' | 'discovery' | 'comfort' | 'serenity' | 'controle'
 export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'canceled'
 
 export interface Subscription {
@@ -300,6 +302,7 @@ export const PLAN_TIERS: Record<PlanTier, PlanDef> = {
   discovery: { tier: 'discovery', name: 'Découverte',    callsPerWeek: 1, priceEur: 22,  tagline: "Pour rester en lien sans s'engager." },
   comfort:   { tier: 'comfort',   name: 'Confort',       callsPerWeek: 3, priceEur: 65,  tagline: 'Pour une vraie régularité.' },
   serenity:  { tier: 'serenity',  name: 'Sérénité',      callsPerWeek: 7, priceEur: 150, tagline: 'Pour un accompagnement quotidien.' },
+  controle:  { tier: 'controle',  name: 'Le contrôle',   callsPerWeek: 7, priceEur: 18,  tagline: 'Un appel de contrôle chaque jour, alerte aux proches si non-réponse.' },
 }
 
 // Packs de minutes (nouveau modèle : achat de minutes, dégressif, sans abonnement).

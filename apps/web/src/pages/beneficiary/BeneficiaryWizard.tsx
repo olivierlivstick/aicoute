@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { createBeneficiary } from '@/hooks/useBeneficiary'
+import { createSchedule } from '@/hooks/useSessionSchedule'
 import { useSelectedBeneficiary } from '@/hooks/useSelectedBeneficiary'
 import { supabase } from '@/lib/supabase'
 import { resolvePromptPlaceholders } from '@modect/shared'
@@ -123,6 +124,39 @@ export function BeneficiaryWizard() {
     // Recharger la liste du contexte et sélectionner le nouveau bénéficiaire
     await refetch()
     selectBeneficiary(result.id)
+
+    // Abonnement « Le contrôle » : pré-configurer automatiquement un appel de
+    // contrôle QUOTIDIEN (7j/7) avec alerte aux proches en cas de non-réponse.
+    // Best-effort — en cas d'échec l'utilisateur configure le planning à la main.
+    try {
+      const { data: sub } = await supabase
+        .from('subscriptions')
+        .select('id')
+        .eq('caregiver_id', user.id)
+        .eq('plan_tier', 'controle')
+        .eq('status', 'active')
+        .maybeSingle()
+      if (sub) {
+        await createSchedule({
+          beneficiary_id:            result.id,
+          caregiver_id:              user.id,
+          days_of_week:              [0, 1, 2, 3, 4, 5, 6],
+          time_of_day:               '10:00',
+          timezone:                  'Europe/Paris',
+          calls_per_week:            7,
+          max_duration_minutes:      5,
+          retry_count:               2,
+          retry_interval_minutes:    15,
+          notify_on_no_answer:       true,
+          no_answer_timeout_seconds: 120,
+          suggested_topics:          null,
+          special_instructions:      null,
+          is_active:                 true,
+          next_scheduled_at:         null,
+        })
+      }
+    } catch { /* best-effort */ }
+
     // Étape suivante de l'onboarding : choix du forfait + planning des appels,
     // désormais dans l'onglet Planning de la fiche bénéficiaire.
     navigate('/contexte?tab=planning&created=1', { replace: true })

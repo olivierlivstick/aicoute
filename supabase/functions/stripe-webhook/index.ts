@@ -22,7 +22,7 @@
 import { getSupabaseAdmin } from '../_shared/supabaseAdmin.ts'
 import { sendEmail, purchaseCodeEmailHtml } from '../_shared/email.ts'
 import {
-  getStripe, getCryptoProvider, getPack, generateCode, appUrl, APP_TAG,
+  getStripe, getCryptoProvider, getPack, generateCode, appUrl, APP_TAG, CONTROL_PLAN,
 } from '../_shared/stripe.ts'
 
 Deno.serve(async (req: Request) => {
@@ -65,6 +65,29 @@ Deno.serve(async (req: Request) => {
     if (meta.app !== APP_TAG) {
       return new Response('ignoré (autre app)', { status: 200 })
     }
+
+    // ── Abonnement « Le contrôle » (mode subscription) ──
+    // Payé AVANT création du compte → on retient la session pour la rattacher à
+    // l'inscription. Idempotent : stripe_session_id est UNIQUE.
+    if (meta.plan === CONTROL_PLAN.id) {
+      if (session.payment_status !== 'paid') {
+        return new Response('ignoré (non payé)', { status: 200 })
+      }
+      const admin = getSupabaseAdmin()
+      const { error } = await admin.from('pending_control_subscriptions').insert({
+        stripe_session_id:      session.id,
+        stripe_customer_id:     session.customer ?? null,
+        stripe_subscription_id: session.subscription ?? null,
+        buyer_email:            session.customer_details?.email ?? null,
+        amount_eur:             CONTROL_PLAN.amount_eur,
+      })
+      if (error && error.code !== '23505') {  // 23505 = déjà retenu (rejeu)
+        throw new Error(`insert pending_control_subscriptions: ${error.message}`)
+      }
+      console.log(`[stripe-webhook] abonnement « Le contrôle » retenu (session ${session.id})`)
+      return new Response('ok', { status: 200 })
+    }
+
     const pack = getPack(meta.pack_id)
     if (!pack) {
       console.warn('[stripe-webhook] pack inconnu dans metadata:', meta.pack_id)

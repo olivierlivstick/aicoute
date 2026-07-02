@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { supabase } from '@/lib/supabase'
+import { storePendingControl, fetchControlCheckoutEmail } from '@/lib/controlSubscription'
 
 const schema = z
   .object({
@@ -36,6 +37,9 @@ export function RegisterPage() {
   const navigate = useNavigate()
   const [serverError, setServerError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  // Abonnement « Le contrôle » en attente (parcours paiement-d'abord) : présent
+  // quand on arrive depuis Stripe (/auth/register?sub=cs_…).
+  const [fromControl, setFromControl] = useState(false)
 
   const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -44,6 +48,18 @@ export function RegisterPage() {
 
   const accountType = watch('account_type')
   const isOrg = accountType === 'organization'
+
+  // Retour du paiement Stripe : mémoriser le session_id (pour le rattachement
+  // après confirmation d'email) et pré-remplir l'email de l'acheteur.
+  useEffect(() => {
+    const sub = new URLSearchParams(window.location.search).get('sub')
+    if (!sub || !sub.startsWith('cs_')) return
+    setFromControl(true)
+    storePendingControl(sub)
+    void fetchControlCheckoutEmail(sub).then((email) => {
+      if (email) setValue('email', email)
+    })
+  }, [setValue])
 
   const onSubmit = async ({ account_type, company_name, first_name, last_name, email, password }: FormData) => {
     setServerError(null)
@@ -91,6 +107,16 @@ export function RegisterPage() {
       title="Créer un compte"
       subtitle="Rejoignez Aicoute pour veiller sur vos proches"
     >
+      {fromControl && (
+        <div className="mb-5 rounded-lg bg-primary/10 border border-primary/20 px-4 py-3 text-sm text-slate-700">
+          <p className="font-semibold text-slate-800">Paiement confirmé 🎉</p>
+          <p className="mt-0.5">
+            Votre abonnement <strong>Le contrôle</strong> est réglé. Créez votre
+            compte pour l'activer — les appels quotidiens se configureront à
+            l'ajout de votre proche.
+          </p>
+        </div>
+      )}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <div>
           <Label>Vous êtes…</Label>

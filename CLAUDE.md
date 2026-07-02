@@ -399,6 +399,7 @@ STRIPE_WEBHOOK_SECRET=       # signing secret de l'endpoint webhook (whsec_…) 
 STRIPE_PRICE_RENDEZVOUS=     # Price ID Stripe du pack 50 min
 STRIPE_PRICE_LIEN=           # Price ID Stripe du pack 100 min
 STRIPE_PRICE_PRESENCE=       # Price ID Stripe du pack 250 min
+STRIPE_PRICE_CONTROLE=       # Price ID Stripe RÉCURRENT (18€/mois) de l'abonnement « Le contrôle » (mode subscription ; parcours paiement-d'abord)
 PUBLIC_SITE_URL=             # optionnel — base vitrine pour success/cancel (défaut https://www.aicoute.fr)
 APP_URL=                     # optionnel — base back-office pour retour achat connecté (défaut https://app.aicoute.fr)
 ```
@@ -518,9 +519,11 @@ supabase functions deploy list-openai-models
 supabase functions deploy admin-update-caregiver  # édition aidant (propage email → auth.users)
 supabase functions deploy admin-delete-caregiver  # suppression aidant (refuse si bénéficiaires)
 supabase functions deploy model-watch             # veille modèles voix (OpenAI Responses + web_search, admin only)
-supabase functions deploy create-checkout-session # Stripe Checkout (achat de minutes)
-supabase functions deploy stripe-webhook          # Stripe webhook (crédit après paiement)
+supabase functions deploy create-checkout-session # Stripe Checkout (achat de minutes + abonnement « Le contrôle »)
+supabase functions deploy stripe-webhook          # Stripe webhook (crédit minutes + rétention abonnement « Le contrôle »)
 supabase functions deploy get-purchase-code       # page succès invité (/achat/merci) — poll du code
+supabase functions deploy get-control-checkout    # pré-remplissage inscription depuis un paiement « Le contrôle » (session_id → email)
+supabase functions deploy claim-control-subscription # rattache l'abonnement « Le contrôle » au compte à l'inscription
 supabase functions deploy redeem-code             # crédit d'un code d'achat (aidant connecté)
 supabase functions deploy admin-credit-minutes    # crédit manuel admin (minute_adjustments)
 supabase functions deploy admin-prompts           # CRUD bibliothèque de prompts (admin only)

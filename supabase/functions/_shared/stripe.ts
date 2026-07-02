@@ -75,6 +75,26 @@ export function priceIdForPack(pack: StripePack): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Abonnement « Le contrôle » — RÉCURRENT (mode subscription), ≠ packs one-shot.
+// 18 €/mois : 1 appel de contrôle par jour + email aux proches si non-réponse.
+// Le Price ID récurrent est lu en env (test vs live).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const CONTROL_PLAN = {
+  id: 'controle',
+  name: 'Le contrôle',
+  amount_eur: 18,
+  priceEnv: 'STRIPE_PRICE_CONTROLE',
+} as const
+
+/** Price ID Stripe (récurrent) de l'abonnement « Le contrôle ». Throw si absent. */
+export function controlPriceId(): string {
+  const id = Deno.env.get(CONTROL_PLAN.priceEnv)
+  if (!id) throw new Error(`${CONTROL_PLAN.priceEnv} non défini`)
+  return id
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // URLs de redirection (surchargeables en env).
 // ─────────────────────────────────────────────────────────────────────────────
 

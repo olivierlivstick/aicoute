@@ -18,7 +18,7 @@
 import { corsHeaders, handleCors } from '../_shared/cors.ts'
 import { getSupabaseAdmin } from '../_shared/supabaseAdmin.ts'
 import {
-  getStripe, getPack, priceIdForPack, siteUrl, appUrl, APP_TAG,
+  getStripe, getPack, priceIdForPack, controlPriceId, siteUrl, appUrl, APP_TAG,
 } from '../_shared/stripe.ts'
 
 Deno.serve(async (req: Request) => {
@@ -31,6 +31,27 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json().catch(() => ({}))
+
+    // ── Abonnement « Le contrôle » (RÉCURRENT) — parcours paiement-d'abord ──
+    // Le compte n'existe pas encore : après paiement, retour vers l'inscription
+    // pré-remplie (le session_id sert de clé de rattachement, cf.
+    // claim-control-subscription). On ne rattache donc PAS de caregiver ici.
+    if (body?.plan === 'controle') {
+      const stripe = getStripe()
+      const session = await stripe.checkout.sessions.create({
+        mode: 'subscription',
+        line_items: [{ price: controlPriceId(), quantity: 1 }],
+        locale: 'fr',
+        success_url: `${appUrl()}/auth/register?sub={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${siteUrl()}/#tarifs`,
+        metadata: { app: APP_TAG, plan: 'controle' },
+        // Le tag est aussi porté sur la subscription (utile pour un futur webhook
+        // d'événements d'abonnement dans le compte Stripe partagé).
+        subscription_data: { metadata: { app: APP_TAG, plan: 'controle' } },
+      })
+      return jsonResponse({ url: session.url })
+    }
+
     const pack = getPack(body?.pack_id)
     if (!pack) {
       return jsonResponse({ error: 'Pack inconnu.' }, 400)

@@ -1,8 +1,10 @@
+import { useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { Users, Megaphone, Phone, ShieldAlert, UserCog, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { Logo } from '@/components/Logo'
+import { claimPendingControl } from '@/lib/controlSubscription'
 
 const mainNav = [
   { to: '/org/beneficiaires', icon: Users,      label: 'Bénéficiaires' },
@@ -28,6 +30,12 @@ export function OrgLayout() {
     await signOut()
     navigate('/auth/login', { replace: true })
   }
+
+  // Rattachement best-effort d'un abonnement « Le contrôle » payé avant le compte
+  // (cas d'un acheteur qui s'inscrit en personne morale) — évite un paiement perdu.
+  useEffect(() => {
+    void claimPendingControl()
+  }, [])
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     cn(

@@ -94,3 +94,9 @@ verify_jwt = false   # auth gérée en interne via requireAdmin (JWT appelant) ;
 
 [functions.admin-prompts]
 verify_jwt = false   # auth gérée en interne via requireAdmin (JWT appelant) ; CRUD bibliothèque de prompts en service-role
+
+[functions.get-control-checkout]
+verify_jwt = false   # inscription publique (parcours paiement-d'abord) ; le session_id Stripe (cs_…) porté dans l'URL EST le secret
+
+[functions.claim-control-subscription]
+verify_jwt = false   # auth gérée en interne via le JWT appelant ; rattache l'abonnement « Le contrôle » en service-role

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -14,6 +15,7 @@ import { useIsAdmin } from '@/hooks/useIsAdmin'
 import { Logo } from '@/components/Logo'
 import { AppHeader } from '@/components/AppHeader'
 import { SelectedBeneficiaryProvider } from '@/hooks/useSelectedBeneficiary'
+import { claimPendingControl } from '@/lib/controlSubscription'
 
 const mainNav = [
   { to: '/dashboard',  icon: LayoutDashboard, label: 'Tableau de bord' },
@@ -35,6 +37,14 @@ export function AppLayout() {
     await signOut()
     navigate('/auth/login', { replace: true })
   }
+
+  // Rattachement d'un abonnement « Le contrôle » payé avant la création du compte
+  // (parcours paiement-d'abord). Best-effort et idempotent : ne fait rien s'il n'y
+  // a pas de jeton en attente. On y passe une fois le compte authentifié (retour
+  // après confirmation d'email).
+  useEffect(() => {
+    void claimPendingControl()
+  }, [])
 
   return (
     <SelectedBeneficiaryProvider>
