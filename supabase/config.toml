@@ -100,3 +100,6 @@ verify_jwt = false   # inscription publique (parcours paiement-d'abord) ; le ses
 
 [functions.claim-control-subscription]
 verify_jwt = false   # auth gérée en interne via le JWT appelant ; rattache l'abonnement « Le contrôle » en service-role
+
+[functions.create-billing-portal-session]
+verify_jwt = false   # auth gérée en interne via le JWT appelant ; ouvre le portail client Stripe (factures/gestion abonnement)

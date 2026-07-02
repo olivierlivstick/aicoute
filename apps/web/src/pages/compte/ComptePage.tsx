@@ -31,6 +31,9 @@ export function ComptePage() {
   const [tab, setTab] = useState<Tab>('profil')
   const [purchaseBanner, setPurchaseBanner] = useState<'ok' | 'annule' | null>(null)
   const balance = useMinutesBalance()
+  const { subscription } = useSubscription()
+  // Un abonné « Le contrôle » ne gère pas de minutes → on masque la carte de solde.
+  const isSubscriber = subscription?.plan_tier === 'controle'
 
   // Retour depuis Stripe (achat direct connecté) : ?achat=ok|annule.
   // Le crédit se fait via webhook (asynchrone) → on ouvre l'onglet solde et on
@@ -66,7 +69,7 @@ export function ComptePage() {
         </div>
       )}
 
-      <MinutesBalanceCard balance={balance} />
+      {!isSubscriber && <MinutesBalanceCard balance={balance} />}
 
       {/* Onglets */}
       <div className="flex gap-1 mb-6 border-b border-slate-200">
@@ -276,42 +279,84 @@ function SoldeTab() {
 // ────────────────────────────────────────────────────────────────────────────
 
 function AchatsTab({ purchases, loading, onReload }: { purchases: MinutePurchase[]; loading: boolean; onReload: () => void }) {
+  const { subscription, loading: subLoading } = useSubscription()
+
+  if (subLoading) {
+    return (
+      <div className="flex justify-center py-16">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  // Abonné (« Le contrôle ») : les packs de minutes / codes n'ont pas de sens →
+  // on ne montre que l'abonnement (+ l'historique de packs s'il en a exceptionnellement).
+  const isSubscriber = subscription?.plan_tier === 'controle'
+
   return (
     <div className="space-y-6">
-      <AbonnementCard />
-      <BuyPacksCard />
-      <RedeemCodeCard onRedeemed={onReload} />
-      <PurchasesTable purchases={purchases} loading={loading} />
+      {isSubscriber && subscription && <AbonnementCard subscription={subscription} />}
+      {!isSubscriber && <BuyPacksCard />}
+      {!isSubscriber && <RedeemCodeCard onRedeemed={onReload} />}
+      {(!isSubscriber || purchases.length > 0) && <PurchasesTable purchases={purchases} loading={loading} />}
     </div>
   )
 }
 
 // ── Abonnement en cours (« Le contrôle ») — distinct des packs de minutes ──
 // Un abonnement récurrent ne s'affiche pas dans l'historique des achats de packs
-// (minute_purchases) : on le montre ici pour que l'abonné voie ce qu'il paie.
-function AbonnementCard() {
-  const { subscription, loading } = useSubscription()
-  if (loading || !subscription || subscription.plan_tier !== 'controle') return null
-  const plan = PLAN_TIERS[subscription.plan_tier]
+// (minute_purchases) : on le montre ici, avec un accès au portail Stripe pour les
+// factures et la gestion (moyen de paiement, résiliation).
+function AbonnementCard({ subscription }: { subscription: { plan_tier: string; created_at?: string } }) {
+  const plan = PLAN_TIERS[subscription.plan_tier as keyof typeof PLAN_TIERS]
   const since = subscription.created_at
     ? new Date(subscription.created_at).toLocaleDateString('fr-FR')
     : null
+  const [portalLoading, setPortalLoading] = useState(false)
+  const [portalError, setPortalError] = useState<string | null>(null)
+
+  const openPortal = async () => {
+    setPortalError(null)
+    setPortalLoading(true)
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('create-billing-portal-session', {})
+      if (invokeError) {
+        const ctx = (invokeError as { context?: Response }).context
+        let msg = 'Le portail de facturation est momentanément indisponible.'
+        try { msg = (await ctx?.json())?.error ?? msg } catch { /* garde le défaut */ }
+        throw new Error(msg)
+      }
+      const url = (data as { url?: string } | null)?.url
+      if (!url) throw new Error('Réponse invalide du portail.')
+      window.location.href = url
+    } catch (e) {
+      setPortalError(e instanceof Error ? e.message : 'Une erreur est survenue.')
+      setPortalLoading(false)
+    }
+  }
+
   return (
     <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
       <h2 className="font-semibold text-slate-700 mb-3">Mon abonnement</h2>
       <div className="flex items-center justify-between rounded-xl border border-primary/40 bg-creme/40 p-4">
         <div>
-          <p className="text-xs uppercase tracking-wider text-accent-700 font-semibold">{plan.name}</p>
+          <p className="text-xs uppercase tracking-wider text-accent-700 font-semibold">{plan?.name}</p>
           <p className="mt-1 font-semibold text-slate-800">
-            {plan.priceEur} € <span className="text-sm font-normal text-slate-500">/ mois</span>
+            {plan?.priceEur} € <span className="text-sm font-normal text-slate-500">/ mois</span>
           </p>
-          <p className="text-sm text-slate-500 mt-0.5">{plan.tagline}</p>
+          <p className="text-sm text-slate-500 mt-0.5">{plan?.tagline}</p>
         </div>
         <span className="shrink-0 rounded-full bg-sauge/15 text-sauge text-xs font-semibold px-3 py-1">Actif</span>
       </div>
-      <p className="text-xs text-slate-400 mt-3">
-        {since && <>Souscrit le {since}. </>}Cet abonnement est facturé chaque mois et ne consomme pas de minutes.
-      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button type="button" variant="ghost" onClick={openPortal} loading={portalLoading}>
+          Gérer mon abonnement · factures
+        </Button>
+        <p className="text-xs text-slate-400">
+          {since && <>Souscrit le {since}. </>}Facturé chaque mois, ne consomme pas de minutes.
+        </p>
+      </div>
+      {portalError && <p className="mt-2 text-sm text-brique">{portalError}</p>}
     </section>
   )
 }
